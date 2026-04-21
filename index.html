@@ -994,6 +994,7 @@ renderDashboard();
 renderCuentas();
 updateBadge();
 if(S.gsKey) loadFromSheets();
+setInterval(()=>{ if(S.gsKey) loadFromSheets(); }, 300000);
 
 // Check params from email link (?action=pendientes)
 const urlParams=new URLSearchParams(window.location.search);
