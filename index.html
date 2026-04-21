@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Finanzas JT">
-<title>💰 Finanzas JT</title>
+<title>ð° Finanzas JT</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -225,19 +225,19 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
   <!-- SIDEBAR -->
   <div class="sidebar" id="sidebar">
     <div class="logo">
-      <div class="logo-name">💰 Finanzas JT</div>
-      <div class="logo-sub">José Tomás Giner</div>
+      <div class="logo-name">ð° Finanzas JT</div>
+      <div class="logo-sub">JosÃ© TomÃ¡s Giner</div>
     </div>
     <div class="nav-section">Principal</div>
-    <div class="nav-item active" onclick="nav('dashboard')"><span class="icon">📊</span>Dashboard</div>
-    <div class="nav-item" onclick="nav('pendientes')" id="nav-pendientes"><span class="icon">🔔</span>Pendientes<span class="nav-badge" id="badge-pend" style="display:none">0</span></div>
-    <div class="nav-item" onclick="nav('gastos')"><span class="icon">💸</span>Gastos</div>
-    <div class="nav-item" onclick="nav('compartidos')"><span class="icon">🤝</span>Compartidos</div>
-    <div class="nav-item" onclick="nav('cuentas')"><span class="icon">📋</span>Cuentas</div>
-    <div class="nav-section">Análisis</div>
-    <div class="nav-item" onclick="nav('historial')"><span class="icon">🕐</span>Historial</div>
+    <div class="nav-item active" onclick="nav('dashboard')"><span class="icon">ð</span>Dashboard</div>
+    <div class="nav-item" onclick="nav('pendientes')" id="nav-pendientes"><span class="icon">ð</span>Pendientes<span class="nav-badge" id="badge-pend" style="display:none">0</span></div>
+    <div class="nav-item" onclick="nav('gastos')"><span class="icon">ð¸</span>Gastos</div>
+    <div class="nav-item" onclick="nav('compartidos')"><span class="icon">ð¤</span>Compartidos</div>
+    <div class="nav-item" onclick="nav('cuentas')"><span class="icon">ð</span>Cuentas</div>
+    <div class="nav-section">AnÃ¡lisis</div>
+    <div class="nav-item" onclick="nav('historial')"><span class="icon">ð</span>Historial</div>
     <div class="nav-section">Sistema</div>
-    <div class="nav-item" onclick="nav('config')"><span class="icon">⚙️</span>Configuración</div>
+    <div class="nav-item" onclick="nav('config')"><span class="icon">âï¸</span>ConfiguraciÃ³n</div>
     <div style="margin-top:auto;padding:16px;border-top:1px solid var(--border)">
       <div style="font-size:10px;color:var(--text3);font-family:var(--mono)">
         <span class="sync-dot" id="sync-dot"></span><span id="sync-text">Sin sincronizar</span>
@@ -249,12 +249,12 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
   <div class="main">
     <div class="topbar">
       <div style="display:flex;align-items:center;gap:10px">
-        <button class="hamburger" onclick="toggleSidebar()">☰</button>
+        <button class="hamburger" onclick="toggleSidebar()">â°</button>
         <div class="page-title" id="page-title">Dashboard</div>
       </div>
       <div class="topbar-actions">
         <button class="btn btn-sm" onclick="openGastoModal()">+ Gasto</button>
-        <button class="btn btn-sm btn-green" onclick="syncSheets()" id="btn-sync">↑ Sheets</button>
+        <button class="btn btn-sm btn-green" onclick="syncSheets()" id="btn-sync">â Sheets</button>
       </div>
     </div>
 
@@ -286,9 +286,9 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
         </div>
         <div class="charts-row">
           <div class="card">
-            <div class="card-title">Por categoría — <span id="mes-label"></span></div>
+            <div class="card-title">Por categorÃ­a â <span id="mes-label"></span></div>
             <div id="legend-cat" class="legend"></div>
-            <div class="chart-wrap"><canvas id="chart-cat" role="img" aria-label="Gastos por categoría">.</canvas></div>
+            <div class="chart-wrap"><canvas id="chart-cat" role="img" aria-label="Gastos por categorÃ­a">.</canvas></div>
           </div>
           <div class="card">
             <div class="card-title">Tendencia semanal</div>
@@ -296,16 +296,16 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
           </div>
         </div>
         <div class="card">
-          <div class="card-title">Últimos movimientos</div>
-          <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Fecha</th><th>Descripción</th><th>Categoría</th><th>Monto</th><th>Fuente</th></tr></thead><tbody id="recent-body"></tbody></table></div>
+          <div class="card-title">Ãltimos movimientos</div>
+          <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Fecha</th><th>DescripciÃ³n</th><th>CategorÃ­a</th><th>Monto</th><th>Fuente</th></tr></thead><tbody id="recent-body"></tbody></table></div>
         </div>
       </div>
 
       <!-- PENDIENTES -->
       <div class="page" id="p-pendientes">
         <div class="gmail-banner">
-          <span style="font-size:20px">📧</span>
-          <div><strong>Gastos capturados automáticamente desde Gmail</strong><br><span style="font-size:11px">Categorizalos con 2 taps para que queden registrados.</span></div>
+          <span style="font-size:20px">ð§</span>
+          <div><strong>Gastos capturados automÃ¡ticamente desde Gmail</strong><br><span style="font-size:11px">Categorizalos con 2 taps para que queden registrados.</span></div>
         </div>
         <div id="pendientes-list"></div>
       </div>
@@ -313,14 +313,14 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
       <!-- GASTOS -->
       <div class="page" id="p-gastos">
         <div class="filter-bar">
-          <select class="fi" style="width:auto;flex:1;min-width:120px" id="f-cat" onchange="renderGastos()"><option value="">Todas las categorías</option></select>
+          <select class="fi" style="width:auto;flex:1;min-width:120px" id="f-cat" onchange="renderGastos()"><option value="">Todas las categorÃ­as</option></select>
           <select class="fi" style="width:auto;flex:1;min-width:100px" id="f-mes" onchange="renderGastos()"><option value="">Todos los meses</option></select>
           <select class="fi" style="width:auto;flex:1;min-width:100px" id="f-tipo" onchange="renderGastos()">
             <option value="">Todo</option><option value="normal">Normal</option>
             <option value="compartido">Compartido</option><option value="extraordinario">Extraordinario</option>
           </select>
         </div>
-        <div class="card"><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Fecha</th><th>Descripción</th><th>Categoría</th><th>Etiqueta</th><th>Tarjeta</th><th>Monto</th><th></th></tr></thead><tbody id="gastos-body"></tbody></table></div></div>
+        <div class="card"><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Fecha</th><th>DescripciÃ³n</th><th>CategorÃ­a</th><th>Etiqueta</th><th>Tarjeta</th><th>Monto</th><th></th></tr></thead><tbody id="gastos-body"></tbody></table></div></div>
       </div>
 
       <!-- COMPARTIDOS -->
@@ -334,14 +334,14 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
           <div class="card">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-              <div class="card-title" style="margin:0">💚 Por cobrar</div>
+              <div class="card-title" style="margin:0">ð Por cobrar</div>
               <button class="btn btn-sm" onclick="openCuentaModal('cobrar')">+</button>
             </div>
             <div id="cobrar-list"></div>
           </div>
           <div class="card">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-              <div class="card-title" style="margin:0">❤️ Por pagar</div>
+              <div class="card-title" style="margin:0">â¤ï¸ Por pagar</div>
               <button class="btn btn-sm" onclick="openCuentaModal('pagar')">+</button>
             </div>
             <div id="pagar-list"></div>
@@ -352,39 +352,39 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
       <!-- HISTORIAL -->
       <div class="page" id="p-historial">
         <div class="filter-bar">
-          <input class="fi" style="flex:1;min-width:150px" placeholder="🔍 Buscar..." id="hist-q" oninput="renderHistorial()">
-          <select class="fi" style="width:auto;flex:1;min-width:120px" id="hist-cat" onchange="renderHistorial()"><option value="">Todas las categorías</option></select>
+          <input class="fi" style="flex:1;min-width:150px" placeholder="ð Buscar..." id="hist-q" oninput="renderHistorial()">
+          <select class="fi" style="width:auto;flex:1;min-width:120px" id="hist-cat" onchange="renderHistorial()"><option value="">Todas las categorÃ­as</option></select>
         </div>
-        <div class="card"><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Fecha</th><th>Descripción</th><th>Categoría</th><th>Etiqueta</th><th>Monto</th><th>Fuente</th></tr></thead><tbody id="hist-body"></tbody></table></div></div>
+        <div class="card"><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Fecha</th><th>DescripciÃ³n</th><th>CategorÃ­a</th><th>Etiqueta</th><th>Monto</th><th>Fuente</th></tr></thead><tbody id="hist-body"></tbody></table></div></div>
       </div>
 
       <!-- CONFIG -->
       <div class="page" id="p-config">
         <div class="card" style="margin-bottom:14px">
-          <div class="card-title">🔗 Google Sheets</div>
-          <div class="info-box azul" style="margin-bottom:14px">La app lee y escribe todos tus gastos en tu Google Sheet. Configura el ID y la API Key para activar la sincronización.</div>
+          <div class="card-title">ð Google Sheets</div>
+          <div class="info-box azul" style="margin-bottom:14px">La app lee y escribe todos tus gastos en tu Google Sheet. Configura el ID y la API Key para activar la sincronizaciÃ³n.</div>
           <div class="grid2">
             <div class="form-row"><label class="form-label">ID de la hoja</label><input class="fi" id="gs-id" placeholder="1Aeiav6ZIiC_o8..."></div>
             <div class="form-row"><label class="form-label">API Key</label><input class="fi" id="gs-key" type="password" placeholder="AIza..."></div>
           </div>
-          <button class="btn btn-green btn-sm" onclick="saveConfig()">Guardar y probar conexión</button>
+          <button class="btn btn-green btn-sm" onclick="saveConfig()">Guardar y probar conexiÃ³n</button>
           <div id="config-status" style="margin-top:10px;font-size:12px;color:var(--text3)"></div>
         </div>
         <div class="card" style="margin-bottom:14px">
-          <div class="card-title">🏷️ Categorías</div>
+          <div class="card-title">ð·ï¸ CategorÃ­as</div>
           <div id="cats-display" style="margin-bottom:12px;display:flex;flex-wrap:wrap;gap:4px"></div>
           <div class="grid3">
-            <input class="fi" id="new-cat" placeholder="Nueva categoría">
+            <input class="fi" id="new-cat" placeholder="Nueva categorÃ­a">
             <select class="fi" id="new-cat-col">
-              <option value="verde">🟢 Verde</option><option value="azul">🔵 Azul</option>
-              <option value="ambar">🟡 Ambar</option><option value="rojo">🔴 Rojo</option>
-              <option value="morado">🟣 Morado</option><option value="rosa">🩷 Rosa</option>
+              <option value="verde">ð¢ Verde</option><option value="azul">ðµ Azul</option>
+              <option value="ambar">ð¡ Ambar</option><option value="rojo">ð´ Rojo</option>
+              <option value="morado">ð£ Morado</option><option value="rosa">ð©· Rosa</option>
             </select>
             <button class="btn btn-green btn-sm" onclick="addCat()">+ Agregar</button>
           </div>
         </div>
         <div class="card">
-          <div class="card-title">🔖 Etiquetas</div>
+          <div class="card-title">ð Etiquetas</div>
           <div id="tags-display" style="margin-bottom:12px;display:flex;flex-wrap:wrap;gap:4px"></div>
           <div style="display:flex;gap:8px">
             <input class="fi" id="new-tag" placeholder="Nueva etiqueta" style="flex:1">
@@ -402,11 +402,11 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
   <div class="modal-handle"></div>
   <div class="modal-title" id="m-gasto-title">Registrar gasto</div>
   <div class="grid2">
-    <div class="form-row"><label class="form-label">Descripción</label><input class="fi" id="g-desc" placeholder="Ej: Brunapoli"></div>
+    <div class="form-row"><label class="form-label">DescripciÃ³n</label><input class="fi" id="g-desc" placeholder="Ej: Brunapoli"></div>
     <div class="form-row"><label class="form-label">Monto ($)</label><input class="fi" id="g-monto" type="number" inputmode="numeric" placeholder="0"></div>
   </div>
   <div class="grid2">
-    <div class="form-row"><label class="form-label">Categoría</label><select class="fi" id="g-cat"></select></div>
+    <div class="form-row"><label class="form-label">CategorÃ­a</label><select class="fi" id="g-cat"></select></div>
     <div class="form-row"><label class="form-label">Etiqueta</label><select class="fi" id="g-tag"></select></div>
   </div>
   <div class="grid2">
@@ -425,8 +425,8 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
     <div class="form-row"><label class="form-label">Tipo</label>
       <select class="fi" id="g-tipo">
         <option value="normal">Normal</option>
-        <option value="compartido">Compartido 🤝</option>
-        <option value="extraordinario">Extraordinario ⭐</option>
+        <option value="compartido">Compartido ð¤</option>
+        <option value="extraordinario">Extraordinario â­</option>
       </select>
     </div>
     <div class="form-row"><label class="form-label">Notas</label><input class="fi" id="g-notas" placeholder="Opcional"></div>
@@ -446,26 +446,26 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
     <div style="font-size:12px;color:var(--text3);margin-top:3px;font-family:var(--mono)" id="pend-meta"></div>
   </div>
   <div class="grid2">
-    <div class="form-row"><label class="form-label">Categoría</label><select class="fi" id="pend-cat"></select></div>
+    <div class="form-row"><label class="form-label">CategorÃ­a</label><select class="fi" id="pend-cat"></select></div>
     <div class="form-row"><label class="form-label">Etiqueta</label><select class="fi" id="pend-tag"></select></div>
   </div>
-  <div class="form-row"><label class="form-label">¿Es compartido?</label>
+  <div class="form-row"><label class="form-label">Â¿Es compartido?</label>
     <select class="fi" id="pend-comp" onchange="toggleCompFields()">
-      <option value="no">No, es solo mío</option>
-      <option value="polola">Con polola — 50/50</option>
-      <option value="invito">Lo invité yo</option>
-      <option value="custom">División custom</option>
+      <option value="no">No, es solo mÃ­o</option>
+      <option value="polola">Con polola â 50/50</option>
+      <option value="invito">Lo invitÃ© yo</option>
+      <option value="custom">DivisiÃ³n custom</option>
     </select>
   </div>
   <div id="pend-comp-extra" style="display:none">
     <div class="grid2">
-      <div class="form-row"><label class="form-label">¿Con quién?</label><input class="fi" id="pend-quien" placeholder="Nombre"></div>
+      <div class="form-row"><label class="form-label">Â¿Con quiÃ©n?</label><input class="fi" id="pend-quien" placeholder="Nombre"></div>
       <div class="form-row"><label class="form-label">A cobrar ($)</label><input class="fi" id="pend-a-cobrar" type="number" inputmode="numeric"></div>
     </div>
   </div>
   <div class="modal-actions">
     <button class="btn" onclick="closeModal('m-cat-pend')">Cancelar</button>
-    <button class="btn btn-green" onclick="confirmarCat()">Confirmar ✓</button>
+    <button class="btn btn-green" onclick="confirmarCat()">Confirmar â</button>
   </div>
 </div></div>
 
@@ -474,12 +474,12 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
   <div class="modal-handle"></div>
   <div class="modal-title">Gasto compartido</div>
   <div class="grid2">
-    <div class="form-row"><label class="form-label">Descripción</label><input class="fi" id="c-desc" placeholder="Ej: Cena"></div>
+    <div class="form-row"><label class="form-label">DescripciÃ³n</label><input class="fi" id="c-desc" placeholder="Ej: Cena"></div>
     <div class="form-row"><label class="form-label">Total ($)</label><input class="fi" id="c-total" type="number" inputmode="numeric" oninput="recalcComp()"></div>
   </div>
   <div class="grid2">
-    <div class="form-row"><label class="form-label">Categoría</label><select class="fi" id="c-cat"></select></div>
-    <div class="form-row"><label class="form-label">Método</label>
+    <div class="form-row"><label class="form-label">CategorÃ­a</label><select class="fi" id="c-cat"></select></div>
+    <div class="form-row"><label class="form-label">MÃ©todo</label>
       <select class="fi" id="c-method" onchange="recalcComp()">
         <option value="igual">Partes iguales</option>
         <option value="pct">Por porcentaje</option>
@@ -508,8 +508,8 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
     <div class="form-row"><label class="form-label">Monto ($)</label><input class="fi" id="cu-monto" type="number" inputmode="numeric"></div>
   </div>
   <div class="grid2">
-    <div class="form-row"><label class="form-label">Descripción</label><input class="fi" id="cu-desc" placeholder="Concepto"></div>
-    <div class="form-row"><label class="form-label">Fecha límite</label><input class="fi" id="cu-fecha" type="date"></div>
+    <div class="form-row"><label class="form-label">DescripciÃ³n</label><input class="fi" id="cu-desc" placeholder="Concepto"></div>
+    <div class="form-row"><label class="form-label">Fecha lÃ­mite</label><input class="fi" id="cu-fecha" type="date"></div>
   </div>
   <div class="modal-actions">
     <button class="btn" onclick="closeModal('m-cuenta')">Cancelar</button>
@@ -520,7 +520,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script>
 // ============================================================
-// CONFIG — EDITAR AQUÍ TUS DATOS
+// CONFIG â EDITAR AQUÃ TUS DATOS
 // ============================================================
 const SHEET_ID = '1Aeiav6ZIiC_o8zgqwM7qRxgFtXB3eHROW9-NtJ4GU5g';
 const SHEET_NAME_GASTOS = 'Gastos';
@@ -536,7 +536,7 @@ const AVATAR_COLORS = ['#10B981','#3B82F6','#F59E0B','#8B5CF6','#EC4899','#EF444
 // STATE
 // ============================================================
 const CATS_DEFAULT = [
-  {id:'c1',nombre:'Crédito consumo',color:'gris',tipo:'fijo'},
+  {id:'c1',nombre:'CrÃ©dito consumo',color:'gris',tipo:'fijo'},
   {id:'c2',nombre:'Suscripciones',color:'morado',tipo:'fijo'},
   {id:'c3',nombre:'Tenis',color:'verde',tipo:'fijo'},
   {id:'c4',nombre:'Vivienda',color:'azul',tipo:'variable'},
@@ -557,7 +557,7 @@ const CATS_DEFAULT = [
 let S = {
   gastos:[], pendientes:[], compartidos:[], cuentas:[],
   cats:[...CATS_DEFAULT],
-  tags:['Polola','Amigos','Trabajo','Viaje','Cumpleaños','Propio'],
+  tags:['Polola','Amigos','Trabajo','Viaje','CumpleaÃ±os','Propio'],
   gsKey: '', gsId: SHEET_ID,
   charts:{}, pendIdx:null, cuentaTipo:'cobrar',
 };
@@ -597,7 +597,7 @@ function nav(page) {
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.getElementById('p-'+page).classList.add('active');
-  const titles = {dashboard:'Dashboard',pendientes:'Pendientes',gastos:'Gastos',compartidos:'Compartidos',cuentas:'Cuentas',historial:'Historial',config:'Configuración'};
+  const titles = {dashboard:'Dashboard',pendientes:'Pendientes',gastos:'Gastos',compartidos:'Compartidos',cuentas:'Cuentas',historial:'Historial',config:'ConfiguraciÃ³n'};
   document.getElementById('page-title').textContent = titles[page]||page;
   const navItems = document.querySelectorAll('.nav-item');
   const pageOrder = ['dashboard','pendientes','gastos','compartidos','cuentas','','historial','','config'];
@@ -638,12 +638,12 @@ function openGastoModal(pre={}) {
 function saveGasto() {
   const desc=document.getElementById('g-desc').value.trim();
   const monto=parseFloat(document.getElementById('g-monto').value);
-  if(!desc||isNaN(monto)||monto<=0){alert('Completa descripción y monto.');return;}
+  if(!desc||isNaN(monto)||monto<=0){alert('Completa descripciÃ³n y monto.');return;}
   const g = {id:uid(),desc,monto,cat:document.getElementById('g-cat').value,tag:document.getElementById('g-tag').value,fecha:document.getElementById('g-fecha').value,tarjeta:document.getElementById('g-tarjeta').value,tipo:document.getElementById('g-tipo').value,notas:document.getElementById('g-notas').value,fuente:'manual'};
   S.gastos.push(g); save(); closeModal('m-gasto'); renderDashboard(); updateBadge();
   pushGastoToSheets(g);
 }
-function deleteGasto(id) { if(!confirm('¿Eliminar este gasto?'))return; S.gastos=S.gastos.filter(g=>g.id!==id); save(); renderGastos(); renderDashboard(); }
+function deleteGasto(id) { if(!confirm('Â¿Eliminar este gasto?'))return; S.gastos=S.gastos.filter(g=>g.id!==id); save(); renderGastos(); renderDashboard(); }
 
 // ============================================================
 // PENDIENTES
@@ -658,17 +658,17 @@ function updateBadge() {
 
 function renderPendientes() {
   const el=document.getElementById('pendientes-list');
-  if(!S.pendientes.length) { el.innerHTML=`<div class="empty"><div class="empty-icon">🎉</div>Sin gastos pendientes de categorizar</div>`; return; }
+  if(!S.pendientes.length) { el.innerHTML=`<div class="empty"><div class="empty-icon">ð</div>Sin gastos pendientes de categorizar</div>`; return; }
   el.innerHTML=S.pendientes.map((p,i)=>`
     <div class="gmail-item">
-      <div style="font-size:20px">${p.banco==='Santander'?'🏦':'🏛️'}</div>
+      <div style="font-size:20px">${p.banco==='Santander'?'ð¦':'ðï¸'}</div>
       <div class="gmail-item-info">
         <div class="gmail-item-title">${p.comercio}</div>
-        <div class="gmail-item-sub">${p.fecha} · ${p.tarjeta} · ${p.banco}</div>
+        <div class="gmail-item-sub">${p.fecha} Â· ${p.tarjeta} Â· ${p.banco}</div>
       </div>
       <div class="gmail-item-amount">${fmt(p.monto)}</div>
       <button class="btn btn-sm btn-green" onclick="abrirCat(${i})">Categorizar</button>
-      <button class="del-btn" onclick="descartarPend(${i})">✕</button>
+      <button class="del-btn" onclick="descartarPend(${i})">â</button>
     </div>`).join('');
 }
 
@@ -676,7 +676,7 @@ function abrirCat(i) {
   S.pendIdx=i;
   const p=S.pendientes[i];
   document.getElementById('pend-title').textContent=p.comercio;
-  document.getElementById('pend-meta').textContent=`${p.fecha} · ${fmt(p.monto)} · ${p.tarjeta}`;
+  document.getElementById('pend-meta').textContent=`${p.fecha} Â· ${fmt(p.monto)} Â· ${p.tarjeta}`;
   fillCat('pend-cat'); fillTag('pend-tag');
   document.getElementById('pend-comp').value='no';
   document.getElementById('pend-comp-extra').style.display='none';
@@ -720,7 +720,7 @@ function renderCompPersonas() {
       ${m==='pct'?`<input class="fi" type="number" inputmode="numeric" value="${p.pct}" oninput="compPersonas[${i}].pct=+this.value;recalcComp()">`:
         m==='monto'?`<input class="fi" type="number" inputmode="numeric" value="${Math.round(p.monto)}" oninput="compPersonas[${i}].monto=+this.value;recalcComp()">`:
         `<input class="fi" value="${fmt(p.monto)}" readonly style="background:var(--gris-m)">`}
-      <button class="del-btn" onclick="compPersonas.splice(${i},1);renderCompPersonas()">✕</button>
+      <button class="del-btn" onclick="compPersonas.splice(${i},1);renderCompPersonas()">â</button>
     </div>`).join('');
   recalcComp();
 }
@@ -733,13 +733,13 @@ function recalcComp() {
   else if(m==='pct') compPersonas.forEach(p=>p.monto=total*(p.pct/100));
   const sum=compPersonas.reduce((a,p)=>a+p.monto,0);
   const el=document.getElementById('comp-summary');
-  if(total>0) { el.style.display='block'; el.innerHTML=compPersonas.map(p=>`<strong>${p.nombre||'?'}</strong>: ${fmt(p.monto)}`).join(' · ')+(Math.abs(sum-total)>1?' ⚠️ No cuadra':''); }
+  if(total>0) { el.style.display='block'; el.innerHTML=compPersonas.map(p=>`<strong>${p.nombre||'?'}</strong>: ${fmt(p.monto)}`).join(' Â· ')+(Math.abs(sum-total)>1?' â ï¸ No cuadra':''); }
   else el.style.display='none';
 }
 function saveCompartido() {
   const desc=document.getElementById('c-desc').value.trim();
   const total=parseFloat(document.getElementById('c-total').value);
-  if(!desc||isNaN(total)){alert('Completa descripción y monto.');return;}
+  if(!desc||isNaN(total)){alert('Completa descripciÃ³n y monto.');return;}
   const div={id:uid(),desc,total,fecha:HOY,cat:document.getElementById('c-cat').value,method:document.getElementById('c-method').value,personas:[...compPersonas]};
   S.compartidos.push(div);
   const yo=compPersonas[0];
@@ -788,7 +788,7 @@ function saveConfig() {
   S.gsId=document.getElementById('gs-id').value.trim();
   S.gsKey=document.getElementById('gs-key').value.trim();
   save();
-  document.getElementById('config-status').textContent='Guardado. Prueba la sincronización con el botón ↑ Sheets.';
+  document.getElementById('config-status').textContent='Guardado. Prueba la sincronizaciÃ³n con el botÃ³n â Sheets.';
   document.getElementById('config-status').style.color='var(--verde-d)';
 }
 
@@ -812,11 +812,11 @@ async function sheetsAppend(sheet, values) {
 }
 
 async function syncSheets() {
-  if(!S.gsKey||!S.gsId) { nav('config'); alert('Primero configura el ID de la hoja y la API Key en Configuración.'); return; }
-  const btn=document.getElementById('btn-sync'); btn.textContent='⏳'; btn.disabled=true;
+  if(!S.gsKey||!S.gsId) { nav('config'); alert('Primero configura el ID de la hoja y la API Key en ConfiguraciÃ³n.'); return; }
+  const btn=document.getElementById('btn-sync'); btn.textContent='â³'; btn.disabled=true;
   try {
     // Headers
-    const headers=[['ID','Fecha','Descripción','Categoría','Etiqueta','Monto','Tarjeta','Tipo','Fuente','Banco','Notas']];
+    const headers=[['ID','Fecha','DescripciÃ³n','CategorÃ­a','Etiqueta','Monto','Tarjeta','Tipo','Fuente','Banco','Notas']];
     const url=`https://sheets.googleapis.com/v4/spreadsheets/${S.gsId}/values/${SHEET_NAME_GASTOS}!A1:K1?valueInputOption=RAW&key=${S.gsKey}`;
     await fetch(url,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({range:`${SHEET_NAME_GASTOS}!A1:K1`,majorDimension:'ROWS',values:headers})});
     // All gastos
@@ -826,23 +826,31 @@ async function syncSheets() {
       const r=await fetch(url2,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({range:`${SHEET_NAME_GASTOS}!A2`,majorDimension:'ROWS',values:rows})});
       if(!r.ok) throw new Error(await r.text());
     }
-    setSyncStatus(true,'Sincronizado ✓');
-    alert(`✓ ${S.gastos.length} gastos sincronizados con Google Sheets.`);
-  } catch(e) { setSyncStatus(false); alert('Error: '+e.message+'\n\nVerifica tu API Key y que la hoja esté compartida como Editor.'); }
-  btn.textContent='↑ Sheets'; btn.disabled=false;
+    setSyncStatus(true,'Sincronizado â');
+    alert(`â ${S.gastos.length} gastos sincronizados con Google Sheets.`);
+  } catch(e) { setSyncStatus(false); alert('Error: '+e.message+'\n\nVerifica tu API Key y que la hoja estÃ© compartida como Editor.'); }
+  btn.textContent='â Sheets'; btn.disabled=false;
 }
 
 async function loadFromSheets() {
   if(!S.gsKey||!S.gsId) return;
   try {
-    const url=`https://sheets.googleapis.com/v4/spreadsheets/${S.gsId}/values/${SHEET_NAME_GASTOS}!A2:K1000?key=${S.gsKey}`;
-    const r=await fetch(url); const d=await r.json();
-    if(d.values) {
-      S.gastos=d.values.map(row=>({id:row[0]||uid(),fecha:row[1],desc:row[2],cat:row[3],tag:row[4],monto:parseFloat(row[5])||0,tarjeta:row[6],tipo:row[7]||'normal',fuente:row[8]||'manual',banco:row[9],notas:row[10]}));
-      save(); renderDashboard(); updateBadge();
+    const urlG=`https://sheets.googleapis.com/v4/spreadsheets/${S.gsId}/values/${SHEET_NAME_GASTOS}!A2:K1000?key=${S.gsKey}`;
+    const rG=await fetch(urlG); const dG=await rG.json();
+    if(dG.values) {
+      S.gastos=dG.values.map(row=>({id:row[0]||uid(),fecha:row[1],desc:row[2],cat:row[3],tag:row[4],monto:parseFloat(row[5])||0,tarjeta:row[6],tipo:row[7]||'normal',fuente:row[8]||'manual',banco:row[9],notas:row[10]}));
     }
-    setSyncStatus(true,'Cargado desde Sheets');
-  } catch(e) { console.log('Sheets load error:',e); }
+    const urlP=`https://sheets.googleapis.com/v4/spreadsheets/${S.gsId}/values/Pendientes!A2:H1000?key=${S.gsKey}`;
+    const rP=await fetch(urlP); const dP=await rP.json();
+    if(dP.values) {
+      const noProcesados=dP.values.filter(row=>row[7]==='NO'||!row[7]);
+      const idsExistentes=new Set(S.pendientes.map(p=>p.emailId));
+      const nuevos=noProcesados.filter(row=>!idsExistentes.has(row[6])).map(row=>({id:row[0],fecha:row[1],comercio:row[2],monto:parseFloat(row[3])||0,tarjeta:row[4],banco:row[5],emailId:row[6]}));
+      S.pendientes=[...S.pendientes,...nuevos];
+    }
+    save(); renderDashboard(); updateBadge();
+    setSyncStatus(true,'Sincronizado ✓');
+  } catch(e) { console.log('Sheets load error:',e); setSyncStatus(false); }
 }
 
 function setSyncStatus(ok, msg) {
@@ -873,8 +881,8 @@ function renderDashboard() {
     <td style="font-family:var(--mono);font-size:11px">${g.fecha}</td>
     <td>${g.desc}</td><td>${catBadge(g.cat)}</td>
     <td style="font-family:var(--mono);font-weight:600">${fmt(g.monto)}</td>
-    <td><span class="badge ${g.fuente==='gmail'?'b-azul':'b-gris'}" style="font-size:10px">${g.fuente==='gmail'?'📧':'✏️'}</span></td>
-  </tr>`).join(''):`<tr><td colspan="5" class="empty" style="padding:24px">Sin gastos aún</td></tr>`;
+    <td><span class="badge ${g.fuente==='gmail'?'b-azul':'b-gris'}" style="font-size:10px">${g.fuente==='gmail'?'ð§':'âï¸'}</span></td>
+  </tr>`).join(''):`<tr><td colspan="5" class="empty" style="padding:24px">Sin gastos aÃºn</td></tr>`;
   renderCatChart(gm); renderTendChart(gm,mes,anio);
 }
 
@@ -900,7 +908,7 @@ function renderGastos() {
   const ft=document.getElementById('f-tipo').value;
   const catSel=document.getElementById('f-cat');
   const curCat=catSel.value;
-  catSel.innerHTML='<option value="">Todas las categorías</option>'+S.cats.map(c=>`<option value="${c.nombre}"${curCat===c.nombre?' selected':''}>${c.nombre}</option>`).join('');
+  catSel.innerHTML='<option value="">Todas las categorÃ­as</option>'+S.cats.map(c=>`<option value="${c.nombre}"${curCat===c.nombre?' selected':''}>${c.nombre}</option>`).join('');
   const meses=[...new Set(S.gastos.map(g=>g.fecha.slice(0,7)))].sort().reverse();
   const mesSel=document.getElementById('f-mes'); const curMes=mesSel.value;
   mesSel.innerHTML='<option value="">Todos los meses</option>'+meses.map(m=>`<option value="${m}"${curMes===m?' selected':''}>${m}</option>`).join('');
@@ -908,20 +916,20 @@ function renderGastos() {
   document.getElementById('gastos-body').innerHTML=list.length?list.map(g=>`<tr>
     <td style="font-family:var(--mono);font-size:11px">${g.fecha}</td>
     <td>${g.desc}</td><td>${catBadge(g.cat)}</td><td>${tagBadge(g.tag)}</td>
-    <td style="font-size:11px;color:var(--text3)">${g.tarjeta||'—'}</td>
+    <td style="font-size:11px;color:var(--text3)">${g.tarjeta||'â'}</td>
     <td style="font-family:var(--mono);font-weight:600">${fmt(g.monto)}</td>
-    <td><button class="del-btn" onclick="deleteGasto('${g.id}')">✕</button></td></tr>`).join(''):
+    <td><button class="del-btn" onclick="deleteGasto('${g.id}')">â</button></td></tr>`).join(''):
     `<tr><td colspan="7" class="empty" style="padding:24px">Sin gastos</td></tr>`;
 }
 
 function renderCompartidos() {
   const el=document.getElementById('compartidos-list');
-  if(!S.compartidos.length){el.innerHTML=`<div class="empty"><div class="empty-icon">🤝</div>Sin gastos compartidos registrados</div>`;return;}
+  if(!S.compartidos.length){el.innerHTML=`<div class="empty"><div class="empty-icon">ð¤</div>Sin gastos compartidos registrados</div>`;return;}
   el.innerHTML=S.compartidos.map(c=>`
     <div class="card" style="margin-bottom:12px">
       <div style="display:flex;align-items:center;justify-content:space-between">
-        <div><div style="font-weight:600;font-size:14px">${c.desc}</div><div style="font-size:11px;color:var(--text3);margin-top:2px;font-family:var(--mono)">${c.fecha} · Total: ${fmt(c.total)}</div></div>
-        <button class="del-btn" onclick="deleteCompartido('${c.id}')">✕</button>
+        <div><div style="font-weight:600;font-size:14px">${c.desc}</div><div style="font-size:11px;color:var(--text3);margin-top:2px;font-family:var(--mono)">${c.fecha} Â· Total: ${fmt(c.total)}</div></div>
+        <button class="del-btn" onclick="deleteCompartido('${c.id}')">â</button>
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">
         ${c.personas.map((p,i)=>{const pct=c.total>0?Math.round(p.monto/c.total*100):0;const col=Object.values(COLORS)[i%Object.values(COLORS).length];return`<div style="flex:1;min-width:80px;background:var(--gris-m);border-radius:var(--radius);padding:10px">
@@ -947,11 +955,11 @@ function renderCuentas() {
         <div class="cuenta-avatar" style="background:${ac}22;color:${ac}">${ini}</div>
         <div class="cuenta-info">
           <div class="cuenta-name">${c.persona}</div>
-          <div class="cuenta-sub">${c.desc||''}${c.fecha?` · Vence ${c.fecha}`:''}${dias>7?` · <span style="color:var(--rojo)">${dias}d</span>`:''}</div>
+          <div class="cuenta-sub">${c.desc||''}${c.fecha?` Â· Vence ${c.fecha}`:''}${dias>7?` Â· <span style="color:var(--rojo)">${dias}d</span>`:''}</div>
         </div>
         <div class="cuenta-amount" style="color:${c.tipo==='cobrar'?'var(--verde-d)':'var(--rojo)'}">${fmt(c.monto)}</div>
-        <button class="btn btn-sm" style="padding:5px 8px" onclick="toggleCuenta('${c.id}')" title="${c.pagado?'Reabrir':'Marcar cobrado'}">${c.pagado?'↩':'✓'}</button>
-        <button class="del-btn" onclick="deleteCuenta('${c.id}')">✕</button>
+        <button class="btn btn-sm" style="padding:5px 8px" onclick="toggleCuenta('${c.id}')" title="${c.pagado?'Reabrir':'Marcar cobrado'}">${c.pagado?'â©':'â'}</button>
+        <button class="del-btn" onclick="deleteCuenta('${c.id}')">â</button>
       </div>`;}).join('');
   }
   renderList(cobrar,'cobrar-list'); renderList(pagar,'pagar-list');
@@ -961,21 +969,21 @@ function renderHistorial() {
   const q=(document.getElementById('hist-q')?.value||'').toLowerCase();
   const cat=document.getElementById('hist-cat')?.value||'';
   const histCat=document.getElementById('hist-cat');
-  histCat.innerHTML='<option value="">Todas las categorías</option>'+S.cats.map(c=>`<option value="${c.nombre}"${cat===c.nombre?' selected':''}>${c.nombre}</option>`).join('');
+  histCat.innerHTML='<option value="">Todas las categorÃ­as</option>'+S.cats.map(c=>`<option value="${c.nombre}"${cat===c.nombre?' selected':''}>${c.nombre}</option>`).join('');
   const list=S.gastos.filter(g=>{if(q&&!g.desc.toLowerCase().includes(q)&&!g.cat.toLowerCase().includes(q))return false;if(cat&&g.cat!==cat)return false;return true}).sort((a,b)=>b.fecha.localeCompare(a.fecha));
   document.getElementById('hist-body').innerHTML=list.length?list.map(g=>`<tr>
     <td style="font-family:var(--mono);font-size:11px">${g.fecha}</td>
     <td>${g.desc}</td><td>${catBadge(g.cat)}</td><td>${tagBadge(g.tag)}</td>
     <td style="font-family:var(--mono);font-weight:600">${fmt(g.monto)}</td>
-    <td><span class="badge ${g.fuente==='gmail'?'b-azul':'b-gris'}" style="font-size:10px">${g.fuente==='gmail'?'📧 Gmail':'✏️ Manual'}</span></td></tr>`).join(''):
+    <td><span class="badge ${g.fuente==='gmail'?'b-azul':'b-gris'}" style="font-size:10px">${g.fuente==='gmail'?'ð§ Gmail':'âï¸ Manual'}</span></td></tr>`).join(''):
     `<tr><td colspan="6" class="empty" style="padding:24px">Sin registros</td></tr>`;
 }
 
 function renderConfig() {
   document.getElementById('gs-id').value=S.gsId||'';
   document.getElementById('gs-key').value=S.gsKey||'';
-  document.getElementById('cats-display').innerHTML=S.cats.map(c=>`<span class="chip badge b-${c.color}">${c.nombre} <span style="opacity:.5;cursor:pointer;margin-left:2px" onclick="deleteCat('${c.id}')">✕</span></span>`).join('');
-  document.getElementById('tags-display').innerHTML=S.tags.map((t,i)=>`<span class="chip badge b-azul">${t} <span style="opacity:.5;cursor:pointer;margin-left:2px" onclick="deleteTag(${i})">✕</span></span>`).join('');
+  document.getElementById('cats-display').innerHTML=S.cats.map(c=>`<span class="chip badge b-${c.color}">${c.nombre} <span style="opacity:.5;cursor:pointer;margin-left:2px" onclick="deleteCat('${c.id}')">â</span></span>`).join('');
+  document.getElementById('tags-display').innerHTML=S.tags.map((t,i)=>`<span class="chip badge b-azul">${t} <span style="opacity:.5;cursor:pointer;margin-left:2px" onclick="deleteTag(${i})">â</span></span>`).join('');
 }
 
 // ============================================================
