@@ -672,12 +672,14 @@ function renderPendientes() {
     </div>`).join('');
 }
 
+function sugerirCategoria(c){c=(c||'').toLowerCase();if(/uber|cabify|copec|shell|bencin|bip/.test(c))return'Transporte';if(/jumbo|lider|unimarc|santa isabel|supermercado/.test(c))return'Supermercado';if(/netflix|spotify|amazon|apple|anthropic|google|claude|microsoft|openai/.test(c))return'Suscripciones';if(/farmacia|salcobrand|cruz verde|ahumada/.test(c))return'Salud';if(/falabella|ripley|paris|zara|h&m/.test(c))return'Ropa y personal';if(/latam|lan|hotel|airbnb/.test(c))return'Viajes';if(/maconline|samsung|entel|movistar|claro/.test(c))return'Otros';return'Restaurantes';}
 function abrirCat(i) {
   S.pendIdx=i;
   const p=S.pendientes[i];
   document.getElementById('pend-title').textContent=p.comercio;
   document.getElementById('pend-meta').textContent=`${p.fecha} Â· ${fmt(p.monto)} Â· ${p.tarjeta}`;
   fillCat('pend-cat'); fillTag('pend-tag');
+  const _cat=sugerirCategoria(p.comercio||''); const _sel=document.getElementById('pend-cat'); for(let _o of _sel.options){if(_o.value===_cat){_sel.value=_cat;break;}}
   document.getElementById('pend-comp').value='no';
   document.getElementById('pend-comp-extra').style.display='none';
   document.getElementById('pend-a-cobrar').value=Math.round(p.monto/2);
