@@ -682,6 +682,8 @@ function abrirCat(i) {
   const _cat=sugerirCategoria(p.comercio||''); const _sel=document.getElementById('pend-cat'); for(let _o of _sel.options){if(_o.value===_cat){_sel.value=_cat;break;}}
   document.getElementById('pend-comp').value='no';
   document.getElementById('pend-comp-extra').style.display='none';
+  document.getElementById('pend-cuotas').value='no';
+  document.getElementById('pend-cuotas-extra').style.display='none';
   document.getElementById('pend-a-cobrar').value=Math.round(p.monto/2);
   openModal('m-cat-pend');
 }
@@ -689,6 +691,16 @@ function toggleCompFields() {
   const v=document.getElementById('pend-comp').value;
   document.getElementById('pend-comp-extra').style.display=(v==='no'||v==='invito')?'none':'flex';
   if(v==='polola') { document.getElementById('pend-quien').value='Polola'; document.getElementById('pend-a-cobrar').value=Math.round(S.pendientes[S.pendIdx]?.monto/2||0); }
+}
+function toggleCuotasFields() {
+  const v = document.getElementById('pend-cuotas').value;
+  document.getElementById('pend-cuotas-extra').style.display = v==='si' ? 'block' : 'none';
+  if(v==='si') calcCuota();
+}
+function calcCuota() {
+  const p = S.pendientes[S.pendIdx];
+  const n = parseInt(document.getElementById('pend-n-cuotas').value)||0;
+  if(n>0 && p) document.getElementById('pend-monto-cuota').value = Math.round(p.monto/n);
 }
 function confirmarCat() {
   const p=S.pendientes[S.pendIdx];
