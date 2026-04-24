@@ -163,6 +163,14 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
 .split-row { display: grid; grid-template-columns: 1fr 90px 32px; gap: 6px; align-items: center; margin-bottom: 6px; }
 .prog { height: 4px; background: var(--gris-m); border-radius: 2px; overflow: hidden; margin-top: 5px; }
 .prog-fill { height: 100%; border-radius: 2px; transition: width .3s ease; }
+.budget-prog { height: 8px; background: var(--gris-m); border-radius: 4px; overflow: hidden; margin-top: 6px; }
+.budget-prog-fill { height: 100%; border-radius: 4px; transition: width .25s ease; max-width: 100%; }
+.budget-prog-fill.ok { background: var(--verde); }
+.budget-prog-fill.warn { background: var(--ambar); }
+.budget-prog-fill.over { background: var(--rojo); }
+.insights-alert { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: var(--radius); font-size: 12px; font-weight: 500; margin-top: 8px; }
+.insights-alert.warn { background: var(--ambar-l); color: var(--ambar-d); }
+.insights-alert.danger { background: var(--rojo-l); color: var(--rojo-d); }
 
 /* FILTER BAR */
 .filter-bar { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
@@ -254,7 +262,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
       </div>
       <div class="topbar-actions">
         <button class="btn btn-sm" onclick="openGastoModal()">+ Gasto</button>
-        <button class="btn btn-sm btn-green" onclick="syncSheets()" id="btn-sync">? Sheets</button>
+        <button class="btn btn-sm btn-green" onclick="syncSheets()" id="btn-sync">↻ Sheets</button>
       </div>
     </div>
 
@@ -283,6 +291,34 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
             <div class="metric-value warn" id="m-pend">0</div>
             <div class="metric-sub">de Gmail</div>
           </div>
+        </div>
+        <div class="info-box" id="insights-hint" style="margin-bottom:14px">Define presupuestos por categoría en <strong>Configuración</strong> para ver gasto vs tope, % ejecutado y alertas al superar el 80%.</div>
+        <div class="metrics" id="metrics-budget-row" style="display:none;margin-bottom:14px">
+          <div class="metric">
+            <div class="metric-label">Presupuesto (categorías con tope)</div>
+            <div class="metric-value" id="m-pres-total">$0</div>
+            <div class="metric-sub">Suma mensual definida</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Gastado vs presupuesto</div>
+            <div class="metric-value warn" id="m-pres-gastado">$0</div>
+            <div class="metric-sub" id="m-pres-gastado-s">Solo categorías con tope</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">% ejecutado del mes</div>
+            <div class="metric-value" id="m-pres-pct">0%</div>
+            <div class="metric-sub" id="m-pres-pct-s">—</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Categorías en alerta</div>
+            <div class="metric-value warn" id="m-pres-alerts">0</div>
+            <div class="metric-sub">≥ 80% del tope</div>
+          </div>
+        </div>
+        <div class="card" id="card-insights" style="margin-bottom:18px;display:none">
+          <div class="card-title">Insights · Presupuesto por categoría</div>
+          <div id="insights-alerts"></div>
+          <div class="tbl-wrap" style="margin-top:10px"><table class="tbl"><thead><tr><th>Categoría</th><th>Presupuesto</th><th>Gastado</th><th>%</th><th>Estado</th></tr></thead><tbody id="insights-body"></tbody></table></div>
         </div>
         <div class="charts-row">
           <div class="card">
@@ -362,13 +398,17 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
       <div class="page" id="p-config">
         <div class="card" style="margin-bottom:14px">
           <div class="card-title"> Google Sheets</div>
-          <div class="info-box azul" style="margin-bottom:14px">La app lee y escribe todos tus gastos en tu Google Sheet. Configura el ID y la API Key para activar la sincronizaci&#243;n.</div>
-          <div class="grid2">
-            <div class="form-row"><label class="form-label">ID de la hoja</label><input class="fi" id="gs-id" placeholder="1Aeiav6ZIiC_o8..."></div>
-            <div class="form-row"><label class="form-label">API Key</label><input class="fi" id="gs-key" type="password" placeholder="AIza..."></div>
-          </div>
+          <div class="info-box azul" style="margin-bottom:14px">La app lee y escribe en tu Google Sheet usando una <strong>Netlify Function</strong> como proxy. La API Key de Google <strong>no</strong> se guarda en el navegador: configúrala solo en Netlify → Site settings → Environment variables como <code style="font-size:11px">GOOGLE_SHEETS_API_KEY</code>.</div>
+          <div class="form-row"><label class="form-label">ID de la hoja (spreadsheet)</label><input class="fi" id="gs-id" placeholder="1Aeiav6ZIiC_o8..."></div>
           <button class="btn btn-green btn-sm" onclick="saveConfig()">Guardar y probar conexi&#243;n</button>
           <div id="config-status" style="margin-top:10px;font-size:12px;color:var(--text3)"></div>
+          <div class="info-box" style="margin-top:12px;font-size:12px">Desarrollo local: usa <code style="font-size:11px">netlify dev</code> para que <code>/.netlify/functions/sheets</code> exista en el mismo origen.</div>
+        </div>
+        <div class="card" style="margin-bottom:14px">
+          <div class="card-title">Presupuestos mensuales</div>
+          <div class="info-box azul" style="margin-bottom:12px">Montos en pesos por categoría. Se guardan en la pestaña <strong>Presupuestos</strong> del Sheet. Vacío = sin tope para esa categoría.</div>
+          <div id="presupuestos-rows"></div>
+          <button class="btn btn-green btn-sm" style="margin-top:12px" onclick="savePresupuestosClick()">Guardar presupuestos en Sheet</button>
         </div>
         <div class="card" style="margin-bottom:14px">
           <div class="card-title"> Categor&#237;as</div>
@@ -463,7 +503,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
       <div class="form-row"><label class="form-label">A cobrar ($)</label><input class="fi" id="pend-a-cobrar" type="number" inputmode="numeric"></div>
     </div>
   </div>
-  <div class="form-row"><label class="form-label">?Es en cuotas&#237;</label>
+  <div class="form-row"><label class="form-label">¿Es en cuotas?</label>
     <select class="fi" id="pend-cuotas" onchange="toggleCuotasFields()">
       <option value="no">No, pago &#250;nico</option>
       <option value="si">S&#237;, en cuotas</option>
@@ -532,58 +572,747 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script>
-var SK='finanzas_jt_v3';
-var ICONS={Restaurantes:'R',Supermercado:'S',Transporte:'T',Suscripciones:'Sub',Salud:'Sal',Vivienda:'V',otros:'O'};
-var PTITLES={dashboard:'Dashboard',pendientes:'Pendientes',gastos:'Gastos',compartidos:'Compartidos',cuentas:'Cuentas',historial:'Historial',config:'Configuración'};
-var S={gastos:[],pendientes:[],cuentas:[],cats:['Restaurantes','Supermercado','Transporte','Suscripciones','Salud','Vivienda','Ropa y personal','Entretenimiento','Viajes','Credito consumo','eBike','Tenis','Auto','Gastos compartidos','Regalos','Otros'],tags:['Polola','Amigos','Trabajo','Personal','Familia'],gsId:'',gsKey:'',pag:'dashboard'};
-var PI=-1,FG='todos',FH='todos';
-function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,5);}
-function fmt(n){return '$'+Math.round(n||0).toLocaleString('es-CL');}
-function load(){var s=localStorage.getItem(SK);if(s){try{Object.assign(S,JSON.parse(s));}catch(e){}}if(S.gsId)document.getElementById('cfg-id').value=S.gsId;if(S.gsKey)document.getElementById('cfg-key').value=S.gsKey;}
-function save(){localStorage.setItem(SK,JSON.stringify(S));}
-function nav(p){document.querySelectorAll('.page').forEach(function(x){x.classList.remove('active');});document.querySelectorAll('.nav-item').forEach(function(x){x.classList.remove('active');});document.getElementById('p-'+p).classList.add('active');document.getElementById('nav-'+p).classList.add('active');document.getElementById('page-title').textContent=PTITLES[p]||p;S.pag=p;if(p==='pendientes')renderP();else if(p==='gastos')renderG();else if(p==='compartidos')renderComp();else if(p==='cuentas')renderCtas();else if(p==='historial')renderH();else if(p==='config')renderCfg();document.getElementById('sidebar').classList.remove('open');document.getElementById('sb-backdrop').classList.remove('open');}
-function toggleSidebar(){document.getElementById('sidebar').classList.toggle('open');document.getElementById('sb-backdrop').classList.toggle('open');}
-function setSS(ok,msg){var d=document.getElementById('sync-dot'),t=document.getElementById('sync-text');d.className='sync-dot'+(ok===true?' ok':ok===false?' err':'');t.textContent=msg||'';}
-async function syncSheets(){if(!S.gsId||!S.gsKey){setSS(false,'Sin configurar');nav('config');return;}setSS(null,'Sincronizando...');try{var rG=await fetch('https://sheets.googleapis.com/v4/spreadsheets/'+S.gsId+'/values/Gastos!A2:K1000?key='+S.gsKey);var dG=await rG.json();if(dG.values){S.gastos=dG.values.map(function(r){return {id:r[0]||uid(),fecha:r[1]||'',desc:r[2]||'',cat:r[3]||'',tag:r[4]||'',monto:parseFloat(r[5])||0,tarjeta:r[6]||'',tipo:r[7]||'normal',fuente:r[8]||'manual',banco:r[9]||'',notas:r[10]||''};});}var rP=await fetch('https://sheets.googleapis.com/v4/spreadsheets/'+S.gsId+'/values/Pendientes!A2:H500?key='+S.gsKey);var dP=await rP.json();if(dP.values){var ex=new Set(S.pendientes.map(function(p){return p.emailId;}).filter(Boolean));var nv=dP.values.filter(function(r){return(r[7]==='NO'||!r[7])&&!ex.has(r[6]);}).map(function(r){return {id:r[0],fecha:r[1],comercio:r[2],monto:parseFloat(r[3])||0,tarjeta:r[4],banco:r[5],emailId:r[6]};});S.pendientes=[...S.pendientes.filter(function(p){return !p.emailId;}),...nv];}save();setSS(true,'Sincronizado');renderDash();updateBadge();if(S.pag==='pendientes')renderP();}catch(e){setSS(false,'Error al conectar');}}
-function sugCat(c){c=(c||'').toLowerCase();if(/uber|cabify|copec|shell|bencin/.test(c))return'Transporte';if(/jumbo|lider|unimarc|santa isabel|tottus|supermercado/.test(c))return'Supermercado';if(/netflix|spotify|amazon|apple|anthropic|google|microsoft|claude|openai/.test(c))return'Suscripciones';if(/farmacia|salcobrand|cruz verde|ahumada|clinica|hospital/.test(c))return'Salud';if(/falabella|ripley|paris|zara/.test(c))return'Ropa y personal';if(/latam|lan|hotel|airbnb/.test(c))return'Viajes';return'Restaurantes';}
-function gHTML(g){return '<div class="gasto-item"><div class="gasto-icon" style="font-size:18px">'+(g.cat?g.cat.charAt(0):'?')+'</div><div class="gasto-info"><div class="gasto-desc">'+(g.desc||'Sin descripcion')+'</div><div class="gasto-meta">'+(g.fecha||'')+' &middot; '+(g.cat||'')+(g.notas?' &middot; '+g.notas:'')+'</div></div><div class="gasto-monto">'+fmt(g.monto)+'</div></div>';}
-function renderDash(){var now=new Date(),mes=now.getMonth(),anio=now.getFullYear();var gm=S.gastos.filter(function(g){var d=new Date(g.fecha+'T12:00');return d.getMonth()===mes&&d.getFullYear()===anio&&g.tipo!=='cuotas';});var cm=S.gastos.filter(function(g){return g.tipo==='cuotas'&&g.notas;}).reduce(function(a,g){var m=g.notas.match(/(d+)s*cuota/);return m?a+Math.round(g.monto/parseInt(m[1])):a;},0);var co=S.cuentas.filter(function(c){return c.tipo==='cobrar'&&!c.pagado;});var pa=S.cuentas.filter(function(c){return c.tipo==='pagar'&&!c.pagado;});document.getElementById('m-gasto').textContent=fmt(gm.reduce(function(a,g){return a+g.monto;},0));document.getElementById('m-gasto-s').textContent=gm.length+' transacciones';document.getElementById('m-cuotas').textContent=fmt(cm);document.getElementById('m-cobrar').textContent=fmt(co.reduce(function(a,c){return a+c.monto;},0));document.getElementById('m-cobrar-s').textContent=co.length+' pendientes';document.getElementById('m-pagar').textContent=fmt(pa.reduce(function(a,c){return a+c.monto;},0));document.getElementById('m-pagar-s').textContent=pa.length+' pendientes';var rec=S.gastos.slice().sort(function(a,b){return b.fecha.localeCompare(a.fecha);}).slice(0,6);var el=document.getElementById('dash-recientes');el.innerHTML=rec.length?rec.map(gHTML).join(''):'<div class="empty"><div>Sin gastos registrados</div></div>';}
-function updateBadge(){var n=S.pendientes.length,b=document.getElementById('badge-pend'),bn=document.getElementById('pend-banner');b.textContent=n;b.style.display=n>0?'inline-block':'none';if(n>0){bn.style.display='flex';document.getElementById('pend-banner-txt').textContent=n+' gasto(s) detectados automaticamente';}else{bn.style.display='none';}}
-function renderP(){updateBadge();var el=document.getElementById('pendientes-list');if(!S.pendientes.length){el.innerHTML='<div class="empty"><div>Sin gastos pendientes de categorizar</div></div>';return;}el.innerHTML=S.pendientes.map(function(p,i){var cat=sugCat(p.comercio);return '<div class="pend-item"><div class="pend-top"><div><div class="pend-comercio">'+(p.comercio||'Compra')+'</div><div class="pend-datos">'+(p.fecha||'')+' &middot; '+(p.tarjeta||'')+' &middot; '+(p.banco||'')+'</div><div style="margin-top:4px;font-size:11px;color:var(--text3)">Sugerido: <strong style="color:var(--verde-d)">'+cat+'</strong></div></div><div class="pend-monto">'+fmt(p.monto)+'</div></div><div class="pend-actions"><button class="btn btn-sm btn-green" onclick="abrirCat('+i+')">Categorizar</button><button class="btn btn-sm" onclick="descP('+i+')">Descartar</button></div></div>';}).join('');}
-function abrirCat(i){PI=i;var p=S.pendientes[i];document.getElementById('pc-title').textContent=p.comercio||'Compra';document.getElementById('pc-meta').textContent=(p.fecha||'')+' - '+fmt(p.monto)+' - '+(p.tarjeta||'');var cat=sugCat(p.comercio);document.getElementById('pc-sug-cat').textContent=cat;document.getElementById('pc-sug').style.display='block';fillSel('pc-cat',S.cats,cat);fillSel('pc-tag',[''].concat(S.tags));document.getElementById('pc-comp').value='no';document.getElementById('pc-cx2').style.display='none';document.getElementById('pc-cuotas').value='no';document.getElementById('pc-cx').style.display='none';document.getElementById('pc-cobrar').value=Math.round(p.monto/2);openModal('m-cat');}
-function togglePC(){document.getElementById('pc-cx').style.display=document.getElementById('pc-cuotas').value==='si'?'block':'none';if(document.getElementById('pc-cuotas').value==='si')calcPC();}
-function togglePC2(){var v=document.getElementById('pc-comp').value;document.getElementById('pc-cx2').style.display=(v!=='no'&&v!=='invito')?'block':'none';}
-function calcPC(){if(PI<0)return;var p=S.pendientes[PI],n=parseInt(document.getElementById('pc-nc').value)||0;if(n>0&&p){document.getElementById('pc-cm').value=fmt(Math.round(p.monto/n));document.getElementById('pc-ci').innerHTML='Total: <strong>'+fmt(p.monto)+'</strong> / '+n+' = <strong>'+fmt(Math.round(p.monto/n))+'/mes</strong>';}}
-function confirmarCat(){var p=S.pendientes[PI],comp=document.getElementById('pc-comp').value,ec=document.getElementById('pc-cuotas').value==='si',nc=ec?parseInt(document.getElementById('pc-nc').value)||1:1,notas=ec?nc+' cuotas - '+fmt(Math.round(p.monto/nc))+'/mes':'';S.gastos.push({id:uid(),desc:p.comercio,monto:p.monto,cat:document.getElementById('pc-cat').value,tag:document.getElementById('pc-tag').value,fecha:p.fecha,tarjeta:p.tarjeta,tipo:ec?'cuotas':(comp!=='no'?'compartido':'normal'),fuente:'gmail',banco:p.banco,notas:notas});if(comp==='polola'||comp==='custom'){var q=document.getElementById('pc-quien').value||'Polola',mc=parseFloat(document.getElementById('pc-cobrar').value)||Math.round(p.monto/2);S.cuentas.push({id:uid(),tipo:'cobrar',persona:q,monto:mc,desc:p.comercio,pagado:false});}S.pendientes.splice(PI,1);PI=-1;save();closeModal('m-cat');updateBadge();renderP();renderDash();}
-function descP(i){S.pendientes.splice(i,1);save();updateBadge();renderP();}
-function descActual(){if(PI>=0)descP(PI);closeModal('m-cat');}
-function filtrarG(f,el){FG=f;document.querySelectorAll('#p-gastos .filtro-btn').forEach(function(b){b.classList.remove('active');});el.classList.add('active');renderG();}
-function renderG(){var now=new Date(),l=S.gastos.slice().sort(function(a,b){return b.fecha.localeCompare(a.fecha);});if(FG==='mes'){var pfx=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');l=l.filter(function(g){return g.fecha.startsWith(pfx);});}else if(FG==='cuotas'){l=l.filter(function(g){return g.tipo==='cuotas';});}var el=document.getElementById('gastos-list');el.innerHTML=l.length?l.map(gHTML).join(''):'<div class="empty"><div>Sin gastos en esta vista</div></div>';}
-function renderComp(){var l=S.gastos.filter(function(g){return g.tipo==='compartido';});document.getElementById('compartidos-list').innerHTML=l.length?l.map(gHTML).join(''):'<div class="empty"><div>Sin gastos compartidos</div></div>';}
-function renderCtas(){var l=S.cuentas.filter(function(c){return !c.pagado;});document.getElementById('cuentas-list').innerHTML=l.length?l.map(function(c,i){return '<div class="cuenta-item"><span class="cbadge '+c.tipo+'">'+(c.tipo==='cobrar'?'Por cobrar':'Por pagar')+'</span><div style="flex:1"><div style="font-size:13px;font-weight:600">'+(c.persona||'?')+'</div><div style="font-size:11px;color:var(--text3)">'+(c.desc||'')+'</div></div><div style="font-family:var(--mono);font-weight:700;color:'+(c.tipo==='cobrar'?'var(--verde-d)':'var(--rojo)')+'">'+fmt(c.monto)+'</div><button class="btn btn-sm" onclick="marcarP('+i+')" style="margin-left:8px">OK</button></div>';}).join(''):'<div class="empty"><div>Sin cuentas pendientes</div></div>';}
-function marcarP(i){var l=S.cuentas.filter(function(c){return !c.pagado;}),idx=S.cuentas.indexOf(l[i]);S.cuentas[idx].pagado=true;save();renderCtas();renderDash();}
-function filtrarH(f,el){FH=f;document.querySelectorAll('#p-historial .filtro-btn').forEach(function(b){b.classList.remove('active');});el.classList.add('active');renderH();}
-function renderH(){var now=new Date(),l=S.gastos.slice().sort(function(a,b){return b.fecha.localeCompare(a.fecha);});if(FH==='mes'){var pfx=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');l=l.filter(function(g){return g.fecha.startsWith(pfx);});}else if(FH==='3m'){var d3=new Date();d3.setMonth(d3.getMonth()-3);l=l.filter(function(g){return new Date(g.fecha+'T12:00')>=d3;});}var tb=document.getElementById('hist-body');tb.innerHTML=l.length?l.map(function(g){return '<tr><td style="font-family:var(--mono);font-size:12px">'+(g.fecha||'')+'</td><td style="font-weight:600;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(g.desc||'')+'</td><td><span style="background:var(--gris-m);padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600">'+(g.cat||'')+'</span></td><td style="font-size:12px;color:var(--text3)">'+(g.banco||g.tarjeta||'')+'</td><td style="text-align:right;font-family:var(--mono);font-weight:700;color:var(--rojo)">'+fmt(g.monto)+'</td></tr>';}).join(''):'<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:24px">Sin registros</td></tr>';}
-function renderCfg(){document.getElementById('cats-wrap').innerHTML=S.cats.map(function(c,i){return '<span class="cat-tag">'+c+'<span class="rm" onclick="rmCat('+i+')">x</span></span>';}).join('');document.getElementById('tags-wrap').innerHTML=S.tags.map(function(t,i){return '<span class="cat-tag">'+t+'<span class="rm" onclick="rmTag('+i+')">x</span></span>';}).join('');}
-function agregarCat(){var v=document.getElementById('cat-nueva').value.trim();if(v&&S.cats.indexOf(v)<0){S.cats.push(v);save();renderCfg();}document.getElementById('cat-nueva').value='';}
-function rmCat(i){S.cats.splice(i,1);save();renderCfg();}
-function agregarTag(){var v=document.getElementById('tag-nueva').value.trim();if(v&&S.tags.indexOf(v)<0){S.tags.push(v);save();renderCfg();}document.getElementById('tag-nueva').value='';}
-function rmTag(i){S.tags.splice(i,1);save();renderCfg();}
-async function guardarConfig(){S.gsId=document.getElementById('cfg-id').value.trim();S.gsKey=document.getElementById('cfg-key').value.trim();save();var st=document.getElementById('cfg-status');st.innerHTML='<div style="color:var(--gris);font-size:12px;margin-top:8px">Probando...</div>';try{var r=await fetch('https://sheets.googleapis.com/v4/spreadsheets/'+S.gsId+'/values/Pendientes!A1:A2?key='+S.gsKey);var d=await r.json();if(d.error)throw new Error(d.error.message);st.innerHTML='<div class="status-ok">Conectado. Sincronizando...</div>';await syncSheets();}catch(e){st.innerHTML='<div class="status-err">Error: '+e.message+'</div>';}}
-function openGastoModal(){fillSel('g-cat',S.cats);fillSel('g-tag',[''].concat(S.tags));document.getElementById('g-fecha').value=new Date().toISOString().split('T')[0];['g-desc','g-monto','g-tarjeta'].forEach(function(id){document.getElementById(id).value='';});document.getElementById('g-cuotas').value='no';document.getElementById('g-cx').style.display='none';openModal('m-gasto');}
-function toggleGC(){document.getElementById('g-cx').style.display=document.getElementById('g-cuotas').value==='si'?'block':'none';calcGC();}
-function calcGC(){var m=parseFloat(document.getElementById('g-monto').value)||0,n=parseInt(document.getElementById('g-nc').value)||0;if(m>0&&n>0)document.getElementById('g-cm').value=fmt(Math.round(m/n));}
-function saveGasto(){var ec=document.getElementById('g-cuotas').value==='si',nc=ec?parseInt(document.getElementById('g-nc').value)||1:1,m=parseFloat(document.getElementById('g-monto').value)||0,notas=ec?nc+' cuotas - '+fmt(Math.round(m/nc))+'/mes':'';var g={id:uid(),desc:document.getElementById('g-desc').value.trim(),monto:m,fecha:document.getElementById('g-fecha').value,cat:document.getElementById('g-cat').value,tag:document.getElementById('g-tag').value,tarjeta:document.getElementById('g-tarjeta').value.trim(),tipo:ec?'cuotas':'normal',fuente:'manual',banco:'',notas:notas};if(!g.desc)return;S.gastos.push(g);save();closeModal('m-gasto');renderDash();}
-function openCuentaModal(){['ct-per','ct-desc'].forEach(function(id){document.getElementById(id).value='';});document.getElementById('ct-monto').value='';openModal('m-cuenta');}
-function saveCuenta(){var c={id:uid(),tipo:document.getElementById('ct-tipo').value,persona:document.getElementById('ct-per').value.trim(),monto:parseFloat(document.getElementById('ct-monto').value)||0,desc:document.getElementById('ct-desc').value.trim(),pagado:false};if(!c.persona)return;S.cuentas.push(c);save();closeModal('m-cuenta');renderCtas();renderDash();}
-function openModal(id){document.getElementById(id).classList.add('open');}
-function closeModal(id){document.getElementById(id).classList.remove('open');}
-function fillSel(id,opts,sel){var el=document.getElementById(id);el.innerHTML=opts.map(function(o){return '<option value="'+o+'"'+(o===sel?' selected':'')+'>'+( o||'Sin etiqueta')+'</option>';}).join('');}
-document.querySelectorAll('.overlay').forEach(function(o){o.addEventListener('click',function(e){if(e.target===o)o.classList.remove('open');});});
-load();renderDash();renderCtas();updateBadge();
-var up=new URLSearchParams(window.location.search);
-if(up.get('action')==='pendientes')nav('pendientes');
-if(S.gsId&&S.gsKey){syncSheets();setInterval(function(){if(S.gsId&&S.gsKey)syncSheets();},300000);}
+// ============================================================
+// CONFIG ? EDITAR AQU? TUS DATOS
+// ============================================================
+const SHEET_ID = '1Aeiav6ZIiC_o8zgqwM7qRxgFtXB3eHROW9-NtJ4GU5g';
+const SHEET_NAME_GASTOS = 'Gastos';
+const SHEET_NAME_CUENTAS = 'Cuentas_Por_Cobrar';
+const SHEET_NAME_PRESUPUESTOS = 'Presupuestos';
+/** Misma ruta en producción y con `netlify dev` (no expone la API key al browser). */
+const SHEETS_FN = '/.netlify/functions/sheets';
+
+// ============================================================
+// COLORES
+// ============================================================
+const COLORS = { verde:'#10B981', azul:'#3B82F6', ambar:'#F59E0B', rojo:'#EF4444', morado:'#8B5CF6', rosa:'#EC4899', gris:'#6B7280' };
+const AVATAR_COLORS = ['#10B981','#3B82F6','#F59E0B','#8B5CF6','#EC4899','#EF4444'];
+
+// ============================================================
+// STATE
+// ============================================================
+const CATS_DEFAULT = [
+  {id:'c1',nombre:'Cr&#243;dito consumo',color:'gris',tipo:'fijo'},
+  {id:'c2',nombre:'Suscripciones',color:'morado',tipo:'fijo'},
+  {id:'c3',nombre:'Tenis',color:'verde',tipo:'fijo'},
+  {id:'c4',nombre:'Vivienda',color:'azul',tipo:'variable'},
+  {id:'c5',nombre:'Supermercado',color:'verde',tipo:'variable'},
+  {id:'c6',nombre:'Restaurantes',color:'ambar',tipo:'variable'},
+  {id:'c7',nombre:'Transporte',color:'azul',tipo:'variable'},
+  {id:'c8',nombre:'Entretenimiento',color:'morado',tipo:'variable'},
+  {id:'c9',nombre:'Ropa y personal',color:'rosa',tipo:'variable'},
+  {id:'c10',nombre:'Salud',color:'rojo',tipo:'variable'},
+  {id:'c11',nombre:'Regalos',color:'rosa',tipo:'variable'},
+  {id:'c12',nombre:'Gastos compartidos',color:'verde',tipo:'variable'},
+  {id:'c13',nombre:'Otros',color:'gris',tipo:'variable'},
+  {id:'c14',nombre:'Auto',color:'ambar',tipo:'extraordinario'},
+  {id:'c15',nombre:'eBike',color:'verde',tipo:'extraordinario'},
+  {id:'c16',nombre:'Viajes',color:'azul',tipo:'extraordinario'},
+];
+
+let S = {
+  gastos:[], pendientes:[], compartidos:[], cuentas:[],
+  cats:[...CATS_DEFAULT],
+  tags:['Polola','Amigos','Trabajo','Viaje','Cumplea&#243;os','Propio'],
+  gsId: SHEET_ID,
+  presupuestos:{},
+  charts:{}, pendIdx:null, cuentaTipo:'cobrar',
+};
+let compPersonas = [];
+
+function load() {
+  try {
+    const d = localStorage.getItem('finanzas_jt_v3');
+    if (d) {
+      const p = JSON.parse(d);
+      delete p.gsKey;
+      Object.keys(p).forEach(k => { if (k !== 'charts') S[k] = p[k]; });
+    }
+  } catch(e){}
+  if (!S.gsId) S.gsId = SHEET_ID;
+  if (!S.presupuestos || typeof S.presupuestos !== 'object') S.presupuestos = {};
+}
+function save() {
+  try { localStorage.setItem('finanzas_jt_v3', JSON.stringify({...S, charts:{}})); } catch(e){}
+}
+
+// ============================================================
+// UTILS
+// ============================================================
+const HOY = new Date().toISOString().split('T')[0];
+const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+function fmt(n) { return '$' + Math.round(Number(n)||0).toLocaleString('es-CL'); }
+function esc(s) { return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); }
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,5); }
+function catByNombre(n) { return S.cats.find(c=>c.nombre===n) || {color:'gris',tipo:'variable'}; }
+function catBadge(n) { const c=catByNombre(n); return `<span class="badge b-${c.color}">${n}</span>`; }
+function tagBadge(t) { return t ? `<span class="badge b-azul">${t}</span>` : ''; }
+function tipoBadge(t) { const m={normal:'b-gris',compartido:'b-verde',extraordinario:'b-ambar'}; return `<span class="badge ${m[t]||'b-gris'}">${t}</span>`; }
+function avatarColor(name) { let h=0; for(let c of name) h+=c.charCodeAt(0); return AVATAR_COLORS[h%AVATAR_COLORS.length]; }
+function initials(name) { return name.split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase(); }
+function daysAgo(fecha) { const d=(new Date()-new Date(fecha+'T12:00'))/86400000; return Math.floor(d); }
+
+// ============================================================
+// NAVIGATION
+// ============================================================
+function nav(page) {
+  closeSidebar();
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.getElementById('p-'+page).classList.add('active');
+  const titles = {dashboard:'Dashboard',pendientes:'Pendientes',gastos:'Gastos',compartidos:'Compartidos',cuentas:'Cuentas',historial:'Historial',config:'Configuraci&#243;n'};
+  document.getElementById('page-title').textContent = titles[page]||page;
+  const navItems = document.querySelectorAll('.nav-item');
+  const pageOrder = ['dashboard','pendientes','gastos','compartidos','cuentas','','historial','','config'];
+  const idx = pageOrder.indexOf(page);
+  if (idx >= 0 && navItems[idx]) navItems[idx].classList.add('active');
+  if (page==='dashboard') renderDashboard();
+  if (page==='pendientes') renderPendientes();
+  if (page==='gastos') renderGastos();
+  if (page==='compartidos') renderCompartidos();
+  if (page==='cuentas') renderCuentas();
+  if (page==='historial') renderHistorial();
+  if (page==='config') renderConfig();
+}
+
+function toggleSidebar() { document.getElementById('sidebar').classList.toggle('open'); const bd=document.getElementById('sb-backdrop')||document.getElementById('sidebar-backdrop'); if(bd) bd.classList.toggle('open'); }
+function closeSidebar() { document.getElementById('sidebar').classList.remove('open'); document.getElementById('sb-backdrop').classList.remove('open'); }
+
+// ============================================================
+// MODALS
+// ============================================================
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+document.querySelectorAll('.overlay').forEach(el => el.addEventListener('click', e => { if(e.target===el) el.classList.remove('open'); }));
+
+function fillCat(id) { const s=document.getElementById(id); if(!s)return; s.innerHTML=S.cats.map(c=>`<option value="${c.nombre}">${c.nombre}</option>`).join(''); }
+function fillTag(id) { const s=document.getElementById(id); if(!s)return; s.innerHTML=`<option value="">Sin etiqueta</option>`+S.tags.map(t=>`<option value="${t}">${t}</option>`).join(''); }
+
+function openGastoModal(pre={}) {
+  fillCat('g-cat'); fillTag('g-tag');
+  document.getElementById('g-desc').value=pre.desc||'';
+  document.getElementById('g-monto').value=pre.monto||'';
+  document.getElementById('g-fecha').value=pre.fecha||HOY;
+  document.getElementById('g-tarjeta').value=pre.tarjeta||'';
+  document.getElementById('g-notas').value='';
+  document.getElementById('g-tipo').value='normal';
+  openModal('m-gasto');
+}
+function saveGasto() {
+  const desc=document.getElementById('g-desc').value.trim();
+  const monto=parseFloat(document.getElementById('g-monto').value);
+  if(!desc||isNaN(monto)||monto<=0){alert('Completa descripci&#243;n y monto.');return;}
+  const g = {id:uid(),desc,monto,cat:document.getElementById('g-cat').value,tag:document.getElementById('g-tag').value,fecha:document.getElementById('g-fecha').value,tarjeta:document.getElementById('g-tarjeta').value,tipo:document.getElementById('g-tipo').value,notas:document.getElementById('g-notas').value,fuente:'manual'};
+  S.gastos.push(g); save(); closeModal('m-gasto'); renderDashboard(); updateBadge();
+  pushGastoToSheets(g);
+}
+function deleteGasto(id) { if(!confirm('?Eliminar este gasto?'))return; S.gastos=S.gastos.filter(g=>g.id!==id); save(); renderGastos(); renderDashboard(); }
+
+// ============================================================
+// PENDIENTES
+// ============================================================
+function updateBadge() {
+  const n=S.pendientes.length;
+  const badge=document.getElementById('badge-pend');
+  const metrica=document.getElementById('m-pend');
+  badge.textContent=n; badge.style.display=n?'inline':'none';
+  if(metrica) metrica.textContent=n;
+}
+
+function renderPendientes() {
+  const el=document.getElementById('pendientes-list');
+  if(!S.pendientes.length) { el.innerHTML=`<div class="empty"><div class="empty-icon"></div>Sin gastos pendientes de categorizar</div>`; return; }
+  el.innerHTML=S.pendientes.map((p,i)=>`
+    <div class="gmail-item">
+      <div style="font-size:20px">${p.banco==='Santander'?'BCI':'BCH'}</div>
+      <div class="gmail-item-info">
+        <div class="gmail-item-title">${p.comercio}</div>
+        <div class="gmail-item-sub">${p.fecha} ? ${p.tarjeta} ? ${p.banco}</div>
+      </div>
+      <div class="gmail-item-amount">${fmt(p.monto)}</div>
+      <button class="btn btn-sm btn-green" onclick="abrirCat(${i})">Categorizar</button>
+      <button class="del-btn" onclick="descartarPend(${i})"></button>
+    </div>`).join('');
+}
+
+function sugerirCategoria(comercio) {
+  const c = comercio.toLowerCase();
+  if (/uber|cabify|bip|copec|shell|bencin|transporte/.test(c)) return 'Transporte';
+  if (/jumbo|l.der|unimarc|santa isabel|supermercado/.test(c)) return 'Supermercado';
+  if (/netflix|spotify|amazon|apple|anthropic|google|microsoft|claude|suscri/.test(c)) return 'Suscripciones';
+  if (/farmacia|salcobrand|cruz verde|ahumada|cl.nica|hospital/.test(c)) return 'Salud';
+  if (/falabella|ripley|paris|zara|h&m|ropa/.test(c)) return 'Ropa y personal';
+  if (/maconline|samsung|computacion|tecnolog/.test(c)) return 'Otros';
+  if (/lan|latam|hotel|airbnb|viaje/.test(c)) return 'Viajes';
+  return 'Restaurantes';
+}
+
+function abrirCat(i) {
+  S.pendIdx=i;
+  const p=S.pendientes[i];
+  document.getElementById('pend-title').textContent=p.comercio;
+  document.getElementById('pend-meta').textContent=`${p.fecha} ? ${fmt(p.monto)} ? ${p.tarjeta}`;
+  fillCat('pend-cat'); fillTag('pend-tag');
+  const catSugerida = sugerirCategoria(p.comercio||'');
+  const catSel = document.getElementById('pend-cat');
+  for (let opt of catSel.options) { if (opt.value === catSugerida) { catSel.value = catSugerida; break; } }
+  document.getElementById('pend-comp').value='no';
+  document.getElementById('pend-comp-extra').style.display='none';
+  document.getElementById('pend-cuotas').value='no';
+  document.getElementById('pend-cuotas-extra').style.display='none';
+  document.getElementById('pend-a-cobrar').value=Math.round(p.monto/2);
+  openModal('m-cat-pend');
+}
+function toggleCuotasFields() {
+  const v=document.getElementById('pend-cuotas').value;
+  document.getElementById('pend-cuotas-extra').style.display=v==='si'?'block':'none';
+  if(v==='si') {
+    const p=S.pendientes[S.pendIdx];
+    const n=parseInt(document.getElementById('pend-n-cuotas').value)||0;
+    if(n>0) document.getElementById('pend-monto-cuota').value=Math.round(p.monto/n);
+    document.getElementById('pend-n-cuotas').addEventListener('input',()=>{
+      const nc=parseInt(document.getElementById('pend-n-cuotas').value)||0;
+      if(nc>0) document.getElementById('pend-monto-cuota').value=Math.round(p.monto/nc);
+    });
+  }
+}
+function toggleCompFields() {
+  const v=document.getElementById('pend-comp').value;
+  document.getElementById('pend-comp-extra').style.display=(v==='no'||v==='invito')?'none':'flex';
+  if(v==='polola') { document.getElementById('pend-quien').value='Polola'; document.getElementById('pend-a-cobrar').value=Math.round(S.pendientes[S.pendIdx]?.monto/2||0); }
+}
+function confirmarCat() {
+  const p=S.pendientes[S.pendIdx];
+  const comp=document.getElementById('pend-comp').value;
+  const cuotas=document.getElementById('pend-cuotas').value==='si';
+  const nCuotas=cuotas?parseInt(document.getElementById('pend-n-cuotas').value)||1:1;
+  const notas=cuotas?`${nCuotas} cuotas · ${fmt(Math.round(p.monto/nCuotas))}/mes`:'';
+  const g={id:uid(),desc:p.comercio,monto:p.monto,cat:document.getElementById('pend-cat').value,tag:document.getElementById('pend-tag').value,fecha:p.fecha,tarjeta:p.tarjeta,tipo:comp!=='no'?'compartido':'normal',fuente:'gmail',banco:p.banco,notas,cuotas:cuotas?nCuotas:null};
+  S.gastos.push(g);
+  if(comp==='polola'||comp==='custom') {
+    const quien=document.getElementById('pend-quien').value||'Polola';
+    const mc=parseFloat(document.getElementById('pend-a-cobrar').value)||Math.round(p.monto/2);
+    S.cuentas.push({id:uid(),tipo:'cobrar',persona:quien,monto:mc,fecha:'',desc:p.comercio,pagado:false,dias:0});
+  }
+  S.pendientes.splice(S.pendIdx,1);
+  save(); closeModal('m-cat-pend'); updateBadge(); renderPendientes(); renderDashboard();
+  pushGastoToSheets(g);
+  if(p.emailId) marcarPendienteProcesado(p.emailId);
+}
+
+async function marcarPendienteProcesado(emailId) {
+  if (!S.gsId || !emailId) return;
+  try {
+    const d = await sheetsFnGet('Pendientes!A2:H1000');
+    if (!d.values) return;
+    const fila = d.values.findIndex(row => row[6] === emailId);
+    if (fila < 0) return;
+    const filaNum = fila + 2;
+    await sheetsFnPost({
+      operation: 'put',
+      range: `Pendientes!H${filaNum}`,
+      values: [['SI']],
+    });
+  } catch (e) { console.log('Error marcando procesado:', e); }
+}
+function descartarPend(i) { S.pendientes.splice(i,1); save(); updateBadge(); renderPendientes(); }
+
+// ============================================================
+// GASTOS COMPARTIDOS
+// ============================================================
+function openCompartidoModal() {
+  fillCat('c-cat');
+  compPersonas=[{nombre:'Yo',monto:0,pct:50},{nombre:'',monto:0,pct:50}];
+  renderCompPersonas(); openModal('m-compartido');
+}
+function renderCompPersonas() {
+  const m=document.getElementById('c-method').value;
+  document.getElementById('comp-personas').innerHTML=compPersonas.map((p,i)=>`
+    <div class="split-row">
+      <input class="fi" value="${p.nombre}" placeholder="Nombre" oninput="compPersonas[${i}].nombre=this.value">
+      ${m==='pct'?`<input class="fi" type="number" inputmode="numeric" value="${p.pct}" oninput="compPersonas[${i}].pct=+this.value;recalcComp()">`:
+        m==='monto'?`<input class="fi" type="number" inputmode="numeric" value="${Math.round(p.monto)}" oninput="compPersonas[${i}].monto=+this.value;recalcComp()">`:
+        `<input class="fi" value="${fmt(p.monto)}" readonly style="background:var(--gris-m)">`}
+      <button class="del-btn" onclick="compPersonas.splice(${i},1);renderCompPersonas()"></button>
+    </div>`).join('');
+  recalcComp();
+}
+function addCompPersona() { compPersonas.push({nombre:'',monto:0,pct:0}); renderCompPersonas(); }
+function recalcComp() {
+  const total=parseFloat(document.getElementById('c-total').value)||0;
+  const m=document.getElementById('c-method').value;
+  const n=compPersonas.length; if(!n)return;
+  if(m==='igual') compPersonas.forEach(p=>p.monto=total/n);
+  else if(m==='pct') compPersonas.forEach(p=>p.monto=total*(p.pct/100));
+  const sum=compPersonas.reduce((a,p)=>a+p.monto,0);
+  const el=document.getElementById('comp-summary');
+  if(total>0) { el.style.display='block'; el.innerHTML=compPersonas.map(p=>`<strong>${p.nombre||'?'}</strong>: ${fmt(p.monto)}`).join(' ? ')+(Math.abs(sum-total)>1?'  No cuadra':''); }
+  else el.style.display='none';
+}
+function saveCompartido() {
+  const desc=document.getElementById('c-desc').value.trim();
+  const total=parseFloat(document.getElementById('c-total').value);
+  if(!desc||isNaN(total)){alert('Completa descripci&#243;n y monto.');return;}
+  const div={id:uid(),desc,total,fecha:HOY,cat:document.getElementById('c-cat').value,method:document.getElementById('c-method').value,personas:[...compPersonas]};
+  S.compartidos.push(div);
+  const yo=compPersonas[0];
+  const g={id:uid(),desc,monto:yo.monto,cat:div.cat,tag:'',fecha:HOY,tarjeta:'',tipo:'compartido',fuente:'manual'};
+  S.gastos.push(g);
+  compPersonas.slice(1).forEach(p=>{ if(p.monto>0) S.cuentas.push({id:uid(),tipo:'cobrar',persona:p.nombre||'?',monto:p.monto,fecha:'',desc,pagado:false,dias:0}); });
+  save(); closeModal('m-compartido'); renderCompartidos(); renderDashboard(); pushGastoToSheets(g);
+}
+function deleteCompartido(id) { S.compartidos=S.compartidos.filter(c=>c.id!==id); save(); renderCompartidos(); }
+
+// ============================================================
+// CUENTAS
+// ============================================================
+function openCuentaModal(tipo) {
+  S.cuentaTipo=tipo;
+  document.getElementById('m-cuenta-title').textContent=tipo==='cobrar'?'Agregar cuenta por cobrar':'Agregar cuenta por pagar';
+  ['cu-persona','cu-monto','cu-desc'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('cu-fecha').value='';
+  openModal('m-cuenta');
+}
+function saveCuenta() {
+  const persona=document.getElementById('cu-persona').value.trim();
+  const monto=parseFloat(document.getElementById('cu-monto').value);
+  if(!persona||isNaN(monto)){alert('Completa los campos.');return;}
+  S.cuentas.push({id:uid(),tipo:S.cuentaTipo,persona,monto,fecha:document.getElementById('cu-fecha').value,desc:document.getElementById('cu-desc').value,pagado:false});
+  save(); closeModal('m-cuenta'); renderCuentas(); renderDashboard();
+}
+function toggleCuenta(id) { const c=S.cuentas.find(x=>x.id===id); if(c){c.pagado=!c.pagado;save();renderCuentas();renderDashboard();} }
+function deleteCuenta(id) { S.cuentas=S.cuentas.filter(x=>x.id!==id); save(); renderCuentas(); renderDashboard(); }
+
+// ============================================================
+// CONFIG
+// ============================================================
+function addCat() {
+  const n=document.getElementById('new-cat').value.trim(); if(!n)return;
+  S.cats.push({id:uid(),nombre:n,color:document.getElementById('new-cat-col').value,tipo:'variable'});
+  document.getElementById('new-cat').value=''; save(); renderConfig();
+}
+function deleteCat(id) { S.cats=S.cats.filter(c=>c.id!==id); save(); renderConfig(); }
+function addTag() {
+  const t=document.getElementById('new-tag').value.trim(); if(!t||S.tags.includes(t))return;
+  S.tags.push(t); document.getElementById('new-tag').value=''; save(); renderConfig();
+}
+function deleteTag(i) { S.tags.splice(i,1); save(); renderConfig(); }
+async function saveConfig() {
+  S.gsId=document.getElementById('gs-id').value.trim();
+  save();
+  document.getElementById('config-status').textContent='Guardando…';
+  document.getElementById('config-status').style.color='var(--text3)';
+  try {
+    await loadFromSheets();
+    document.getElementById('config-status').textContent='Conexión OK. La API Key solo vive en Netlify (no en este navegador).';
+    document.getElementById('config-status').style.color='var(--verde-d)';
+  } catch(e) {
+    document.getElementById('config-status').textContent='Error: '+(e.message||String(e))+' — Revisa ID de hoja, variable GOOGLE_SHEETS_API_KEY y usa netlify dev en local.';
+    document.getElementById('config-status').style.color='var(--rojo)';
+  }
+}
+
+function readPresupuestosFromForm() {
+  S.presupuestos = {};
+  S.cats.forEach(c => {
+    const el = document.getElementById('pres-'+c.id);
+    if (!el) return;
+    const v = parseFloat(el.value);
+    if (!isNaN(v) && v > 0) S.presupuestos[c.nombre] = v;
+  });
+  save();
+}
+
+async function savePresupuestosClick() {
+  readPresupuestosFromForm();
+  const st = document.getElementById('config-status');
+  if (!S.gsId) { alert('Configura primero el ID de la hoja.'); return; }
+  st.textContent='Guardando presupuestos…';
+  try {
+    await pushPresupuestosToSheets();
+    st.textContent='Presupuestos guardados en Sheet.';
+    st.style.color='var(--verde-d)';
+    renderDashboard();
+  } catch(e) {
+    st.textContent='Error: '+(e.message||String(e));
+    st.style.color='var(--rojo)';
+  }
+}
+
+// ============================================================
+// GOOGLE SHEETS (proxy Netlify — sin API key en el browser)
+// ============================================================
+function parseSheetsFnResponse(text, r) {
+  let data;
+  try { data = JSON.parse(text); } catch { throw new Error(text || ('HTTP '+r.status)); }
+  if (!r.ok) {
+    const msg = data.error?.message || data.error || (typeof data.error === 'object' ? JSON.stringify(data.error) : null) || text;
+    throw new Error(msg);
+  }
+  return data;
+}
+
+async function sheetsFnGet(range) {
+  if (!S.gsId) throw new Error('Falta ID de la hoja');
+  const q = new URLSearchParams({ spreadsheetId: S.gsId, range });
+  const r = await fetch(SHEETS_FN + '?' + q.toString());
+  const text = await r.text();
+  return parseSheetsFnResponse(text, r);
+}
+
+async function sheetsFnPost(body) {
+  if (!S.gsId) throw new Error('Falta ID de la hoja');
+  const r = await fetch(SHEETS_FN, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...body, spreadsheetId: S.gsId }),
+  });
+  const text = await r.text();
+  return parseSheetsFnResponse(text, r);
+}
+
+async function pushPresupuestosToSheets() {
+  const rows = Object.entries(S.presupuestos || {})
+    .filter(([, m]) => m > 0)
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([c, m]) => [c, m]);
+  const values = [['Categoria', 'Monto_Mensual']].concat(rows.length ? rows : []);
+  const n = values.length;
+  await sheetsFnPost({
+    operation: 'put',
+    range: `${SHEET_NAME_PRESUPUESTOS}!A1:B${Math.max(1, n)}`,
+    values,
+  });
+}
+
+async function pushGastoToSheets(g) {
+  if (!S.gsId) return;
+  try {
+    const row = [[g.id, g.fecha, g.desc, g.cat, g.tag || '', g.monto, g.tarjeta || '', g.tipo, g.fuente || 'manual', g.banco || '', g.notas || '']];
+    await sheetsAppend(SHEET_NAME_GASTOS, row);
+    setSyncStatus(true);
+  } catch (e) { setSyncStatus(false); }
+}
+
+async function sheetsAppend(sheet, values) {
+  const range = `${sheet}!A:K`;
+  return sheetsFnPost({
+    operation: 'append',
+    range,
+    values,
+    valueInputOption: 'RAW',
+    insertDataOption: 'INSERT_ROWS',
+    majorDimension: 'ROWS',
+  });
+}
+
+async function syncSheets() {
+  if (!S.gsId) { nav('config'); alert('Primero configura el ID de la hoja en Configuración.'); return; }
+  const btn = document.getElementById('btn-sync');
+  btn.textContent = '…';
+  btn.disabled = true;
+  try {
+    const headers = [['ID', 'Fecha', 'Descripción', 'Categoría', 'Etiqueta', 'Monto', 'Tarjeta', 'Tipo', 'Fuente', 'Banco', 'Notas']];
+    await sheetsFnPost({
+      operation: 'put',
+      range: `${SHEET_NAME_GASTOS}!A1:K1`,
+      values: headers,
+    });
+    if (S.gastos.length) {
+      const rows = S.gastos.map(g => [g.id, g.fecha, g.desc, g.cat, g.tag || '', g.monto, g.tarjeta || '', g.tipo, g.fuente || 'manual', g.banco || '', g.notas || '']);
+      await sheetsFnPost({
+        operation: 'put',
+        range: `${SHEET_NAME_GASTOS}!A2:K${rows.length + 1}`,
+        values: rows,
+        majorDimension: 'ROWS',
+      });
+    }
+    setSyncStatus(true, 'Sincronizado OK');
+    alert(`OK ${S.gastos.length} gastos sincronizados con Google Sheets.`);
+  } catch (e) {
+    setSyncStatus(false);
+    alert('Error: ' + e.message + '\n\nRevisa GOOGLE_SHEETS_API_KEY en Netlify y permisos de la hoja.');
+  }
+  btn.textContent = '↻ Sheets';
+  btn.disabled = false;
+}
+
+async function loadFromSheets() {
+  if (!S.gsId) return;
+  try {
+    const dG = await sheetsFnGet(`${SHEET_NAME_GASTOS}!A2:K1000`);
+    if (dG.values) {
+      S.gastos = dG.values.map(row => ({
+        id: row[0] || uid(),
+        fecha: row[1],
+        desc: row[2],
+        cat: row[3],
+        tag: row[4],
+        monto: parseFloat(row[5]) || 0,
+        tarjeta: row[6],
+        tipo: row[7] || 'normal',
+        fuente: row[8] || 'manual',
+        banco: row[9],
+        notas: row[10],
+      }));
+    }
+    const dP = await sheetsFnGet('Pendientes!A2:H1000');
+    if (dP.values) {
+      const noProcesados = dP.values.filter(row => row[7] === 'NO' || !row[7]);
+      const idsExistentes = new Set(S.pendientes.map(p => p.emailId));
+      const nuevos = noProcesados
+        .filter(row => !idsExistentes.has(row[6]))
+        .map(row => ({ id: row[0], fecha: row[1], comercio: row[2], monto: parseFloat(row[3]) || 0, tarjeta: row[4], banco: row[5], emailId: row[6] }));
+      S.pendientes = [...S.pendientes, ...nuevos];
+    }
+    try {
+      const dPr = await sheetsFnGet(`${SHEET_NAME_PRESUPUESTOS}!A2:B500`);
+      if (dPr.values) {
+        S.presupuestos = {};
+        dPr.values.forEach(row => {
+          if (row[0]) S.presupuestos[String(row[0]).trim()] = parseFloat(row[1]) || 0;
+        });
+      }
+    } catch (e) {
+      console.log('Presupuestos sheet (opcional):', e);
+    }
+    save();
+    renderDashboard();
+    updateBadge();
+    if (document.getElementById('p-config')?.classList.contains('active')) renderConfig();
+    setSyncStatus(true, 'Sincronizado OK');
+  } catch (e) {
+    console.log('Sheets load error:', e);
+    setSyncStatus(false);
+    throw e;
+  }
+}
+
+function setSyncStatus(ok, msg) {
+  const dot=document.getElementById('sync-dot'); const txt=document.getElementById('sync-text');
+  dot.className='sync-dot '+(ok?'ok':'err');
+  txt.textContent=msg||(ok?'Sincronizado':'Error sync');
+}
+
+// ============================================================
+// RENDER FUNCTIONS
+// ============================================================
+function renderDashboard() {
+  const now=new Date(); const mes=now.getMonth(); const anio=now.getFullYear();
+  const gm=S.gastos.filter(g=>{const d=new Date(g.fecha+'T12:00');return d.getMonth()===mes&&d.getFullYear()===anio;});
+  const total=gm.reduce((a,g)=>a+g.monto,0);
+  const cobrar=S.cuentas.filter(c=>c.tipo==='cobrar'&&!c.pagado);
+  const pagar=S.cuentas.filter(c=>c.tipo==='pagar'&&!c.pagado);
+  document.getElementById('m-gasto').textContent=fmt(total);
+  document.getElementById('m-gasto-s').textContent=gm.length+' transacciones';
+  document.getElementById('m-cobrar').textContent=fmt(cobrar.reduce((a,c)=>a+c.monto,0));
+  document.getElementById('m-cobrar-s').textContent=cobrar.length+' pendientes';
+  document.getElementById('m-pagar').textContent=fmt(pagar.reduce((a,c)=>a+c.monto,0));
+  document.getElementById('m-pagar-s').textContent=pagar.length+' pendientes';
+  document.getElementById('mes-label').textContent=MESES[mes]+' '+anio;
+  // Recent
+  const rec=[...S.gastos].sort((a,b)=>b.fecha.localeCompare(a.fecha)).slice(0,6);
+  document.getElementById('recent-body').innerHTML=rec.length?rec.map(g=>`<tr>
+    <td style="font-family:var(--mono);font-size:11px">${g.fecha}</td>
+    <td>${g.desc}</td><td>${catBadge(g.cat)}</td>
+    <td style="font-family:var(--mono);font-weight:600">${fmt(g.monto)}</td>
+    <td><span class="badge ${g.fuente==='gmail'?'b-azul':'b-gris'}" style="font-size:10px">${g.fuente==='gmail'?'Gmail':'Manual'}</span></td>
+  </tr>`).join(''):`<tr><td colspan="5" class="empty" style="padding:24px">Sin gastos aún</td></tr>`;
+  renderCatChart(gm); renderTendChart(gm,mes,anio);
+  renderBudgetInsights(gm);
+}
+
+function renderBudgetInsights(gm) {
+  const hint = document.getElementById('insights-hint');
+  const rowM = document.getElementById('metrics-budget-row');
+  const card = document.getElementById('card-insights');
+  const tbody = document.getElementById('insights-body');
+  const alertsEl = document.getElementById('insights-alerts');
+  if (!tbody) return;
+  const P = S.presupuestos || {};
+  const spentByCat = {};
+  gm.forEach(g => { spentByCat[g.cat] = (spentByCat[g.cat] || 0) + g.monto; });
+  const rows = [];
+  let totalCap = 0;
+  let totalSpent = 0;
+  let alerts = 0;
+  for (const nombre of Object.keys(P)) {
+    const cap = Number(P[nombre]) || 0;
+    if (cap <= 0) continue;
+    const spent = spentByCat[nombre] || 0;
+    const ratio = spent / cap;
+    const pct = Math.round(ratio * 100);
+    totalCap += cap;
+    totalSpent += spent;
+    if (ratio >= 0.8) alerts++;
+    let estLabel = 'OK';
+    let estClass = 'b-verde';
+    if (spent > cap) { estLabel = 'Excedido'; estClass = 'b-rojo'; }
+    else if (ratio >= 0.8) { estLabel = 'Alerta ≥80%'; estClass = 'b-ambar'; }
+    rows.push({ nombre, cap, spent, pct, estLabel, estClass, ratio });
+  }
+  rows.sort((a, b) => b.pct - a.pct);
+  const has = rows.length > 0;
+  if (hint) hint.style.display = has ? 'none' : 'block';
+  if (rowM) rowM.style.display = has ? 'grid' : 'none';
+  if (card) card.style.display = has ? 'block' : 'none';
+  if (!has) return;
+  const globalPct = totalCap > 0 ? Math.min(999, Math.round((totalSpent / totalCap) * 100)) : 0;
+  document.getElementById('m-pres-total').textContent = fmt(totalCap);
+  document.getElementById('m-pres-gastado').textContent = fmt(totalSpent);
+  document.getElementById('m-pres-gastado-s').textContent = 'En categorías con tope';
+  document.getElementById('m-pres-pct').textContent = globalPct + '%';
+  document.getElementById('m-pres-pct-s').textContent = totalSpent > totalCap ? 'Sobre presupuesto' : (globalPct >= 80 ? 'Cerca del tope' : 'Dentro del rango');
+  document.getElementById('m-pres-pct').className = 'metric-value' + (globalPct > 100 ? ' neg' : globalPct >= 80 ? ' warn' : '');
+  document.getElementById('m-pres-alerts').textContent = String(alerts);
+  if (alertsEl) {
+    if (alerts > 0) {
+      const sev = rows.some(r => r.spent > r.cap);
+      alertsEl.innerHTML = `<div class="insights-alert ${sev ? 'danger' : 'warn'}">${sev ? 'Hay categorías por encima del presupuesto.' : 'Hay ' + alerts + ' categoría(s) con uso ≥ 80% del tope.'}</div>`;
+    } else alertsEl.innerHTML = '';
+  }
+  tbody.innerHTML = rows.map(r => {
+    const barW = Math.min(100, Math.round(r.ratio * 100));
+    let fillClass = 'ok';
+    if (r.spent > r.cap) fillClass = 'over';
+    else if (r.ratio >= 0.8) fillClass = 'warn';
+    return `<tr>
+      <td>${esc(r.nombre)}</td>
+      <td style="font-family:var(--mono)">${fmt(r.cap)}</td>
+      <td style="font-family:var(--mono)">${fmt(r.spent)}</td>
+      <td style="font-family:var(--mono)">${r.pct}%</td>
+      <td><span class="badge ${r.estClass}">${r.estLabel}</span></td>
+    </tr>
+    <tr><td colspan="5" style="padding:0 12px 10px;border-bottom:1px solid var(--border)"><div class="budget-prog"><div class="budget-prog-fill ${fillClass}" style="width:${barW}%"></div></div></td></tr>`;
+  }).join('');
+}
+
+function renderCatChart(gm) {
+  const cats={}; gm.forEach(g=>cats[g.cat]=(cats[g.cat]||0)+g.monto);
+  const labels=Object.keys(cats); const data=Object.values(cats);
+  const bgs=labels.map(l=>COLORS[catByNombre(l).color]||'#6B7280');
+  document.getElementById('legend-cat').innerHTML=labels.map((l,i)=>`<div class="legend-item"><div class="legend-dot" style="background:${bgs[i]}"></div>${l} <strong style="font-family:var(--mono)">${fmt(data[i])}</strong></div>`).join('');
+  if(S.charts.cat) S.charts.cat.destroy();
+  if(!labels.length) return;
+  S.charts.cat=new Chart(document.getElementById('chart-cat'),{type:'doughnut',data:{labels,datasets:[{data,backgroundColor:bgs,borderWidth:3,borderColor:'#fff'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`${c.label}: ${fmt(c.raw)}`}}}}});
+}
+
+function renderTendChart(gm,mes,anio) {
+  const sem=[0,0,0,0]; gm.forEach(g=>{const d=new Date(g.fecha+'T12:00');const w=Math.min(3,Math.floor((d.getDate()-1)/7));sem[w]+=g.monto;});
+  if(S.charts.tend) S.charts.tend.destroy();
+  S.charts.tend=new Chart(document.getElementById('chart-tend'),{type:'bar',data:{labels:['Semana 1','Semana 2','Semana 3','Semana 4'],datasets:[{label:'Gastos',data:sem,backgroundColor:'#10B981',borderRadius:6,borderSkipped:false}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:v=>fmt(v)},grid:{color:'rgba(0,0,0,0.04)'}},x:{ticks:{autoSkip:false,font:{size:11}},grid:{display:false}}}}});
+}
+
+function renderGastos() {
+  const fc=document.getElementById('f-cat').value;
+  const fm=document.getElementById('f-mes').value;
+  const ft=document.getElementById('f-tipo').value;
+  const catSel=document.getElementById('f-cat');
+  const curCat=catSel.value;
+  catSel.innerHTML='<option value="">Todas las categor&#237;as</option>'+S.cats.map(c=>`<option value="${c.nombre}"${curCat===c.nombre?' selected':''}>${c.nombre}</option>`).join('');
+  const meses=[...new Set(S.gastos.map(g=>g.fecha.slice(0,7)))].sort().reverse();
+  const mesSel=document.getElementById('f-mes'); const curMes=mesSel.value;
+  mesSel.innerHTML='<option value="">Todos los meses</option>'+meses.map(m=>`<option value="${m}"${curMes===m?' selected':''}>${m}</option>`).join('');
+  let list=S.gastos.filter(g=>{if(fc&&g.cat!==fc)return false;if(fm&&!g.fecha.startsWith(fm))return false;if(ft&&g.tipo!==ft)return false;return true}).sort((a,b)=>b.fecha.localeCompare(a.fecha));
+  document.getElementById('gastos-body').innerHTML=list.length?list.map(g=>`<tr>
+    <td style="font-family:var(--mono);font-size:11px">${g.fecha}</td>
+    <td>${g.desc}</td><td>${catBadge(g.cat)}</td><td>${tagBadge(g.tag)}</td>
+    <td style="font-size:11px;color:var(--text3)">${g.tarjeta||'?'}</td>
+    <td style="font-family:var(--mono);font-weight:600">${fmt(g.monto)}</td>
+    <td><button class="del-btn" onclick="deleteGasto('${g.id}')"></button></td></tr>`).join(''):
+    `<tr><td colspan="7" class="empty" style="padding:24px">Sin gastos</td></tr>`;
+}
+
+function renderCompartidos() {
+  const el=document.getElementById('compartidos-list');
+  if(!S.compartidos.length){el.innerHTML=`<div class="empty"><div class="empty-icon"></div>Sin gastos compartidos registrados</div>`;return;}
+  el.innerHTML=S.compartidos.map(c=>`
+    <div class="card" style="margin-bottom:12px">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div><div style="font-weight:600;font-size:14px">${c.desc}</div><div style="font-size:11px;color:var(--text3);margin-top:2px;font-family:var(--mono)">${c.fecha} ? Total: ${fmt(c.total)}</div></div>
+        <button class="del-btn" onclick="deleteCompartido('${c.id}')"></button>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">
+        ${c.personas.map((p,i)=>{const pct=c.total>0?Math.round(p.monto/c.total*100):0;const col=Object.values(COLORS)[i%Object.values(COLORS).length];return`<div style="flex:1;min-width:80px;background:var(--gris-m);border-radius:var(--radius);padding:10px">
+          <div style="font-size:11px;font-weight:600;color:var(--text2)">${p.nombre||'?'}</div>
+          <div style="font-size:15px;font-weight:700;color:${col};margin-top:3px;font-family:var(--mono)">${fmt(p.monto)}</div>
+          <div class="prog"><div class="prog-fill" style="width:${pct}%;background:${col}"></div></div>
+          <div style="font-size:10px;color:var(--text3);margin-top:3px">${pct}%</div>
+        </div>`;}).join('')}
+      </div>
+    </div>`).join('');
+}
+
+function renderCuentas() {
+  const cobrar=S.cuentas.filter(c=>c.tipo==='cobrar');
+  const pagar=S.cuentas.filter(c=>c.tipo==='pagar');
+  function renderList(items,id) {
+    const el=document.getElementById(id);
+    if(!items.length){el.innerHTML=`<div class="empty" style="padding:20px 0">Sin cuentas</div>`;return;}
+    el.innerHTML=items.map((c,i)=>{
+      const ac=avatarColor(c.persona); const ini=initials(c.persona);
+      const dias=c.fecha?daysAgo(c.fecha):-1;
+      return`<div class="cuenta-row" style="${c.pagado?'opacity:.45':''}">
+        <div class="cuenta-avatar" style="background:${ac}22;color:${ac}">${ini}</div>
+        <div class="cuenta-info">
+          <div class="cuenta-name">${c.persona}</div>
+          <div class="cuenta-sub">${c.desc||''}${c.fecha?` ? Vence ${c.fecha}`:''}${dias>7?` ? <span style="color:var(--rojo)">${dias}d</span>`:''}</div>
+        </div>
+        <div class="cuenta-amount" style="color:${c.tipo==='cobrar'?'var(--verde-d)':'var(--rojo)'}">${fmt(c.monto)}</div>
+        <button class="btn btn-sm" style="padding:5px 8px" onclick="toggleCuenta('${c.id}')" title="${c.pagado?'Reabrir':'Marcar cobrado'}">${c.pagado?'?':'OK'}</button>
+        <button class="del-btn" onclick="deleteCuenta('${c.id}')"></button>
+      </div>`;}).join('');
+  }
+  renderList(cobrar,'cobrar-list'); renderList(pagar,'pagar-list');
+}
+
+function renderHistorial() {
+  const q=(document.getElementById('hist-q')?.value||'').toLowerCase();
+  const cat=document.getElementById('hist-cat')?.value||'';
+  const histCat=document.getElementById('hist-cat');
+  histCat.innerHTML='<option value="">Todas las categor&#237;as</option>'+S.cats.map(c=>`<option value="${c.nombre}"${cat===c.nombre?' selected':''}>${c.nombre}</option>`).join('');
+  const list=S.gastos.filter(g=>{if(q&&!g.desc.toLowerCase().includes(q)&&!g.cat.toLowerCase().includes(q))return false;if(cat&&g.cat!==cat)return false;return true}).sort((a,b)=>b.fecha.localeCompare(a.fecha));
+  document.getElementById('hist-body').innerHTML=list.length?list.map(g=>`<tr>
+    <td style="font-family:var(--mono);font-size:11px">${g.fecha}</td>
+    <td>${g.desc}</td><td>${catBadge(g.cat)}</td><td>${tagBadge(g.tag)}</td>
+    <td style="font-family:var(--mono);font-weight:600">${fmt(g.monto)}</td>
+    <td><span class="badge ${g.fuente==='gmail'?'b-azul':'b-gris'}" style="font-size:10px">${g.fuente==='gmail'?' Gmail':' Manual'}</span></td></tr>`).join(''):
+    `<tr><td colspan="6" class="empty" style="padding:24px">Sin registros</td></tr>`;
+}
+
+function renderPresupuestosRows() {
+  const el = document.getElementById('presupuestos-rows');
+  if (!el) return;
+  el.innerHTML = S.cats.map(c => {
+    const v = S.presupuestos[c.nombre];
+    const val = v != null && v > 0 ? v : '';
+    return `<div class="form-row" style="display:grid;grid-template-columns:1fr minmax(120px,140px);gap:10px;align-items:center;margin-bottom:8px">
+      <span style="font-size:13px;color:var(--text)">${esc(c.nombre)}</span>
+      <input type="number" class="fi" id="pres-${c.id}" min="0" step="1000" value="${val}" placeholder="Sin tope">
+    </div>`;
+  }).join('');
+}
+
+function renderConfig() {
+  document.getElementById('gs-id').value = S.gsId || '';
+  document.getElementById('cats-display').innerHTML = S.cats.map(c => `<span class="chip badge b-${c.color}">${c.nombre} <span style="opacity:.5;cursor:pointer;margin-left:2px" onclick="deleteCat('${c.id}')"></span></span>`).join('');
+  document.getElementById('tags-display').innerHTML = S.tags.map((t, i) => `<span class="chip badge b-azul">${t} <span style="opacity:.5;cursor:pointer;margin-left:2px" onclick="deleteTag(${i})"></span></span>`).join('');
+  renderPresupuestosRows();
+}
+
+// ============================================================
+// INIT
+// ============================================================
+load();
+renderDashboard();
+renderCuentas();
+updateBadge();
+if (S.gsId) loadFromSheets().catch(() => {});
+setInterval(() => { if (S.gsId) loadFromSheets().catch(e => console.log('Sheets poll:', e)); }, 300000);
+
+// Check params from email link (?action=pendientes)
+const urlParams=new URLSearchParams(window.location.search);
+if(urlParams.get('action')==='pendientes') nav('pendientes');
 </script>
 </body>
 </html>
