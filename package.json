@@ -1,0 +1,10 @@
+{
+  "name": "finanzas-jt",
+  "private": true,
+  "scripts": {
+    "dev": "netlify dev"
+  },
+  "devDependencies": {
+    "netlify-cli": "^20.0.0"
+  }
+}

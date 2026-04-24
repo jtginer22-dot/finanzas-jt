@@ -29,6 +29,7 @@ const SHEETS = {
   CUENTAS: 'Cuentas_Por_Cobrar',
   CATEGORIAS: 'Categorias',
   METRICAS: 'Metricas_Mensuales',
+  PRESUPUESTOS: 'Presupuestos',
 };
 
 // ============================================================
@@ -44,6 +45,7 @@ function inicializar() {
     [SHEETS.CUENTAS]: ['ID','Tipo','Persona','Monto','Fecha_Creacion','Fecha_Limite','Estado','Descripción'],
     [SHEETS.CATEGORIAS]: ['ID','Nombre','Color','Tipo','Activa'],
     [SHEETS.METRICAS]: ['Mes','Total_Gastos','Total_Fijos','Total_Variables','Total_Extraordinarios','N_Transacciones','Por_Cobrar','Por_Pagar'],
+    [SHEETS.PRESUPUESTOS]: ['Categoria','Monto_Mensual'],
   };
   
   Object.entries(tabs).forEach(([nombre, headers]) => {

@@ -3,6 +3,7 @@
 ## Archivos incluidos
 - `index.html` → La app web completa
 - `google-apps-script.js` → Automatización Gmail + emails
+- `netlify.toml` + `netlify/functions/sheets.js` → Proxy seguro hacia Google Sheets (API key solo en Netlify)
 
 ---
 
@@ -16,14 +17,71 @@
 
 ---
 
-## PASO 2 — Configurar Google Sheets en la app
+## PASO 2 — Variables de entorno en Netlify (API Key fuera del navegador)
 
-1. Abre tu app en el navegador
+La app **no** guarda la API Key de Google en `localStorage`. Una función serverless (`/.netlify/functions/sheets`) firma las llamadas a Google Sheets usando una variable de entorno.
+
+1. En Netlify: **Site configuration → Environment variables**
+2. Agrega:
+   - **`GOOGLE_SHEETS_API_KEY`**: tu API key de Google Cloud (solo lectura/escritura Sheets según la restrinja en Google Cloud Console).
+3. (Recomendado) **`SHEETS_ALLOWED_SPREADSHEET_IDS`**: el ID de tu spreadsheet (ej. `1Aeiav6ZIiC_o8zgqwM7qRxgFtXB3eHROW9-NtJ4GU5g`). Si está definido, el proxy **solo** acepta ese ID y rechaza otros (reduce abuso si alguien descubre la URL de la función).
+4. Vuelve a desplegar el sitio tras cambiar variables.
+
+### Guía detallada en el panel de Netlify (producción)
+
+Sigue estos pasos en el **navegador** (no hace falta terminal):
+
+1. Entra en **https://app.netlify.com** e inicia sesión.
+2. En la lista de sitios, **haz clic en tu sitio** (por ejemplo el que apunta a `finanzas-jt.netlify.app`).
+3. Arriba verás pestañas como **Deploys**, **Logs**, **Configuration**, etc. Entra en **Configuration** (o “Site configuration”).
+4. En el menú **izquierdo** de esa sección, busca **Environment variables** (a veces bajo “Build & deploy” o “General”).
+5. Pulsa **Add a variable** → **Add a single variable** (o “Add variable”).
+   - **Key** (nombre exacto, respetando mayúsculas): `GOOGLE_SHEETS_API_KEY`
+   - **Value**: pega tu API Key de Google Cloud (la misma que antes usabas en la app; no la compartas en público).
+   - Scope: deja **All scopes** o “Production + Deploy previews” según prefieras; para empezar, **All** está bien.
+6. (Recomendado) Agrega otra variable:
+   - **Key**: `SHEETS_ALLOWED_SPREADSHEET_IDS`
+   - **Value**: solo el ID de tu hoja, por ejemplo `1Aeiav6ZIiC_o8zgqwM7qRxgFtXB3eHROW9-NtJ4GU5g` (sin URL, sin barras).
+7. **Guardar** cada variable si el panel lo pide.
+8. **Forzar un nuevo deploy** para que el sitio en vivo reciba las variables:
+   - Ve a la pestaña **Deploys** del mismo sitio.
+   - Pulsa **Trigger deploy** → **Deploy site** (o “Clear cache and deploy site” si existe).
+9. Espera a que el deploy termine en verde. Luego abre tu URL (`https://finanzas-jt.netlify.app` o la que te dé Netlify) y prueba **Configuración → Guardar y probar conexión**.
+
+**Si el sitio ya existía pero solo subías `index.html`:** asegúrate de que el deploy incluya **toda la carpeta del proyecto**: `index.html`, `netlify.toml`, carpeta `netlify/functions/sheets.js`, etc. Si conectaste **GitHub**, haz **push** de esos archivos al repo vinculado y Netlify redeployará solo.
+
+### Error 503 en `netlify dev` (tu Mac)
+
+Si en la terminal ves `Response with status 503` al llamar a `/.netlify/functions/sheets`, la función está diciendo que **no encuentra la API key en el entorno local**.
+
+1. En la carpeta `finanzas-jt`, copia el archivo de ejemplo:  
+   `cp .env.example .env`  
+   (o duplica `.env.example` y renómbralo a `.env` desde el Finder).
+2. Abre **`.env`** con un editor y reemplaza el valor de `GOOGLE_SHEETS_API_KEY` por tu clave real (una sola línea, sin comillas).
+3. **Detén** `netlify dev` (`Ctrl+C` en la terminal) y vuelve a ejecutar **`npm run dev`**.
+
+### Configurar Google Sheets en la app (solo ID)
+
+1. Abre la app en el navegador
 2. Ve a **Configuración**
-3. Ingresa:
-   - **ID de la hoja**: `1Aeiav6ZIiC_o8zgqwM7qRxgFtXB3eHROW9-NtJ4GU5g`
-   - **API Key**: (la que obtengas de Google Cloud)
-4. Guarda
+3. Ingresa **solo el ID de la hoja** (el mismo que en la URL de Google Sheets)
+4. Guarda y prueba conexión
+
+### Desarrollo local
+
+En la carpeta del proyecto (no hace falta `npm install -g netlify-cli`; evita errores de permisos en `/usr/local`):
+
+```bash
+cd ruta/a/finanzas-jt
+npm install
+npm run dev
+```
+
+Eso instala **Netlify CLI** solo dentro de `node_modules` y levanta la app con `/.netlify/functions/sheets`. La primera `npm install` puede tardar **1–2 minutos**; es normal.
+
+Opcional: archivo `.env` en la misma carpeta con `GOOGLE_SHEETS_API_KEY=tu_clave` para probar Sheets en local (`.env` está en `.gitignore`).
+
+Un servidor solo estático (`python -m http.server`) **no** incluye las funciones de Netlify.
 
 ---
 
@@ -77,8 +135,9 @@
 
 ## Notas importantes
 
-- La app guarda datos en `localStorage` del navegador ADEMÁS de Google Sheets
-- Google Sheets es el respaldo permanente y multi-dispositivo
+- La app guarda datos en `localStorage` del navegador ADEMÁS de Google Sheets (categorías, etiquetas, presupuestos en caché; **no** la API Key de Google).
+- Google Sheets es el respaldo permanente y multi-dispositivo.
+- **Presupuestos**: pestaña `Presupuestos` con columnas `Categoria` y `Monto_Mensual`. Si el libro ya existía, ejecuta de nuevo `inicializar` en Apps Script o crea la pestaña manualmente con esos encabezados.
 - Los parsers bancarios activos:
   - ✅ Banco de Chile: emails de `enviodigital@bancochile.cl`
   - ✅ Santander: transferencias de `mensajeria@santander.cl`
