@@ -44,10 +44,31 @@ exports.handler = async (event) => {
     return { statusCode: 403, headers, body: JSON.stringify({ error: 'spreadsheetId no permitido' }) };
   }
 
+  function parseMoney(input) {
+    if (typeof input === 'number' && Number.isFinite(input)) return input;
+    const raw = String(input ?? '').trim();
+    if (!raw) return 0;
+    // Conserva solo dígitos y separadores decimales comunes.
+    const cleaned = raw.replace(/[^\d,.-]/g, '');
+    if (!cleaned) return 0;
+    const hasDot = cleaned.includes('.');
+    const hasComma = cleaned.includes(',');
+    let normalized = cleaned;
+    if (hasDot && hasComma) {
+      // Caso típico LATAM: 64.130,00 -> 64130.00
+      normalized = cleaned.replace(/\./g, '').replace(',', '.');
+    } else if (hasComma && !hasDot) {
+      // 1234,56 -> 1234.56
+      normalized = cleaned.replace(',', '.');
+    }
+    const n = Number(normalized);
+    return Number.isFinite(n) ? n : 0;
+  }
+
   const uid = body.uid || Date.now().toString(36);
   const fecha = body.fecha || new Date().toISOString().split('T')[0];
   const comercio = body.comercio || 'Compra';
-  const monto = Number(body.monto) || 0;
+  const monto = parseMoney(body.monto);
   const tarjeta = body.tarjeta || 'TC';
   const banco = body.banco || 'Santander';
   const emailId = body.emailId || '';
