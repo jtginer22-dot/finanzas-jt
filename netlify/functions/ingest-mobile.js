@@ -56,7 +56,7 @@ exports.handler = async (event) => {
   const values = [[uid, fecha, comercio, monto, tarjeta, banco, emailId, procesado]];
   const range = 'Pendientes!A:H';
   const apiBase = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values`;
-  const payload = { range: 'Pendientes!A1', majorDimension: 'ROWS', values };
+  const payload = { range, majorDimension: 'ROWS', values };
   const dedupeRange = 'Pendientes!A2:A5000';
 
   function base64url(input) {
