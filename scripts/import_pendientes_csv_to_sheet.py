@@ -72,7 +72,6 @@ def main() -> None:
             "spreadsheetId": args.spreadsheet_id,
             "operation": "append",
             "range": "Pendientes!A:H",
-            "appendAnchor": "Pendientes!A1",
             "majorDimension": "ROWS",
             "valueInputOption": "RAW",
             "insertDataOption": "INSERT_ROWS",

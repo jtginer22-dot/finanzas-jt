@@ -145,10 +145,10 @@ exports.handler = async (event) => {
 
       if (operation === 'append') {
         const insertDataOption = body.insertDataOption || 'INSERT_ROWS';
+        // El `range` del body debe coincidir con el de la URL; si no, Google responde 400
+        // INVALID_ARGUMENT ("Request range does not match value's range"). Igual que ingest-mobile.
         const url = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}:append?valueInputOption=${encodeURIComponent(valueInputOption)}&insertDataOption=${encodeURIComponent(insertDataOption)}`;
-        const sheetName = range.includes('!') ? range.split('!')[0] : range;
-        const innerRange = body.appendAnchor || `${sheetName}!A1`;
-        const payload = { range: innerRange, majorDimension, values };
+        const payload = { range, majorDimension, values };
         const r = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...authHeaders },
