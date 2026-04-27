@@ -97,6 +97,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
 /* CHARTS */
 .charts-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 18px; }
 .chart-wrap { position: relative; height: 200px; width: 100%; }
+.chart-note { font-size: 11px; color: var(--text3); margin-top: 8px; line-height: 1.4; }
 
 /* TABLE */
 .tbl-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
@@ -222,6 +223,17 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
 
 /* CHIP */
 .chip { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 8px; font-size: 11px; font-weight: 500; margin: 2px; }
+.auth-gate {
+  position: fixed; inset: 0; background: rgba(17,24,39,.78); z-index: 500;
+  display: none; align-items: center; justify-content: center; padding: 16px;
+}
+.auth-gate.open { display: flex; }
+.auth-card {
+  width: 100%; max-width: 420px; background: #fff; border-radius: 14px;
+  border: 1px solid var(--border); box-shadow: var(--shadow-md); padding: 22px;
+}
+.auth-title { font-size: 18px; font-weight: 600; color: var(--text); margin-bottom: 8px; }
+.auth-sub { font-size: 12px; color: var(--text2); margin-bottom: 14px; }
 </style>
 </head>
 <body>
@@ -234,18 +246,18 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
   <div class="sidebar" id="sidebar">
     <div class="logo">
       <div class="logo-name">Finanzas JT</div>
-      <div class="logo-sub">Jos? Tom&#225;s Giner</div>
+      <div class="logo-sub" id="logo-sub">Usuario</div>
     </div>
     <div class="nav-section">Principal</div>
-    <div class="nav-item active" onclick="nav('dashboard')"><span class="icon">&#9672;</span>Dashboard</div>
-    <div class="nav-item" onclick="nav('pendientes')" id="nav-pendientes"><span class="icon">&#9651;</span>Pendientes<span class="nav-badge" id="badge-pend" style="display:none">0</span></div>
-    <div class="nav-item" onclick="nav('gastos')"><span class="icon">&#9632;</span>Gastos</div>
-    <div class="nav-item" onclick="nav('compartidos')"><span class="icon">&#9670;</span>Compartidos</div>
-    <div class="nav-item" onclick="nav('cuentas')"><span class="icon">&#9675;</span>Cuentas</div>
+    <div class="nav-item active" data-page="dashboard" onclick="nav('dashboard')"><span class="icon">&#9672;</span>Dashboard</div>
+    <div class="nav-item" data-page="pendientes" onclick="nav('pendientes')" id="nav-pendientes"><span class="icon">&#9651;</span>Pendientes<span class="nav-badge" id="badge-pend" style="display:none">0</span></div>
+    <div class="nav-item" data-page="gastos" onclick="nav('gastos')"><span class="icon">&#9632;</span>Gastos</div>
+    <div class="nav-item" data-page="compartidos" onclick="nav('compartidos')"><span class="icon">&#9670;</span>Compartidos</div>
+    <div class="nav-item" data-page="cuentas" onclick="nav('cuentas')"><span class="icon">&#9675;</span>Cuentas</div>
     <div class="nav-section">An&#225;lisis</div>
-    <div class="nav-item" onclick="nav('historial')"><span class="icon">&#9671;</span>Historial</div>
+    <div class="nav-item" data-page="historial" onclick="nav('historial')"><span class="icon">&#9671;</span>Historial</div>
     <div class="nav-section">Sistema</div>
-    <div class="nav-item" onclick="nav('config')"><span class="icon">&#9881;</span>Configuraci&#243;n</div>
+    <div class="nav-item" data-page="config" onclick="nav('config')"><span class="icon">&#9881;</span>Configuración</div>
     <div style="margin-top:auto;padding:16px;border-top:1px solid var(--border)">
       <div style="font-size:10px;color:var(--text3);font-family:var(--mono)">
         <span class="sync-dot" id="sync-dot"></span><span id="sync-text">Sin sincronizar</span>
@@ -325,10 +337,12 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
             <div class="card-title">Por categor&#237;a | <span id="mes-label"></span></div>
             <div id="legend-cat" class="legend"></div>
             <div class="chart-wrap"><canvas id="chart-cat" role="img" aria-label="Gastos por categor&#237;a">.</canvas></div>
+            <div class="chart-note">Muestra tu gasto personal del mes por categoría (ya descontando la parte que se cobra a otras personas).</div>
           </div>
           <div class="card">
             <div class="card-title">Tendencia semanal</div>
             <div class="chart-wrap"><canvas id="chart-tend" role="img" aria-label="Tendencia semanal">.</canvas></div>
+            <div class="chart-note">Resume cómo se distribuye tu gasto personal durante el mes, semana a semana.</div>
           </div>
         </div>
         <div class="card">
@@ -344,6 +358,14 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
           <div><strong>Gastos capturados autom&#225;ticamente desde Gmail</strong><br><span style="font-size:11px">Categorizalos con 2 taps para que queden registrados.</span></div>
         </div>
         <div id="pendientes-list"></div>
+        <div class="card" style="margin-top:12px">
+          <div class="card-title">Revisión masiva (mismos pendientes)</div>
+          <div class="filter-bar">
+            <button class="btn btn-sm" onclick="bulkRevision('confirm')">Confirmar todas visibles</button>
+            <button class="btn btn-sm" onclick="bulkRevision('reject')">Rechazar todas visibles</button>
+          </div>
+          <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Fecha</th><th>Descripción</th><th>Monto</th><th>Sugerencia</th><th>Estado</th><th>Acciones</th></tr></thead><tbody id="revision-body"></tbody></table></div>
+        </div>
       </div>
 
       <!-- GASTOS -->
@@ -353,7 +375,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
           <select class="fi" style="width:auto;flex:1;min-width:100px" id="f-mes" onchange="renderGastos()"><option value="">Todos los meses</option></select>
           <select class="fi" style="width:auto;flex:1;min-width:100px" id="f-tipo" onchange="renderGastos()">
             <option value="">Todo</option><option value="normal">Normal</option>
-            <option value="compartido">Compartido</option><option value="extraordinario">Extraordinario</option>
+            <option value="compartido">Compartido</option><option value="extraordinario">Extraordinario</option><option value="transferencia_interna">Transferencia propia</option>
           </select>
         </div>
         <div class="card"><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Fecha</th><th>Descripci&#243;n</th><th>Categor&#237;a</th><th>Etiqueta</th><th>Tarjeta</th><th>Monto</th><th></th></tr></thead><tbody id="gastos-body"></tbody></table></div></div>
@@ -394,12 +416,16 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
         <div class="card"><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Fecha</th><th>Descripci&#243;n</th><th>Categor&#237;a</th><th>Etiqueta</th><th>Monto</th><th>Fuente</th></tr></thead><tbody id="hist-body"></tbody></table></div></div>
       </div>
 
+
       <!-- CONFIG -->
       <div class="page" id="p-config">
         <div class="card" style="margin-bottom:14px">
           <div class="card-title"> Google Sheets</div>
           <div class="info-box azul" style="margin-bottom:14px">La app lee y escribe en tu Google Sheet usando una <strong>Netlify Function</strong> como proxy. La API Key de Google <strong>no</strong> se guarda en el navegador: configúrala solo en Netlify → Site settings → Environment variables como <code style="font-size:11px">GOOGLE_SHEETS_API_KEY</code>.</div>
+          <div class="form-row"><label class="form-label">Nombre de perfil</label><input class="fi" id="profile-name" placeholder="Tu nombre para mostrar"></div>
           <div class="form-row"><label class="form-label">ID de la hoja (spreadsheet)</label><input class="fi" id="gs-id" placeholder="1Aeiav6ZIiC_o8..."></div>
+          <div class="form-row"><label class="form-label">App passcode (recomendado)</label><input class="fi" id="app-passcode" type="password" placeholder="Código secreto de acceso"></div>
+          <div class="chart-note" style="margin-top:-4px;margin-bottom:10px">Solo se exige si defines <code style="font-size:11px">APP_PASSCODE</code> en Netlify (o en tu <code style="font-size:11px">.env</code> local).</div>
           <button class="btn btn-green btn-sm" onclick="saveConfig()">Guardar y probar conexi&#243;n</button>
           <div id="config-status" style="margin-top:10px;font-size:12px;color:var(--text3)"></div>
           <div class="info-box" style="margin-top:12px;font-size:12px">Desarrollo local: usa <code style="font-size:11px">netlify dev</code> para que <code>/.netlify/functions/sheets</code> exista en el mismo origen.</div>
@@ -437,6 +463,22 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
   </div>
 </div>
 
+<!-- ACCESO -->
+<div class="auth-gate" id="auth-gate">
+  <div class="auth-card">
+    <div class="auth-title">Acceso privado</div>
+    <div class="auth-sub">Ingresa el passcode para desbloquear tus datos financieros.</div>
+    <div class="form-row">
+      <label class="form-label">Passcode</label>
+      <input class="fi" id="auth-passcode" type="password" placeholder="Tu código de acceso">
+    </div>
+    <div class="modal-actions" style="margin-top:4px;padding-top:10px">
+      <button class="btn btn-green" onclick="unlockApp()">Desbloquear</button>
+    </div>
+    <div id="auth-error" style="margin-top:8px;font-size:12px;color:var(--rojo);display:none"></div>
+  </div>
+</div>
+
 <!-- MODAL GASTO -->
 <div class="overlay" id="m-gasto"><div class="modal">
   <div class="modal-handle"></div>
@@ -454,7 +496,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
     <div class="form-row"><label class="form-label">Tarjeta</label>
       <select class="fi" id="g-tarjeta">
         <option value="">Sin especificar</option>
-        <option value="TC BCI ****7076">TC BCI ****7076</option>
+        <option value="TC Banco de Chile">TC Banco de Chile</option>
         <option value="TC Santander">TC Santander</option>
         <option value="Transferencia">Transferencia</option>
         <option value="Efectivo">Efectivo</option>
@@ -467,6 +509,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
         <option value="normal">Normal</option>
         <option value="compartido">Compartido </option>
         <option value="extraordinario">Extraordinario </option>
+        <option value="transferencia_interna">Transferencia propia</option>
       </select>
     </div>
     <div class="form-row"><label class="form-label">Notas</label><input class="fi" id="g-notas" placeholder="Opcional"></div>
@@ -494,6 +537,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
       <option value="no">No, es solo m&#237;o</option>
       <option value="polola">Con polola ? 50/50</option>
       <option value="invito">Lo invit? yo</option>
+      <option value="grupo_n">Dividir con n personas (partes iguales)</option>
       <option value="custom">Divisi&#243;n custom</option>
     </select>
   </div>
@@ -502,6 +546,13 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
       <div class="form-row"><label class="form-label">&#191;Con qui&#233;n?</label><input class="fi" id="pend-quien" placeholder="Nombre"></div>
       <div class="form-row"><label class="form-label">A cobrar ($)</label><input class="fi" id="pend-a-cobrar" type="number" inputmode="numeric"></div>
     </div>
+  </div>
+  <div id="pend-comp-grupo" style="display:none">
+    <div class="form-row">
+      <label class="form-label">Nombres (separados por coma)</label>
+      <input class="fi" id="pend-personas" placeholder="Ej: Polola, Juan, María">
+    </div>
+    <div style="font-size:11px;color:var(--text3);margin-top:-8px;margin-bottom:8px">Se asume que tú también participas. Se divide en partes iguales entre todos.</div>
   </div>
   <div class="form-row"><label class="form-label">¿Es en cuotas?</label>
     <select class="fi" id="pend-cuotas" onchange="toggleCuotasFields()">
@@ -592,7 +643,7 @@ const AVATAR_COLORS = ['#10B981','#3B82F6','#F59E0B','#8B5CF6','#EC4899','#EF444
 // STATE
 // ============================================================
 const CATS_DEFAULT = [
-  {id:'c1',nombre:'Cr&#243;dito consumo',color:'gris',tipo:'fijo'},
+  {id:'c1',nombre:'Crédito consumo',color:'gris',tipo:'fijo'},
   {id:'c2',nombre:'Suscripciones',color:'morado',tipo:'fijo'},
   {id:'c3',nombre:'Tenis',color:'verde',tipo:'fijo'},
   {id:'c4',nombre:'Vivienda',color:'azul',tipo:'variable'},
@@ -608,17 +659,24 @@ const CATS_DEFAULT = [
   {id:'c14',nombre:'Auto',color:'ambar',tipo:'extraordinario'},
   {id:'c15',nombre:'eBike',color:'verde',tipo:'extraordinario'},
   {id:'c16',nombre:'Viajes',color:'azul',tipo:'extraordinario'},
+  {id:'c17',nombre:'Transferencias propias',color:'gris',tipo:'variable'},
 ];
 
 let S = {
   gastos:[], pendientes:[], compartidos:[], cuentas:[],
+  propuestas:[],
   cats:[...CATS_DEFAULT],
-  tags:['Polola','Amigos','Trabajo','Viaje','Cumplea&#243;os','Propio'],
+  tags:['Polola','Amigos','Trabajo','Viaje','Cumpleaños','Propio'],
   gsId: SHEET_ID,
+  profileName: 'Usuario',
+  appPasscode: '',
   presupuestos:{},
   charts:{}, pendIdx:null, cuentaTipo:'cobrar',
 };
 let compPersonas = [];
+const AUTH_IDLE_MS = 30 * 60 * 1000;
+const AUTH_MAX_MS = 8 * 60 * 60 * 1000;
+let authIdleTimer = null;
 
 function load() {
   try {
@@ -631,9 +689,60 @@ function load() {
   } catch(e){}
   if (!S.gsId) S.gsId = SHEET_ID;
   if (!S.presupuestos || typeof S.presupuestos !== 'object') S.presupuestos = {};
+  S.cats = (S.cats || []).map(c => ({ ...c, nombre: decodeEntities(c.nombre) }));
+  S.tags = (S.tags || []).map(t => decodeEntities(t));
+  // Compatibilidad: migrar pendientes antiguos a propuestas.
+  if ((!S.propuestas || !S.propuestas.length) && Array.isArray(S.pendientes) && S.pendientes.length) {
+    S.propuestas = S.pendientes.map(p => ({
+      id: p.id || uid(),
+      fecha: p.fecha,
+      comercio: decodeEntities(p.comercio || p.desc || ''),
+      monto: Number(p.monto) || 0,
+      tarjeta: p.tarjeta || '',
+      banco: decodeEntities(p.banco || ''),
+      emailId: p.emailId || '',
+      fuente: p.fuente || 'gmail',
+      propuesta: { cat: '', tag: '' },
+      estado: 'pendiente',
+    }));
+  }
+  if (!Array.isArray(S.propuestas)) S.propuestas = [];
+  S.propuestas = S.propuestas.map(p => ({
+    ...p,
+    comercio: decodeEntities(p.comercio || ''),
+    banco: decodeEntities(p.banco || ''),
+    estado: p.estado || 'pendiente',
+    propuesta: p.propuesta || { cat: '', tag: '' },
+  }));
+  S.pendientes = [];
+  S.profileName = decodeEntities(S.profileName || 'Usuario');
+  S.appPasscode = sessionStorage.getItem('finanzas_jt_session_passcode') || '';
+  const authUntil = Number(sessionStorage.getItem('finanzas_jt_session_until') || 0);
+  if (!authUntil || Date.now() > authUntil) {
+    S.appPasscode = '';
+    sessionStorage.removeItem('finanzas_jt_session_passcode');
+    sessionStorage.removeItem('finanzas_jt_session_until');
+  }
 }
 function save() {
-  try { localStorage.setItem('finanzas_jt_v3', JSON.stringify({...S, charts:{}})); } catch(e){}
+  try {
+    const persist = {...S, charts:{}};
+    delete persist.appPasscode;
+    localStorage.setItem('finanzas_jt_v3', JSON.stringify(persist));
+  } catch(e){}
+}
+
+function decodeEntities(s) {
+  if (s == null) return '';
+  const txt = document.createElement('textarea');
+  txt.innerHTML = String(s);
+  return txt.value;
+}
+
+function authHeaders() {
+  const h = { 'Content-Type': 'application/json' };
+  if (S.appPasscode) h['x-app-passcode'] = S.appPasscode;
+  return h;
 }
 
 // ============================================================
@@ -660,12 +769,10 @@ function nav(page) {
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.getElementById('p-'+page).classList.add('active');
-  const titles = {dashboard:'Dashboard',pendientes:'Pendientes',gastos:'Gastos',compartidos:'Compartidos',cuentas:'Cuentas',historial:'Historial',config:'Configuraci&#243;n'};
+  const titles = {dashboard:'Dashboard',pendientes:'Pendientes',gastos:'Gastos',compartidos:'Compartidos',cuentas:'Cuentas',historial:'Historial',config:'Configuración'};
   document.getElementById('page-title').textContent = titles[page]||page;
-  const navItems = document.querySelectorAll('.nav-item');
-  const pageOrder = ['dashboard','pendientes','gastos','compartidos','cuentas','','historial','','config'];
-  const idx = pageOrder.indexOf(page);
-  if (idx >= 0 && navItems[idx]) navItems[idx].classList.add('active');
+  const activeNav = document.querySelector(`.nav-item[data-page="${page}"]`);
+  if (activeNav) activeNav.classList.add('active');
   if (page==='dashboard') renderDashboard();
   if (page==='pendientes') renderPendientes();
   if (page==='gastos') renderGastos();
@@ -677,6 +784,10 @@ function nav(page) {
 
 function toggleSidebar() { document.getElementById('sidebar').classList.toggle('open'); const bd=document.getElementById('sb-backdrop')||document.getElementById('sidebar-backdrop'); if(bd) bd.classList.toggle('open'); }
 function closeSidebar() { document.getElementById('sidebar').classList.remove('open'); document.getElementById('sb-backdrop').classList.remove('open'); }
+function renderProfile() {
+  const el = document.getElementById('logo-sub');
+  if (el) el.textContent = S.profileName || 'Usuario';
+}
 
 // ============================================================
 // MODALS
@@ -702,7 +813,7 @@ function saveGasto() {
   const desc=document.getElementById('g-desc').value.trim();
   const monto=parseFloat(document.getElementById('g-monto').value);
   if(!desc||isNaN(monto)||monto<=0){alert('Completa descripci&#243;n y monto.');return;}
-  const g = {id:uid(),desc,monto,cat:document.getElementById('g-cat').value,tag:document.getElementById('g-tag').value,fecha:document.getElementById('g-fecha').value,tarjeta:document.getElementById('g-tarjeta').value,tipo:document.getElementById('g-tipo').value,notas:document.getElementById('g-notas').value,fuente:'manual'};
+  const g = {id:uid(),desc,monto,montoTotal:monto,cat:document.getElementById('g-cat').value,tag:document.getElementById('g-tag').value,fecha:document.getElementById('g-fecha').value,tarjeta:document.getElementById('g-tarjeta').value,tipo:document.getElementById('g-tipo').value,notas:document.getElementById('g-notas').value,fuente:'manual'};
   S.gastos.push(g); save(); closeModal('m-gasto'); renderDashboard(); updateBadge();
   pushGastoToSheets(g);
 }
@@ -712,7 +823,7 @@ function deleteGasto(id) { if(!confirm('?Eliminar este gasto?'))return; S.gastos
 // PENDIENTES
 // ============================================================
 function updateBadge() {
-  const n=S.pendientes.length;
+  const n=S.propuestas.filter(p=>p.estado==='pendiente').length;
   const badge=document.getElementById('badge-pend');
   const metrica=document.getElementById('m-pend');
   badge.textContent=n; badge.style.display=n?'inline':'none';
@@ -721,53 +832,48 @@ function updateBadge() {
 
 function renderPendientes() {
   const el=document.getElementById('pendientes-list');
-  if(!S.pendientes.length) { el.innerHTML=`<div class="empty"><div class="empty-icon"></div>Sin gastos pendientes de categorizar</div>`; return; }
-  el.innerHTML=S.pendientes.map((p,i)=>`
+  const pend=S.propuestas.filter(p=>p.estado==='pendiente');
+  if(!pend.length) { el.innerHTML=`<div class="empty"><div class="empty-icon"></div>Sin gastos pendientes de categorizar</div>`; return; }
+  el.innerHTML=pend.map((p)=>`
     <div class="gmail-item">
-      <div style="font-size:20px">${p.banco==='Santander'?'BCI':'BCH'}</div>
+      <div style="font-size:20px">${p.banco==='Santander'?'SAN':'BCH'}</div>
       <div class="gmail-item-info">
         <div class="gmail-item-title">${p.comercio}</div>
         <div class="gmail-item-sub">${p.fecha} ? ${p.tarjeta} ? ${p.banco}</div>
       </div>
       <div class="gmail-item-amount">${fmt(p.monto)}</div>
-      <button class="btn btn-sm btn-green" onclick="abrirCat(${i})">Categorizar</button>
-      <button class="del-btn" onclick="descartarPend(${i})"></button>
+      <button class="btn btn-sm btn-green" onclick="abrirCat('${p.id}')">Categorizar</button>
+      <button class="del-btn" onclick="descartarPend('${p.id}')"></button>
     </div>`).join('');
+  renderRevision();
 }
 
-function sugerirCategoria(comercio) {
-  const c = comercio.toLowerCase();
-  if (/uber|cabify|bip|copec|shell|bencin|transporte/.test(c)) return 'Transporte';
-  if (/jumbo|l.der|unimarc|santa isabel|supermercado/.test(c)) return 'Supermercado';
-  if (/netflix|spotify|amazon|apple|anthropic|google|microsoft|claude|suscri/.test(c)) return 'Suscripciones';
-  if (/farmacia|salcobrand|cruz verde|ahumada|cl.nica|hospital/.test(c)) return 'Salud';
-  if (/falabella|ripley|paris|zara|h&m|ropa/.test(c)) return 'Ropa y personal';
-  if (/maconline|samsung|computacion|tecnolog/.test(c)) return 'Otros';
-  if (/lan|latam|hotel|airbnb|viaje/.test(c)) return 'Viajes';
-  return 'Restaurantes';
-}
-
-function abrirCat(i) {
-  S.pendIdx=i;
-  const p=S.pendientes[i];
+function abrirCat(id) {
+  S.pendIdx=id;
+  const p=S.propuestas.find(x=>x.id===id);
+  if(!p) return;
   document.getElementById('pend-title').textContent=p.comercio;
   document.getElementById('pend-meta').textContent=`${p.fecha} ? ${fmt(p.monto)} ? ${p.tarjeta}`;
   fillCat('pend-cat'); fillTag('pend-tag');
-  const catSugerida = sugerirCategoria(p.comercio||'');
-  const catSel = document.getElementById('pend-cat');
-  for (let opt of catSel.options) { if (opt.value === catSugerida) { catSel.value = catSugerida; break; } }
   document.getElementById('pend-comp').value='no';
   document.getElementById('pend-comp-extra').style.display='none';
+  document.getElementById('pend-comp-grupo').style.display='none';
   document.getElementById('pend-cuotas').value='no';
   document.getElementById('pend-cuotas-extra').style.display='none';
   document.getElementById('pend-a-cobrar').value=Math.round(p.monto/2);
+  document.getElementById('pend-personas').value='';
+  if (/transferenc|traspaso/i.test(String(p.comercio || ''))) {
+    document.getElementById('pend-cat').value = 'Transferencias propias';
+    document.getElementById('pend-tag').value = 'Entre cuentas propias';
+  }
   openModal('m-cat-pend');
 }
 function toggleCuotasFields() {
   const v=document.getElementById('pend-cuotas').value;
   document.getElementById('pend-cuotas-extra').style.display=v==='si'?'block':'none';
   if(v==='si') {
-    const p=S.pendientes[S.pendIdx];
+    const p=S.propuestas.find(x=>x.id===S.pendIdx);
+    if(!p) return;
     const n=parseInt(document.getElementById('pend-n-cuotas').value)||0;
     if(n>0) document.getElementById('pend-monto-cuota').value=Math.round(p.monto/n);
     document.getElementById('pend-n-cuotas').addEventListener('input',()=>{
@@ -778,24 +884,54 @@ function toggleCuotasFields() {
 }
 function toggleCompFields() {
   const v=document.getElementById('pend-comp').value;
-  document.getElementById('pend-comp-extra').style.display=(v==='no'||v==='invito')?'none':'flex';
-  if(v==='polola') { document.getElementById('pend-quien').value='Polola'; document.getElementById('pend-a-cobrar').value=Math.round(S.pendientes[S.pendIdx]?.monto/2||0); }
+  document.getElementById('pend-comp-extra').style.display=(v==='polola'||v==='custom')?'flex':'none';
+  document.getElementById('pend-comp-grupo').style.display=(v==='grupo_n')?'block':'none';
+  const cur = S.propuestas.find(x=>x.id===S.pendIdx);
+  if(v==='polola') { document.getElementById('pend-quien').value='Polola'; document.getElementById('pend-a-cobrar').value=Math.round(cur?.monto/2||0); }
 }
 function confirmarCat() {
-  const p=S.pendientes[S.pendIdx];
+  const p=S.propuestas.find(x=>x.id===S.pendIdx);
+  if(!p) return;
   const comp=document.getElementById('pend-comp').value;
   const cuotas=document.getElementById('pend-cuotas').value==='si';
   const nCuotas=cuotas?parseInt(document.getElementById('pend-n-cuotas').value)||1:1;
   const notas=cuotas?`${nCuotas} cuotas · ${fmt(Math.round(p.monto/nCuotas))}/mes`:'';
-  const g={id:uid(),desc:p.comercio,monto:p.monto,cat:document.getElementById('pend-cat').value,tag:document.getElementById('pend-tag').value,fecha:p.fecha,tarjeta:p.tarjeta,tipo:comp!=='no'?'compartido':'normal',fuente:'gmail',banco:p.banco,notas,cuotas:cuotas?nCuotas:null};
+  let montoPersonal = p.monto;
+  if (comp==='polola' || comp==='custom') {
+    const mc=parseFloat(document.getElementById('pend-a-cobrar').value)||Math.round(p.monto/2);
+    // Tu gasto personal no debe incluir la parte que será cobrada a terceros.
+    montoPersonal = Math.max(0, p.monto - mc);
+  } else if (comp==='grupo_n') {
+    const personas = (document.getElementById('pend-personas').value || '')
+      .split(',')
+      .map(x=>x.trim())
+      .filter(Boolean);
+    const nTotal = personas.length + 1; // +1 por ti
+    if (personas.length < 1) { alert('Ingresa al menos una persona para dividir el gasto.'); return; }
+    const porPersona = p.monto / nTotal;
+    montoPersonal = porPersona;
+  }
+  const catSel = document.getElementById('pend-cat').value;
+  const isTransfer = catSel === 'Transferencias propias';
+  const g={id:uid(),desc:p.comercio,monto:montoPersonal,montoTotal:p.monto,cat:catSel,tag:document.getElementById('pend-tag').value,fecha:p.fecha,tarjeta:p.tarjeta,tipo:isTransfer?'transferencia_interna':(comp!=='no'?'compartido':'normal'),fuente:'gmail',banco:p.banco,notas,cuotas:cuotas?nCuotas:null};
   S.gastos.push(g);
   if(comp==='polola'||comp==='custom') {
     const quien=document.getElementById('pend-quien').value||'Polola';
     const mc=parseFloat(document.getElementById('pend-a-cobrar').value)||Math.round(p.monto/2);
     S.cuentas.push({id:uid(),tipo:'cobrar',persona:quien,monto:mc,fecha:'',desc:p.comercio,pagado:false,dias:0});
+  } else if (comp==='grupo_n') {
+    const personas = (document.getElementById('pend-personas').value || '')
+      .split(',')
+      .map(x=>x.trim())
+      .filter(Boolean);
+    const porPersona = p.monto / (personas.length + 1);
+    personas.forEach(persona => {
+      S.cuentas.push({id:uid(),tipo:'cobrar',persona,monto:porPersona,fecha:'',desc:p.comercio,pagado:false,dias:0});
+    });
   }
-  S.pendientes.splice(S.pendIdx,1);
-  save(); closeModal('m-cat-pend'); updateBadge(); renderPendientes(); renderDashboard();
+  p.estado='confirmado';
+  p.propuesta={ cat:g.cat, tag:g.tag||'' };
+  save(); closeModal('m-cat-pend'); updateBadge(); renderPendientes(); renderRevision(); renderDashboard();
   pushGastoToSheets(g);
   if(p.emailId) marcarPendienteProcesado(p.emailId);
 }
@@ -815,7 +951,11 @@ async function marcarPendienteProcesado(emailId) {
     });
   } catch (e) { console.log('Error marcando procesado:', e); }
 }
-function descartarPend(i) { S.pendientes.splice(i,1); save(); updateBadge(); renderPendientes(); }
+function descartarPend(id) {
+  const p=S.propuestas.find(x=>x.id===id);
+  if (p) p.estado='rechazado';
+  save(); updateBadge(); renderPendientes(); renderRevision();
+}
 
 // ============================================================
 // GASTOS COMPARTIDOS
@@ -856,7 +996,7 @@ function saveCompartido() {
   const div={id:uid(),desc,total,fecha:HOY,cat:document.getElementById('c-cat').value,method:document.getElementById('c-method').value,personas:[...compPersonas]};
   S.compartidos.push(div);
   const yo=compPersonas[0];
-  const g={id:uid(),desc,monto:yo.monto,cat:div.cat,tag:'',fecha:HOY,tarjeta:'',tipo:'compartido',fuente:'manual'};
+  const g={id:uid(),desc,monto:yo.monto,montoTotal:total,cat:div.cat,tag:'',fecha:HOY,tarjeta:'',tipo:'compartido',fuente:'manual'};
   S.gastos.push(g);
   compPersonas.slice(1).forEach(p=>{ if(p.monto>0) S.cuentas.push({id:uid(),tipo:'cobrar',persona:p.nombre||'?',monto:p.monto,fecha:'',desc,pagado:false,dias:0}); });
   save(); closeModal('m-compartido'); renderCompartidos(); renderDashboard(); pushGastoToSheets(g);
@@ -899,15 +1039,19 @@ function addTag() {
 function deleteTag(i) { S.tags.splice(i,1); save(); renderConfig(); }
 async function saveConfig() {
   S.gsId=document.getElementById('gs-id').value.trim();
+  S.profileName = document.getElementById('profile-name').value.trim() || 'Usuario';
+  S.appPasscode = document.getElementById('app-passcode').value.trim();
   save();
+  renderProfile();
   document.getElementById('config-status').textContent='Guardando…';
   document.getElementById('config-status').style.color='var(--text3)';
   try {
     await loadFromSheets();
+    touchAuthSession();
     document.getElementById('config-status').textContent='Conexión OK. La API Key solo vive en Netlify (no en este navegador).';
     document.getElementById('config-status').style.color='var(--verde-d)';
   } catch(e) {
-    document.getElementById('config-status').textContent='Error: '+(e.message||String(e))+' — Revisa ID de hoja, variable GOOGLE_SHEETS_API_KEY y usa netlify dev en local.';
+    document.getElementById('config-status').textContent='Error: '+(e.message||String(e))+' — Revisa ID de hoja, GOOGLE_SHEETS_API_KEY y APP_PASSCODE (si está activo en Netlify).';
     document.getElementById('config-status').style.color='var(--rojo)';
   }
 }
@@ -946,16 +1090,82 @@ function parseSheetsFnResponse(text, r) {
   let data;
   try { data = JSON.parse(text); } catch { throw new Error(text || ('HTTP '+r.status)); }
   if (!r.ok) {
+    if (r.status === 401) {
+      throw new Error('Passcode inválido. Configura APP_PASSCODE en Netlify y usa el mismo valor en Configuración.');
+    }
     const msg = data.error?.message || data.error || (typeof data.error === 'object' ? JSON.stringify(data.error) : null) || text;
     throw new Error(msg);
   }
   return data;
 }
 
+function normalizeBankName(v) {
+  const s = decodeEntities(String(v || '')).trim();
+  if (!s) return '';
+  if (/^bci\b/i.test(s)) return 'Banco de Chile';
+  if (/banco\s*de\s*chile/i.test(s)) return 'Banco de Chile';
+  if (/santander/i.test(s)) return 'Santander';
+  return s;
+}
+
+async function verifyAccess(passcode) {
+  if (!S.gsId) return true;
+  const q = new URLSearchParams({ spreadsheetId: S.gsId, range: `${SHEET_NAME_GASTOS}!A1:A1` });
+  const headers = passcode ? { 'x-app-passcode': passcode } : {};
+  const r = await fetch(SHEETS_FN + '?' + q.toString(), { headers });
+  if (r.status === 401) return false;
+  return true;
+}
+
+function showAuthGate(msg='') {
+  const gate = document.getElementById('auth-gate');
+  gate.classList.add('open');
+  const err = document.getElementById('auth-error');
+  if (msg) { err.textContent = msg; err.style.display = 'block'; } else { err.style.display = 'none'; }
+  setTimeout(() => document.getElementById('auth-passcode')?.focus(), 0);
+}
+
+function hideAuthGate() {
+  const gate = document.getElementById('auth-gate');
+  gate.classList.remove('open');
+  const err = document.getElementById('auth-error');
+  err.style.display = 'none';
+}
+
+function lockApp() {
+  S.appPasscode = '';
+  sessionStorage.removeItem('finanzas_jt_session_passcode');
+  sessionStorage.removeItem('finanzas_jt_session_until');
+  showAuthGate('La sesión se cerró por seguridad. Ingresa el passcode nuevamente.');
+}
+
+function touchAuthSession() {
+  if (!S.appPasscode) return;
+  const until = Date.now() + AUTH_MAX_MS;
+  sessionStorage.setItem('finanzas_jt_session_passcode', S.appPasscode);
+  sessionStorage.setItem('finanzas_jt_session_until', String(until));
+  if (authIdleTimer) clearTimeout(authIdleTimer);
+  authIdleTimer = setTimeout(() => lockApp(), AUTH_IDLE_MS);
+}
+
+async function unlockApp() {
+  const v = (document.getElementById('auth-passcode').value || '').trim();
+  S.appPasscode = v;
+  save();
+  const ok = await verifyAccess(v);
+  if (!ok) {
+    showAuthGate('Passcode incorrecto. Intenta nuevamente.');
+    return;
+  }
+  hideAuthGate();
+  touchAuthSession();
+  await loadFromSheets().catch(() => {});
+}
+
 async function sheetsFnGet(range) {
   if (!S.gsId) throw new Error('Falta ID de la hoja');
   const q = new URLSearchParams({ spreadsheetId: S.gsId, range });
-  const r = await fetch(SHEETS_FN + '?' + q.toString());
+  const r = await fetch(SHEETS_FN + '?' + q.toString(), { headers: S.appPasscode ? { 'x-app-passcode': S.appPasscode } : {} });
   const text = await r.text();
   return parseSheetsFnResponse(text, r);
 }
@@ -964,7 +1174,7 @@ async function sheetsFnPost(body) {
   if (!S.gsId) throw new Error('Falta ID de la hoja');
   const r = await fetch(SHEETS_FN, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(),
     body: JSON.stringify({ ...body, spreadsheetId: S.gsId }),
   });
   const text = await r.text();
@@ -988,14 +1198,14 @@ async function pushPresupuestosToSheets() {
 async function pushGastoToSheets(g) {
   if (!S.gsId) return;
   try {
-    const row = [[g.id, g.fecha, g.desc, g.cat, g.tag || '', g.monto, g.tarjeta || '', g.tipo, g.fuente || 'manual', g.banco || '', g.notas || '']];
+    const row = [[g.id, g.fecha, g.desc, g.cat, g.tag || '', g.monto, g.tarjeta || '', g.tipo, g.fuente || 'manual', g.banco || '', g.notas || '', g.montoTotal ?? g.monto]];
     await sheetsAppend(SHEET_NAME_GASTOS, row);
     setSyncStatus(true);
   } catch (e) { setSyncStatus(false); }
 }
 
 async function sheetsAppend(sheet, values) {
-  const range = `${sheet}!A:K`;
+  const range = `${sheet}!A:L`;
   return sheetsFnPost({
     operation: 'append',
     range,
@@ -1012,17 +1222,17 @@ async function syncSheets() {
   btn.textContent = '…';
   btn.disabled = true;
   try {
-    const headers = [['ID', 'Fecha', 'Descripción', 'Categoría', 'Etiqueta', 'Monto', 'Tarjeta', 'Tipo', 'Fuente', 'Banco', 'Notas']];
+    const headers = [['ID', 'Fecha', 'Descripción', 'Categoría', 'Etiqueta', 'Monto', 'Tarjeta', 'Tipo', 'Fuente', 'Banco', 'Notas', 'Monto_Total']];
     await sheetsFnPost({
       operation: 'put',
-      range: `${SHEET_NAME_GASTOS}!A1:K1`,
+      range: `${SHEET_NAME_GASTOS}!A1:L1`,
       values: headers,
     });
     if (S.gastos.length) {
-      const rows = S.gastos.map(g => [g.id, g.fecha, g.desc, g.cat, g.tag || '', g.monto, g.tarjeta || '', g.tipo, g.fuente || 'manual', g.banco || '', g.notas || '']);
+      const rows = S.gastos.map(g => [g.id, g.fecha, g.desc, g.cat, g.tag || '', g.monto, g.tarjeta || '', g.tipo, g.fuente || 'manual', g.banco || '', g.notas || '', g.montoTotal ?? g.monto]);
       await sheetsFnPost({
         operation: 'put',
-        range: `${SHEET_NAME_GASTOS}!A2:K${rows.length + 1}`,
+        range: `${SHEET_NAME_GASTOS}!A2:L${rows.length + 1}`,
         values: rows,
         majorDimension: 'ROWS',
       });
@@ -1031,7 +1241,16 @@ async function syncSheets() {
     alert(`OK ${S.gastos.length} gastos sincronizados con Google Sheets.`);
   } catch (e) {
     setSyncStatus(false);
-    alert('Error: ' + e.message + '\n\nRevisa GOOGLE_SHEETS_API_KEY en Netlify y permisos de la hoja.');
+    const msg = String(e.message || e);
+    if (/Expected OAuth2|API keys are not supported/i.test(msg)) {
+      alert(
+        'El botón ↻ Sheets (sincronización masiva) no está permitido con tu configuración actual de Google API key.\n\n' +
+        'No es necesario para el uso diario: la app igual lee Pendientes/Gastos y ingest-mobile sigue funcionando.\n' +
+        'Si quieres escritura masiva, hay que cambiar autenticación a OAuth/Service Account.'
+      );
+    } else {
+      alert('Error: ' + msg + '\n\nRevisa GOOGLE_SHEETS_API_KEY en Netlify y permisos de la hoja.');
+    }
   }
   btn.textContent = '↻ Sheets';
   btn.disabled = false;
@@ -1040,30 +1259,62 @@ async function syncSheets() {
 async function loadFromSheets() {
   if (!S.gsId) return;
   try {
-    const dG = await sheetsFnGet(`${SHEET_NAME_GASTOS}!A2:K1000`);
+    const dG = await sheetsFnGet(`${SHEET_NAME_GASTOS}!A2:L1000`);
     if (dG.values) {
       S.gastos = dG.values.map(row => ({
         id: row[0] || uid(),
         fecha: row[1],
-        desc: row[2],
-        cat: row[3],
-        tag: row[4],
+        desc: decodeEntities(row[2]),
+        cat: decodeEntities(row[3]),
+        tag: decodeEntities(row[4]),
         monto: parseFloat(row[5]) || 0,
         tarjeta: row[6],
         tipo: row[7] || 'normal',
         fuente: row[8] || 'manual',
-        banco: row[9],
-        notas: row[10],
+        banco: normalizeBankName(row[9]),
+        notas: decodeEntities(row[10]),
+        montoTotal: parseFloat(row[11]) || (parseFloat(row[5]) || 0),
       }));
     }
     const dP = await sheetsFnGet('Pendientes!A2:H1000');
     if (dP.values) {
-      const noProcesados = dP.values.filter(row => row[7] === 'NO' || !row[7]);
-      const idsExistentes = new Set(S.pendientes.map(p => p.emailId));
+      const noProcesados = dP.values.filter(row => {
+        const estado = String(row[7] || '').trim().toUpperCase();
+        return estado === 'NO' || !estado;
+      });
+      const emailIdsExistentes = new Set(
+        S.propuestas
+          .map(p => (p.emailId || '').trim())
+          .filter(Boolean)
+      );
+      const idsExistentes = new Set(
+        S.propuestas
+          .map(p => (p.id || '').trim())
+          .filter(Boolean)
+      );
       const nuevos = noProcesados
-        .filter(row => !idsExistentes.has(row[6]))
-        .map(row => ({ id: row[0], fecha: row[1], comercio: row[2], monto: parseFloat(row[3]) || 0, tarjeta: row[4], banco: row[5], emailId: row[6] }));
-      S.pendientes = [...S.pendientes, ...nuevos];
+        .filter(row => {
+          const emailId = (row[6] || '').trim();
+          const id = (row[0] || '').trim();
+          // Si hay emailId (flujo Gmail), deduplicamos por emailId.
+          // Si no hay emailId (flujo Wallet/ingest-mobile), deduplicamos por id.
+          if (emailId) return !emailIdsExistentes.has(emailId);
+          if (id) return !idsExistentes.has(id);
+          return true;
+        })
+        .map(row => ({
+          id: row[0] || uid(),
+          fecha: row[1],
+          comercio: decodeEntities(row[2]),
+          monto: parseFloat(row[3]) || 0,
+          tarjeta: row[4] || '',
+          banco: normalizeBankName(row[5]),
+          emailId: row[6],
+          fuente: 'gmail',
+          propuesta: { cat: '', tag: '' },
+          estado: 'pendiente',
+        }));
+      S.propuestas = [...S.propuestas, ...nuevos];
     }
     try {
       const dPr = await sheetsFnGet(`${SHEET_NAME_PRESUPUESTOS}!A2:B500`);
@@ -1099,12 +1350,19 @@ function setSyncStatus(ok, msg) {
 // ============================================================
 function renderDashboard() {
   const now=new Date(); const mes=now.getMonth(); const anio=now.getFullYear();
-  const gm=S.gastos.filter(g=>{const d=new Date(g.fecha+'T12:00');return d.getMonth()===mes&&d.getFullYear()===anio;});
+  const gm=S.gastos.filter(g=>{
+    const d=new Date(g.fecha+'T12:00');
+    if (g.tipo === 'transferencia_interna') return false;
+    return d.getMonth()===mes&&d.getFullYear()===anio;
+  });
   const total=gm.reduce((a,g)=>a+g.monto,0);
+  const totalTarjetaBruto = gm
+    .filter(g => /^TC\s/i.test((g.tarjeta||'')))
+    .reduce((a,g)=>a+(Number(g.montoTotal ?? g.monto)||0),0);
   const cobrar=S.cuentas.filter(c=>c.tipo==='cobrar'&&!c.pagado);
   const pagar=S.cuentas.filter(c=>c.tipo==='pagar'&&!c.pagado);
   document.getElementById('m-gasto').textContent=fmt(total);
-  document.getElementById('m-gasto-s').textContent=gm.length+' transacciones';
+  document.getElementById('m-gasto-s').textContent=gm.length+` transacciones · Tarjetas (bruto): ${fmt(totalTarjetaBruto)}`;
   document.getElementById('m-cobrar').textContent=fmt(cobrar.reduce((a,c)=>a+c.monto,0));
   document.getElementById('m-cobrar-s').textContent=cobrar.length+' pendientes';
   document.getElementById('m-pagar').textContent=fmt(pagar.reduce((a,c)=>a+c.monto,0));
@@ -1280,6 +1538,93 @@ function renderHistorial() {
     `<tr><td colspan="6" class="empty" style="padding:24px">Sin registros</td></tr>`;
 }
 
+async function suggestWithLLM(id) {
+  const p = S.propuestas.find(x=>x.id===id);
+  if(!p) return;
+  try {
+    const r = await fetch('/.netlify/functions/llm-suggest', {
+      method:'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({
+        text: `${p.comercio} | ${p.banco} | ${p.tarjeta}`,
+        amount: p.monto,
+        date: p.fecha,
+        categories: S.cats.map(c=>c.nombre),
+      }),
+    });
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.error || 'No disponible');
+    p.propuesta = p.propuesta || {};
+    p.propuesta.cat = d.category || p.propuesta.cat || '';
+    p.propuesta.tag = d.tag || p.propuesta.tag || '';
+    save();
+    renderRevision();
+    renderPendientes();
+  } catch (e) {
+    alert('Sugerencia IA no disponible todavía: '+(e.message||String(e)));
+  }
+}
+
+function setProposalCategory(id, cat) {
+  const p = S.propuestas.find(x=>x.id===id);
+  if(!p) return;
+  p.propuesta = p.propuesta || {};
+  p.propuesta.cat = cat;
+  save();
+}
+
+function confirmProposalSimple(id) {
+  const p = S.propuestas.find(x=>x.id===id);
+  if(!p || p.estado!=='pendiente') return;
+  const cat = p.propuesta?.cat || 'Otros';
+  const g={id:uid(),desc:p.comercio,monto:p.monto,montoTotal:p.monto,cat,tag:p.propuesta?.tag||'',fecha:p.fecha,tarjeta:p.tarjeta,tipo:cat==='Transferencias propias'?'transferencia_interna':'normal',fuente:p.fuente||'gmail',banco:p.banco,notas:''};
+  S.gastos.push(g);
+  p.estado='confirmado';
+  save();
+  pushGastoToSheets(g);
+  if(p.emailId) marcarPendienteProcesado(p.emailId);
+}
+
+function bulkRevision(action) {
+  const pend = S.propuestas.filter(p=>p.estado==='pendiente');
+  if(!pend.length) return;
+  if(action==='confirm') {
+    pend.forEach(p=>confirmProposalSimple(p.id));
+  } else if(action==='reject') {
+    pend.forEach(p=>{ p.estado='rechazado'; });
+    save();
+  }
+  updateBadge();
+  renderPendientes();
+  renderRevision();
+  renderDashboard();
+}
+
+function renderRevision() {
+  const el = document.getElementById('revision-body');
+  if(!el) return;
+  const list = [...S.propuestas].sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha)));
+  if(!list.length) {
+    el.innerHTML = `<tr><td colspan="6" class="empty" style="padding:24px">Sin movimientos propuestos</td></tr>`;
+    return;
+  }
+  el.innerHTML = list.map(p => {
+    const estadoBadge = p.estado==='confirmado' ? '<span class="badge b-verde">Confirmado</span>' : (p.estado==='rechazado' ? '<span class="badge b-rojo">Rechazado</span>' : '<span class="badge b-ambar">Pendiente</span>');
+    const catOpts = ['<option value="">Sin categoría</option>'].concat(S.cats.map(c=>`<option value="${esc(c.nombre)}"${p.propuesta?.cat===c.nombre?' selected':''}>${esc(c.nombre)}</option>`)).join('');
+    const actions = p.estado==='pendiente'
+      ? `<button class="btn btn-sm" onclick="suggestWithLLM('${p.id}')">Sugerir IA</button> <button class="btn btn-sm btn-green" onclick="confirmProposalSimple('${p.id}')">Confirmar</button> <button class="btn btn-sm" onclick="descartarPend('${p.id}')">Rechazar</button>`
+      : `<span style="color:var(--text3);font-size:12px">Sin acciones</span>`;
+    return `<tr>
+      <td style="font-family:var(--mono);font-size:11px">${esc(p.fecha)}</td>
+      <td>${esc(p.comercio)}</td>
+      <td style="font-family:var(--mono);font-weight:600">${fmt(p.monto)}</td>
+      <td><select class="fi" style="min-width:150px" onchange="setProposalCategory('${p.id}', this.value)">${catOpts}</select></td>
+      <td>${estadoBadge}</td>
+      <td>${actions}</td>
+    </tr>`;
+  }).join('');
+}
+
 function renderPresupuestosRows() {
   const el = document.getElementById('presupuestos-rows');
   if (!el) return;
@@ -1295,6 +1640,8 @@ function renderPresupuestosRows() {
 
 function renderConfig() {
   document.getElementById('gs-id').value = S.gsId || '';
+  document.getElementById('profile-name').value = S.profileName || '';
+  document.getElementById('app-passcode').value = S.appPasscode || '';
   document.getElementById('cats-display').innerHTML = S.cats.map(c => `<span class="chip badge b-${c.color}">${c.nombre} <span style="opacity:.5;cursor:pointer;margin-left:2px" onclick="deleteCat('${c.id}')"></span></span>`).join('');
   document.getElementById('tags-display').innerHTML = S.tags.map((t, i) => `<span class="chip badge b-azul">${t} <span style="opacity:.5;cursor:pointer;margin-left:2px" onclick="deleteTag(${i})"></span></span>`).join('');
   renderPresupuestosRows();
@@ -1303,12 +1650,36 @@ function renderConfig() {
 // ============================================================
 // INIT
 // ============================================================
-load();
-renderDashboard();
-renderCuentas();
-updateBadge();
-if (S.gsId) loadFromSheets().catch(() => {});
-setInterval(() => { if (S.gsId) loadFromSheets().catch(e => console.log('Sheets poll:', e)); }, 300000);
+async function initApp() {
+  load();
+  renderProfile();
+  renderDashboard();
+  renderCuentas();
+  renderRevision();
+  updateBadge();
+  let needsPasscode = false;
+  if (S.gsId) {
+    const ok = await verifyAccess(S.appPasscode || '');
+    needsPasscode = !ok;
+    if (!needsPasscode) await loadFromSheets().catch(() => {});
+  }
+  if (needsPasscode) {
+    showAuthGate('Esta app requiere passcode para acceder a tus datos.');
+  } else {
+    touchAuthSession();
+  }
+  ['click','keydown','mousemove','touchstart'].forEach(evt => {
+    window.addEventListener(evt, () => {
+      if (!document.getElementById('auth-gate').classList.contains('open')) touchAuthSession();
+    }, { passive: true });
+  });
+  setInterval(() => {
+    if (!document.getElementById('auth-gate').classList.contains('open') && S.gsId) {
+      loadFromSheets().catch(e => console.log('Sheets poll:', e));
+    }
+  }, 300000);
+}
+initApp();
 
 // Check params from email link (?action=pendientes)
 const urlParams=new URLSearchParams(window.location.search);

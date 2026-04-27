@@ -10,11 +10,12 @@
 exports.handler = async (event) => {
   const key = process.env.GOOGLE_SHEETS_API_KEY;
   const allowListRaw = process.env.SHEETS_ALLOWED_SPREADSHEET_IDS || '';
+  const requiredPasscode = process.env.APP_PASSCODE || '';
 
   const headers = {
     'Content-Type': 'application/json; charset=utf-8',
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Headers': 'Content-Type, x-app-passcode',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   };
 
@@ -33,11 +34,20 @@ exports.handler = async (event) => {
   }
 
   const allowed = allowListRaw.split(',').map((s) => s.trim()).filter(Boolean);
+  const providedPasscode = event.headers['x-app-passcode'] || event.headers['X-App-Passcode'] || '';
 
   function isAllowed(id) {
     if (!id) return false;
     if (!allowed.length) return true;
     return allowed.includes(id);
+  }
+
+  if (requiredPasscode && providedPasscode !== requiredPasscode) {
+    return {
+      statusCode: 401,
+      headers,
+      body: JSON.stringify({ error: 'Passcode inválido o faltante' }),
+    };
   }
 
   try {
