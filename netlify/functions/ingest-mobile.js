@@ -1,4 +1,5 @@
 'use strict';
+const crypto = require('crypto');
 
 /**
  * Ingesta segura de movimientos móviles (Shortcut/Scriptable).
@@ -6,6 +7,8 @@
  */
 exports.handler = async (event) => {
   const key = process.env.GOOGLE_SHEETS_API_KEY;
+  const serviceAccountEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || '';
+  const serviceAccountPrivateKey = (process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || '').replace(/\\n/g, '\n');
   const requiredPasscode = process.env.APP_PASSCODE || '';
   const allowListRaw = process.env.SHEETS_ALLOWED_SPREADSHEET_IDS || '';
   const allowed = allowListRaw.split(',').map((s) => s.trim()).filter(Boolean);
@@ -19,7 +22,9 @@ exports.handler = async (event) => {
 
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers, body: '' };
   if (event.httpMethod !== 'POST') return { statusCode: 405, headers, body: JSON.stringify({ error: 'Método no permitido' }) };
-  if (!key) return { statusCode: 503, headers, body: JSON.stringify({ error: 'Falta GOOGLE_SHEETS_API_KEY' }) };
+  if (!key && (!serviceAccountEmail || !serviceAccountPrivateKey)) {
+    return { statusCode: 503, headers, body: JSON.stringify({ error: 'Falta autenticación de Google Sheets (API key o Service Account).' }) };
+  }
 
   const pass = event.headers['x-app-passcode'] || event.headers['X-App-Passcode'] || '';
   if (requiredPasscode && pass !== requiredPasscode) {
@@ -50,14 +55,66 @@ exports.handler = async (event) => {
 
   const values = [[uid, fecha, comercio, monto, tarjeta, banco, emailId, procesado]];
   const range = 'Pendientes!A:H';
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS&key=${encodeURIComponent(key)}`;
+  const apiBase = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values`;
   const payload = { range: 'Pendientes!A1', majorDimension: 'ROWS', values };
-  const dedupeUrl = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent('Pendientes!A2:A5000')}?key=${encodeURIComponent(key)}`;
+  const dedupeRange = 'Pendientes!A2:A5000';
+
+  function base64url(input) {
+    return Buffer.from(input)
+      .toString('base64')
+      .replace(/=/g, '')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_');
+  }
+
+  async function getGoogleAccessToken() {
+    const now = Math.floor(Date.now() / 1000);
+    const header = { alg: 'RS256', typ: 'JWT' };
+    const claim = {
+      iss: serviceAccountEmail,
+      scope: 'https://www.googleapis.com/auth/spreadsheets',
+      aud: 'https://oauth2.googleapis.com/token',
+      iat: now,
+      exp: now + 3600,
+    };
+    const unsigned = `${base64url(JSON.stringify(header))}.${base64url(JSON.stringify(claim))}`;
+    const signature = crypto
+      .createSign('RSA-SHA256')
+      .update(unsigned)
+      .sign(serviceAccountPrivateKey, 'base64')
+      .replace(/=/g, '')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_');
+    const assertion = `${unsigned}.${signature}`;
+    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+        assertion,
+      }).toString(),
+    });
+    const tokenText = await tokenRes.text();
+    let tokenJson;
+    try { tokenJson = JSON.parse(tokenText); } catch { tokenJson = null; }
+    if (!tokenRes.ok || !tokenJson?.access_token) {
+      throw new Error(tokenJson?.error_description || tokenJson?.error || tokenText || 'No se pudo obtener access token de Google');
+    }
+    return tokenJson.access_token;
+  }
 
   try {
+    const useServiceAccount = Boolean(serviceAccountEmail && serviceAccountPrivateKey);
+    const authHeaders = useServiceAccount
+      ? { Authorization: `Bearer ${await getGoogleAccessToken()}` }
+      : {};
+    const keyQuery = useServiceAccount ? '' : `?key=${encodeURIComponent(key)}`;
+    const dedupeUrl = `${apiBase}/${encodeURIComponent(dedupeRange)}${keyQuery}`;
+    const appendUrl = `${apiBase}/${encodeURIComponent(range)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS${useServiceAccount ? '' : `&key=${encodeURIComponent(key)}`}`;
+
     // Idempotencia: si ya existe el uid en Pendientes, no vuelve a insertar.
     // Esto evita duplicados cuando Atajos reintenta una automatización.
-    const dedupe = await fetch(dedupeUrl);
+    const dedupe = await fetch(dedupeUrl, { headers: authHeaders });
     const dedupeText = await dedupe.text();
     if (dedupe.ok) {
       let parsed;
@@ -72,9 +129,9 @@ exports.handler = async (event) => {
       }
     }
 
-    const r = await fetch(url, {
+    const r = await fetch(appendUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders },
       body: JSON.stringify(payload),
     });
     const text = await r.text();
