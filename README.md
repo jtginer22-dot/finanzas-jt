@@ -4,6 +4,8 @@
 - `index.html` → La app web completa
 - `google-apps-script.js` → Automatización Gmail + emails
 - `netlify.toml` + `netlify/functions/sheets.js` → Proxy seguro hacia Google Sheets (API key solo en Netlify)
+- `netlify/functions/llm-suggest.js` → contrato base para sugerencias de categorización con LLM (pendiente proveedor)
+- `netlify/functions/ingest-mobile.js` → endpoint seguro para capturas desde Shortcut/Scriptable (sin exponer API key)
 
 ---
 
@@ -24,6 +26,9 @@ La app **no** guarda la API Key de Google en `localStorage`. Una función server
 1. En Netlify: **Site configuration → Environment variables**
 2. Agrega:
    - **`GOOGLE_SHEETS_API_KEY`**: tu API key de Google Cloud (solo lectura/escritura Sheets según la restrinja en Google Cloud Console).
+   - **`APP_PASSCODE`** (recomendado): código secreto para autorizar uso de la app contra tu proxy (header `x-app-passcode`).
+   - **`ANTHROPIC_API_KEY`**: clave API para sugerencias LLM de categorización (Claude).
+   - (Opcional) **`ANTHROPIC_MODEL`**: modelo a usar (por defecto `claude-3-5-haiku-latest`).
 3. (Recomendado) **`SHEETS_ALLOWED_SPREADSHEET_IDS`**: el ID de tu spreadsheet (ej. `1Aeiav6ZIiC_o8zgqwM7qRxgFtXB3eHROW9-NtJ4GU5g`). Si está definido, el proxy **solo** acepta ese ID y rechaza otros (reduce abuso si alguien descubre la URL de la función).
 4. Vuelve a desplegar el sitio tras cambiar variables.
 
@@ -57,7 +62,11 @@ Si en la terminal ves `Response with status 503` al llamar a `/.netlify/function
 1. En la carpeta `finanzas-jt`, copia el archivo de ejemplo:  
    `cp .env.example .env`  
    (o duplica `.env.example` y renómbralo a `.env` desde el Finder).
-2. Abre **`.env`** con un editor y reemplaza el valor de `GOOGLE_SHEETS_API_KEY` por tu clave real (una sola línea, sin comillas).
+2. Abre **`.env`** con un editor y reemplaza:
+   - `GOOGLE_SHEETS_API_KEY` por tu clave real
+   - `APP_PASSCODE` por tu código de acceso
+   - `ANTHROPIC_API_KEY` por tu clave de Anthropic
+   (una sola línea por variable, sin comillas).
 3. **Detén** `netlify dev` (`Ctrl+C` en la terminal) y vuelve a ejecutar **`npm run dev`**.
 
 ### Configurar Google Sheets en la app (solo ID)

@@ -5,3 +5,9 @@ node_modules/
 
 # Local Netlify folder
 .netlify
+
+# Local Python deps for one-off import scripts
+.vendor/
+
+# Generated imports can contain personal financial data
+imports/*.csv

@@ -40,7 +40,7 @@ function inicializar() {
   
   // Crear pestañas si no existen
   const tabs = {
-    [SHEETS.GASTOS]: ['ID','Fecha','Descripción','Categoría','Etiqueta','Monto','Tarjeta','Tipo','Fuente','Banco','Notas'],
+    [SHEETS.GASTOS]: ['ID','Fecha','Descripción','Categoría','Etiqueta','Monto','Tarjeta','Tipo','Fuente','Banco','Notas','Monto_Total'],
     [SHEETS.PENDIENTES]: ['ID','Fecha','Comercio','Monto','Tarjeta','Banco','Email_ID','Procesado'],
     [SHEETS.CUENTAS]: ['ID','Tipo','Persona','Monto','Fecha_Creacion','Fecha_Limite','Estado','Descripción'],
     [SHEETS.CATEGORIAS]: ['ID','Nombre','Color','Tipo','Activa'],

@@ -933,15 +933,23 @@ function confirmarCat() {
   p.propuesta={ cat:g.cat, tag:g.tag||'' };
   save(); closeModal('m-cat-pend'); updateBadge(); renderPendientes(); renderRevision(); renderDashboard();
   pushGastoToSheets(g);
-  if(p.emailId) marcarPendienteProcesado(p.emailId);
+  marcarPendienteProcesado(p);
 }
 
-async function marcarPendienteProcesado(emailId) {
-  if (!S.gsId || !emailId) return;
+async function marcarPendienteProcesado(p) {
+  if (!S.gsId || !p) return;
   try {
     const d = await sheetsFnGet('Pendientes!A2:H1000');
     if (!d.values) return;
-    const fila = d.values.findIndex(row => row[6] === emailId);
+    const emailId = String(p.emailId || '').trim();
+    const uid = String(p.id || '').trim();
+    const fila = d.values.findIndex(row => {
+      const rowUid = String(row[0] || '').trim();
+      const rowEmailId = String(row[6] || '').trim();
+      if (emailId) return rowEmailId === emailId;
+      if (uid) return rowUid === uid;
+      return false;
+    });
     if (fila < 0) return;
     const filaNum = fila + 2;
     await sheetsFnPost({
@@ -1582,7 +1590,7 @@ function confirmProposalSimple(id) {
   p.estado='confirmado';
   save();
   pushGastoToSheets(g);
-  if(p.emailId) marcarPendienteProcesado(p.emailId);
+  marcarPendienteProcesado(p);
 }
 
 function bulkRevision(action) {

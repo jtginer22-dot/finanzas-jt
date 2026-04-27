@@ -1,9 +1,10 @@
 'use strict';
-const crypto = require('crypto');
+
+const { getGoogleAccessTokenFromServiceAccount } = require('./lib/google-sheets-token');
 
 /**
  * Ingesta segura de movimientos móviles (Shortcut/Scriptable).
- * Requiere APP_PASSCODE y usa GOOGLE_SHEETS_API_KEY del servidor.
+ * Requiere APP_PASSCODE y escritura vía cuenta de servicio (recomendado) o GOOGLE_SHEETS_API_KEY solo para lectura dedupe legacy.
  */
 exports.handler = async (event) => {
   const key = process.env.GOOGLE_SHEETS_API_KEY;
@@ -46,23 +47,53 @@ exports.handler = async (event) => {
 
   function parseMoney(input) {
     if (typeof input === 'number' && Number.isFinite(input)) return input;
-    const raw = String(input ?? '').trim();
+
+    // En iOS Shortcuts el campo puede llegar como objeto/diccionario.
+    if (input && typeof input === 'object') {
+      const candidateKeys = [
+        'amount',
+        'value',
+        'monto',
+        'numberValue',
+        'rawValue',
+        'displayValue',
+        'formatted',
+      ];
+      for (const key of candidateKeys) {
+        if (Object.prototype.hasOwnProperty.call(input, key)) {
+          const parsed = parseMoney(input[key]);
+          if (parsed !== 0) return parsed;
+        }
+      }
+      return 0;
+    }
+
+    const raw = String(input ?? '')
+      .replace(/\u00A0/g, ' ') // no-break space común en montos localizados
+      .trim();
     if (!raw) return 0;
+
     // Conserva solo dígitos y separadores decimales comunes.
     const cleaned = raw.replace(/[^\d,.-]/g, '');
     if (!cleaned) return 0;
-    const hasDot = cleaned.includes('.');
-    const hasComma = cleaned.includes(',');
-    let normalized = cleaned;
-    if (hasDot && hasComma) {
-      // Caso típico LATAM: 64.130,00 -> 64130.00
-      normalized = cleaned.replace(/\./g, '').replace(',', '.');
-    } else if (hasComma && !hasDot) {
-      // 1234,56 -> 1234.56
-      normalized = cleaned.replace(',', '.');
+
+    const sign = cleaned.startsWith('-') ? -1 : 1;
+    const unsigned = cleaned.replace(/-/g, '');
+    const lastComma = unsigned.lastIndexOf(',');
+    const lastDot = unsigned.lastIndexOf('.');
+    const decimalIdx = Math.max(lastComma, lastDot);
+
+    let normalized;
+    if (decimalIdx !== -1) {
+      const intPart = unsigned.slice(0, decimalIdx).replace(/[.,]/g, '');
+      const decPart = unsigned.slice(decimalIdx + 1).replace(/[.,]/g, '');
+      normalized = `${intPart || '0'}.${decPart || '0'}`;
+    } else {
+      normalized = unsigned.replace(/[.,]/g, '');
     }
+
     const n = Number(normalized);
-    return Number.isFinite(n) ? n : 0;
+    return Number.isFinite(n) ? sign * n : 0;
   }
 
   const uid = body.uid || Date.now().toString(36);
@@ -80,54 +111,10 @@ exports.handler = async (event) => {
   const payload = { range, majorDimension: 'ROWS', values };
   const dedupeRange = 'Pendientes!A2:A5000';
 
-  function base64url(input) {
-    return Buffer.from(input)
-      .toString('base64')
-      .replace(/=/g, '')
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_');
-  }
-
-  async function getGoogleAccessToken() {
-    const now = Math.floor(Date.now() / 1000);
-    const header = { alg: 'RS256', typ: 'JWT' };
-    const claim = {
-      iss: serviceAccountEmail,
-      scope: 'https://www.googleapis.com/auth/spreadsheets',
-      aud: 'https://oauth2.googleapis.com/token',
-      iat: now,
-      exp: now + 3600,
-    };
-    const unsigned = `${base64url(JSON.stringify(header))}.${base64url(JSON.stringify(claim))}`;
-    const signature = crypto
-      .createSign('RSA-SHA256')
-      .update(unsigned)
-      .sign(serviceAccountPrivateKey, 'base64')
-      .replace(/=/g, '')
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_');
-    const assertion = `${unsigned}.${signature}`;
-    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-        assertion,
-      }).toString(),
-    });
-    const tokenText = await tokenRes.text();
-    let tokenJson;
-    try { tokenJson = JSON.parse(tokenText); } catch { tokenJson = null; }
-    if (!tokenRes.ok || !tokenJson?.access_token) {
-      throw new Error(tokenJson?.error_description || tokenJson?.error || tokenText || 'No se pudo obtener access token de Google');
-    }
-    return tokenJson.access_token;
-  }
-
   try {
     const useServiceAccount = Boolean(serviceAccountEmail && serviceAccountPrivateKey);
     const authHeaders = useServiceAccount
-      ? { Authorization: `Bearer ${await getGoogleAccessToken()}` }
+      ? { Authorization: `Bearer ${await getGoogleAccessTokenFromServiceAccount(serviceAccountEmail, serviceAccountPrivateKey)}` }
       : {};
     const keyQuery = useServiceAccount ? '' : `?key=${encodeURIComponent(key)}`;
     const dedupeUrl = `${apiBase}/${encodeURIComponent(dedupeRange)}${keyQuery}`;

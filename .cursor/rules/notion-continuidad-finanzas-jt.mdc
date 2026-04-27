@@ -1,0 +1,24 @@
+---
+description: Mantener Notion como memoria viva del proyecto Finanzas JT (handoff sin depender del chat).
+globs: finanzas-jt/**/*
+alwaysApply: false
+---
+
+# Continuidad Finanzas JT + Notion
+
+Cuando trabajes en este proyecto y haya **cambios relevantes** (auth Sheets/Netlify, funciones `netlify/functions/*`, scripts de import, flujos de deploy, decisiones de producto o errores resueltos), **actualiza Notion por tu cuenta** usando el MCP de Notion. No esperes a que el usuario pida “regístralo”.
+
+## Criterio
+
+Piensa en el próximo chat sin historial: ¿qué necesitaría saber para seguir en el mismo punto? Eso va a Notion: estado del deploy, qué variables existen (nombres, no secretos), comandos concretos, enlaces a páginas existentes, y el “qué falta”.
+
+## Dónde escribir
+
+- Hub: página **Sistema de Finanzas Personales** en Notion (ancestro de los registros del proyecto).
+- Página canónica de handoff: **Handoff Finanzas JT — despliegue vs variables** (créala si no existe; si existe, actualízala).
+- Registros puntuales: páginas hijas tipo “Registro YYYY-MM-DD — …” cuando ayude el historial.
+
+## Qué no hacer
+
+- No pegar `APP_PASSCODE`, private keys, ni API keys en Notion.
+- No duplicar guías largas si ya existe una guía detallada en el workspace Notion; enlaza y resume.

@@ -1,14 +1,20 @@
 'use strict';
 
+const { getGoogleAccessTokenFromServiceAccount } = require('./lib/google-sheets-token');
+
 /**
  * Proxy seguro para Google Sheets API v4.
- * La API key solo existe como GOOGLE_SHEETS_API_KEY en Netlify (Site settings → Environment variables).
+ * - Lecturas (GET): pueden usar GOOGLE_SHEETS_API_KEY en la query (hojas públicas / restricciones de GCP).
+ * - Escritura (append, put): Google no acepta API key; requiere cuenta de servicio
+ *   (GOOGLE_SERVICE_ACCOUNT_EMAIL + GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY), igual que ingest-mobile.
  *
  * Opcional: SHEETS_ALLOWED_SPREADSHEET_IDS=id1,id2 — si está definido, solo esos IDs son aceptados.
  */
 
 exports.handler = async (event) => {
   const key = process.env.GOOGLE_SHEETS_API_KEY;
+  const serviceAccountEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || '';
+  const serviceAccountPrivateKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || '';
   const allowListRaw = process.env.SHEETS_ALLOWED_SPREADSHEET_IDS || '';
   const requiredPasscode = process.env.APP_PASSCODE || '';
 
@@ -23,12 +29,15 @@ exports.handler = async (event) => {
     return { statusCode: 204, headers, body: '' };
   }
 
-  if (!key) {
+  const useServiceAccount = Boolean(serviceAccountEmail && serviceAccountPrivateKey);
+
+  if (!key && !useServiceAccount) {
     return {
       statusCode: 503,
       headers,
       body: JSON.stringify({
-        error: 'Falta GOOGLE_SHEETS_API_KEY en variables de entorno de Netlify.',
+        error:
+          'Falta autenticación Google: define GOOGLE_SHEETS_API_KEY y/o cuenta de servicio (GOOGLE_SERVICE_ACCOUNT_EMAIL + GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY).',
       }),
     };
   }
@@ -50,6 +59,18 @@ exports.handler = async (event) => {
     };
   }
 
+  async function sheetsAuthHeaders() {
+    if (!useServiceAccount) return {};
+    const token = await getGoogleAccessTokenFromServiceAccount(serviceAccountEmail, serviceAccountPrivateKey);
+    return { Authorization: `Bearer ${token}` };
+  }
+
+  function keyQueryParam() {
+    if (useServiceAccount) return '';
+    if (!key) return '';
+    return `?key=${encodeURIComponent(key)}`;
+  }
+
   try {
     if (event.httpMethod === 'GET') {
       const q = event.queryStringParameters || {};
@@ -65,8 +86,20 @@ exports.handler = async (event) => {
         return { statusCode: 400, headers, body: JSON.stringify({ error: 'Falta query param range' }) };
       }
 
-      const url = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}?key=${encodeURIComponent(key)}`;
-      const r = await fetch(url);
+      const kq = keyQueryParam();
+      if (!useServiceAccount && !kq) {
+        return {
+          statusCode: 503,
+          headers,
+          body: JSON.stringify({
+            error: 'GET requiere GOOGLE_SHEETS_API_KEY o cuenta de servicio (GOOGLE_SERVICE_ACCOUNT_*).',
+          }),
+        };
+      }
+
+      const authHeaders = await sheetsAuthHeaders();
+      const url = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}${kq}`;
+      const r = await fetch(url, { headers: { ...authHeaders } });
       const text = await r.text();
       return { statusCode: r.status, headers, body: text };
     }
@@ -97,15 +130,28 @@ exports.handler = async (event) => {
         return { statusCode: 400, headers, body: JSON.stringify({ error: 'Faltan range o values' }) };
       }
 
+      if (!useServiceAccount) {
+        return {
+          statusCode: 503,
+          headers,
+          body: JSON.stringify({
+            error:
+              'Escritura a Sheets (append/put) no admite API key. Configura en Netlify GOOGLE_SERVICE_ACCOUNT_EMAIL y GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY (mismo flujo que ingest-mobile) y comparte la hoja con el email de la cuenta de servicio.',
+          }),
+        };
+      }
+
+      const authHeaders = await sheetsAuthHeaders();
+
       if (operation === 'append') {
         const insertDataOption = body.insertDataOption || 'INSERT_ROWS';
-        const url = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}:append?valueInputOption=${encodeURIComponent(valueInputOption)}&insertDataOption=${encodeURIComponent(insertDataOption)}&key=${encodeURIComponent(key)}`;
+        const url = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}:append?valueInputOption=${encodeURIComponent(valueInputOption)}&insertDataOption=${encodeURIComponent(insertDataOption)}`;
         const sheetName = range.includes('!') ? range.split('!')[0] : range;
         const innerRange = body.appendAnchor || `${sheetName}!A1`;
         const payload = { range: innerRange, majorDimension, values };
         const r = await fetch(url, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...authHeaders },
           body: JSON.stringify(payload),
         });
         const text = await r.text();
@@ -113,11 +159,11 @@ exports.handler = async (event) => {
       }
 
       if (operation === 'put') {
-        const url = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}?valueInputOption=${encodeURIComponent(valueInputOption)}&key=${encodeURIComponent(key)}`;
+        const url = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}?valueInputOption=${encodeURIComponent(valueInputOption)}`;
         const payload = { range, majorDimension, values };
         const r = await fetch(url, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...authHeaders },
           body: JSON.stringify(payload),
         });
         const text = await r.text();
