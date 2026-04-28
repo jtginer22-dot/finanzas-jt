@@ -1074,6 +1074,37 @@ function descartarPend(id) {
   if (p) p.estado='rechazado';
   save(); updateBadge(); renderPendientes(); renderRevision();
 }
+function reabrirPendiente(id) {
+  const p = S.propuestas.find(x=>x.id===id);
+  if (!p) return;
+  // Limpieza defensiva: elimina un gasto previo del mismo pendiente para evitar doble conteo
+  // al volver a categorizar (por ejemplo, cuando se corrige a cuotas).
+  const before = S.gastos.length;
+  let removed = false;
+  S.gastos = S.gastos.filter(g => {
+    if (removed) return true;
+    const sameFuente = (g.fuente || '') === (p.fuente || 'gmail');
+    const sameDesc = String(g.desc || '').trim() === String(p.comercio || '').trim();
+    const sameFecha = String(g.fecha || '').trim() === String(p.fecha || '').trim();
+    const sameTarjeta = String(g.tarjeta || '').trim() === String(p.tarjeta || '').trim();
+    const sameBanco = String(g.banco || '').trim() === String(p.banco || '').trim();
+    const sameTotal = Math.round(Number(g.montoTotal ?? g.monto) || 0) === Math.round(Number(p.monto) || 0);
+    const match = sameFuente && sameDesc && sameFecha && sameTarjeta && sameBanco && sameTotal;
+    if (match) removed = true;
+    return !match;
+  });
+  p.estado='pendiente';
+  save();
+  updateBadge();
+  renderPendientes();
+  renderRevision();
+  renderDashboard();
+  if (before !== S.gastos.length) {
+    alert('Movimiento reabierto. Se removió el registro previo para evitar doble conteo; ahora recategorízalo en cuotas.');
+  } else {
+    alert('Movimiento reabierto. Ahora recategorízalo en cuotas.');
+  }
+}
 
 // ============================================================
 // GASTOS COMPARTIDOS
@@ -1801,7 +1832,9 @@ function renderRevision() {
     const catOpts = ['<option value="">Sin categoría</option>'].concat(S.cats.map(c=>`<option value="${esc(c.nombre)}"${p.propuesta?.cat===c.nombre?' selected':''}>${esc(c.nombre)}</option>`)).join('');
     const actions = p.estado==='pendiente'
       ? `<button class="btn btn-sm" onclick="suggestWithLLM('${p.id}')">Sugerir IA</button> <button class="btn btn-sm btn-green" onclick="confirmProposalSimple('${p.id}')">Confirmar</button> <button class="btn btn-sm" onclick="descartarPend('${p.id}')">Rechazar</button>`
-      : `<span style="color:var(--text3);font-size:12px">Sin acciones</span>`;
+      : (p.estado==='confirmado'
+        ? `<button class="btn btn-sm" onclick="reabrirPendiente('${p.id}')">Reabrir / Reprocesar</button>`
+        : `<span style="color:var(--text3);font-size:12px">Sin acciones</span>`);
     return `<tr>
       <td style="font-family:var(--mono);font-size:11px">${esc(p.fecha)}</td>
       <td>${esc(p.comercio)}</td>
