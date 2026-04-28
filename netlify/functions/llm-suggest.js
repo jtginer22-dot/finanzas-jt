@@ -44,10 +44,11 @@ exports.handler = async (event) => {
   const systemPrompt = [
     'Eres un clasificador de gastos personales en Chile.',
     'Debes responder SOLO JSON válido, sin markdown, sin texto extra.',
-    'Formato exacto: {"category":"...","tag":"etiqueta1, etiqueta2","reason":"...","confidence":0-1}',
+    'Formato exacto: {"category":"...","tag":"etiqueta1, etiqueta2","reason":"...","confidence":0-1,"proposed_new_category":"..."}',
     'Usa category solo desde la lista permitida que te entregan.',
     'tag puede ser UNA o VARIAS etiquetas separadas por coma (máx. 4 etiquetas, nombres cortos).',
     'Si hay known_tags, prioriza reutilizar esas etiquetas cuando encajen; si no, inventa etiquetas cortas nuevas.',
+    'proposed_new_category es opcional y solo si detectas una categoría faltante (1-3 palabras).',
     'confidence entre 0 y 1.',
   ].join(' ');
 
@@ -99,11 +100,12 @@ exports.handler = async (event) => {
       .slice(0, 120);
     const reason = String(parsed.reason || '').slice(0, 220);
     const confidence = Math.max(0, Math.min(1, Number(parsed.confidence || 0.5)));
+    const proposedNewCategory = String(parsed.proposed_new_category || '').trim().slice(0, 64);
 
     return {
       statusCode: 200,
       headers,
-      body: JSON.stringify({ category, tag, reason, confidence, provider: 'anthropic', model }),
+      body: JSON.stringify({ category, tag, reason, confidence, proposedNewCategory, provider: 'anthropic', model }),
     };
   } catch (err) {
     return { statusCode: 500, headers, body: JSON.stringify({ error: err.message || String(err) }) };

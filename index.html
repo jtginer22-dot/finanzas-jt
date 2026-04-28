@@ -580,6 +580,13 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
       <div class="form-row"><label class="form-label">N&#250; de cuotas</label><input class="fi" id="pend-n-cuotas" type="number" inputmode="numeric" placeholder="12" min="2" max="60"></div>
       <div class="form-row"><label class="form-label">Monto por cuota ($)</label><input class="fi" id="pend-monto-cuota" type="number" inputmode="numeric" readonly style="background:var(--gris-m)"></div>
     </div>
+    <div class="form-row">
+      <label class="form-label">Primer cobro</label>
+      <select class="fi" id="pend-cuota-start">
+        <option value="este_mes">Este mes</option>
+        <option value="mes_siguiente">Mes siguiente</option>
+      </select>
+    </div>
     <div style="font-size:11px;color:var(--text3);margin-top:-8px;margin-bottom:8px">En el mes del cargo se guarda <strong>solo la cuota mensual</strong> como monto (presupuesto / gráficos). El total de la compra queda en <strong>Monto_Total</strong> y en notas.</div>
   </div>
   <div class="modal-actions">
@@ -770,6 +777,24 @@ const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto'
 function fmt(n) { return '$' + Math.round(Number(n)||0).toLocaleString('es-CL'); }
 function esc(s) { return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); }
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,5); }
+function isoFromDate(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+function addMonthsKeepingDay(isoDate, plusMonths) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(isoDate || ''));
+  if (!m) return isoDate || HOY;
+  const y = +m[1];
+  const mo = +m[2];
+  const d = +m[3];
+  const base = new Date(y, mo - 1, 1, 12);
+  base.setMonth(base.getMonth() + plusMonths);
+  const end = new Date(base.getFullYear(), base.getMonth() + 1, 0, 12).getDate();
+  base.setDate(Math.min(d, end));
+  return isoFromDate(base);
+}
 function catByNombre(n) { return S.cats.find(c=>c.nombre===n) || {color:'gris',tipo:'variable'}; }
 function catBadge(n) { const c=catByNombre(n); return `<span class="badge b-${c.color}">${n}</span>`; }
 function tagsFromCsv(s) {
@@ -928,6 +953,9 @@ function toggleCuotasFields() {
       const nc=parseInt(document.getElementById('pend-n-cuotas').value)||0;
       if(nc>0) document.getElementById('pend-monto-cuota').value=Math.round(p.monto/nc);
     });
+    if (document.getElementById('pend-cuota-start')) {
+      document.getElementById('pend-cuota-start').value = 'este_mes';
+    }
   }
 }
 function toggleCompFields() {
@@ -961,14 +989,42 @@ function confirmarCat() {
   }
   const catSel = document.getElementById('pend-cat').value;
   const isTransfer = catSel === 'Transferencias propias';
-  let montoMes = montoPersonal;
-  let montoTotalFila = p.monto;
-  if (cuotas && nCuotas > 1) {
-    montoMes = Math.round(montoPersonal / nCuotas);
-  }
   const tag = readTagCheckboxes('pend-tags-picker', 'pend', 'pend-tag-extra');
-  const g={id:uid(),desc:p.comercio,monto:montoMes,montoTotal:montoTotalFila,cat:catSel,tag,fecha:p.fecha,tarjeta:p.tarjeta,tipo:isTransfer?'transferencia_interna':(comp!=='no'?'compartido':'normal'),fuente:'gmail',banco:p.banco,notas,cuotas:cuotas?nCuotas:null};
-  S.gastos.push(g);
+  const tipo = isTransfer ? 'transferencia_interna' : (comp!=='no'?'compartido':'normal');
+  let gastosCreados = [];
+  if (cuotas && nCuotas > 1) {
+    const startMode = document.getElementById('pend-cuota-start')?.value || 'este_mes';
+    const startOffset = startMode === 'mes_siguiente' ? 1 : 0;
+    const totalInt = Math.max(0, Math.round(montoPersonal));
+    const base = Math.floor(totalInt / nCuotas);
+    const rem = totalInt - (base * nCuotas);
+    for (let i = 0; i < nCuotas; i++) {
+      const cuotaMonto = base + (i < rem ? 1 : 0);
+      const fechaCuota = addMonthsKeepingDay(p.fecha || HOY, startOffset + i);
+      const notasCuota = `Cuota ${i + 1}/${nCuotas} · Compra total ${fmt(montoPersonal)}`;
+      const g={
+        id:uid(),
+        desc:p.comercio,
+        monto:cuotaMonto,
+        montoTotal:cuotaMonto,
+        cat:catSel,
+        tag,
+        fecha:fechaCuota,
+        tarjeta:p.tarjeta,
+        tipo,
+        fuente:'gmail',
+        banco:p.banco,
+        notas:notasCuota,
+        cuotas:nCuotas
+      };
+      S.gastos.push(g);
+      gastosCreados.push(g);
+    }
+  } else {
+    const g={id:uid(),desc:p.comercio,monto:montoPersonal,montoTotal:p.monto,cat:catSel,tag,fecha:p.fecha,tarjeta:p.tarjeta,tipo,fuente:'gmail',banco:p.banco,notas,cuotas:null};
+    S.gastos.push(g);
+    gastosCreados.push(g);
+  }
   if(comp==='polola'||comp==='custom') {
     const quien=document.getElementById('pend-quien').value||'Polola';
     const mc=parseFloat(document.getElementById('pend-a-cobrar').value)||Math.round(p.monto/2);
@@ -984,9 +1040,9 @@ function confirmarCat() {
     });
   }
   p.estado='confirmado';
-  p.propuesta={ cat:g.cat, tag:g.tag||'' };
+  p.propuesta={ cat:catSel, tag:tag||'' };
   save(); closeModal('m-cat-pend'); updateBadge(); renderPendientes(); renderRevision(); renderDashboard();
-  pushGastoToSheets(g);
+  gastosCreados.forEach(g => pushGastoToSheets(g));
   marcarPendienteProcesado(p);
 }
 
@@ -1421,11 +1477,12 @@ function monthKeyDash(y, m0) {
 }
 function getDashboardPeriod() {
   const key = String(S.dashPeriod || '').trim();
+  if (key === '__all__') return { mode: 'all' };
   if (key && /^\d{4}-\d{2}$/.test(key)) {
-    return { year: +key.slice(0, 4), month: +key.slice(5, 7) - 1 };
+    return { mode: 'month', year: +key.slice(0, 4), month: +key.slice(5, 7) - 1 };
   }
   const now = new Date();
-  return { year: now.getFullYear(), month: now.getMonth() };
+  return { mode: 'month', year: now.getFullYear(), month: now.getMonth() };
 }
 function onDashPeriodChange() {
   const el = document.getElementById('dash-period');
@@ -1447,6 +1504,7 @@ function fillDashPeriodSelect() {
   const cur = (S.dashPeriod && String(S.dashPeriod).trim()) || '__current__';
   el.innerHTML =
     '<option value="__current__"' + (cur === '__current__' ? ' selected' : '') + '>Mes en curso (calendario)</option>' +
+    '<option value="__all__"' + (cur === '__all__' ? ' selected' : '') + '>Histórico acumulado</option>' +
     sorted.map(k => {
       const m0 = +k.slice(5, 7) - 1;
       const y = +k.slice(0, 4);
@@ -1456,11 +1514,12 @@ function fillDashPeriodSelect() {
 
 function renderDashboard() {
   fillDashPeriodSelect();
-  const { year: anio, month: mes } = getDashboardPeriod();
+  const per = getDashboardPeriod();
   const gm=S.gastos.filter(g=>{
-    const d=new Date(g.fecha+'T12:00');
     if (g.tipo === 'transferencia_interna') return false;
-    return d.getMonth()===mes&&d.getFullYear()===anio;
+    if (per.mode === 'all') return true;
+    const d=new Date(g.fecha+'T12:00');
+    return d.getMonth()===per.month&&d.getFullYear()===per.year;
   });
   const total=gm.reduce((a,g)=>a+g.monto,0);
   const totalTarjetaBruto = gm
@@ -1474,7 +1533,7 @@ function renderDashboard() {
   document.getElementById('m-cobrar-s').textContent=cobrar.length+' pendientes';
   document.getElementById('m-pagar').textContent=fmt(pagar.reduce((a,c)=>a+c.monto,0));
   document.getElementById('m-pagar-s').textContent=pagar.length+' pendientes';
-  document.getElementById('mes-label').textContent=MESES[mes]+' '+anio;
+  document.getElementById('mes-label').textContent = per.mode === 'all' ? 'Histórico acumulado' : `${MESES[per.month]} ${per.year}`;
   // Recent
   const rec=[...S.gastos].sort((a,b)=>b.fecha.localeCompare(a.fecha)).slice(0,6);
   document.getElementById('recent-body').innerHTML=rec.length?rec.map(g=>`<tr>
@@ -1483,7 +1542,12 @@ function renderDashboard() {
     <td style="font-family:var(--mono);font-weight:600">${fmt(g.monto)}</td>
     <td><span class="badge ${g.fuente==='gmail'?'b-azul':'b-gris'}" style="font-size:10px">${g.fuente==='gmail'?'Gmail':'Manual'}</span></td>
   </tr>`).join(''):`<tr><td colspan="5" class="empty" style="padding:24px">Sin gastos aún</td></tr>`;
-  renderCatChart(gm); renderTendChart(gm,mes,anio);
+  renderCatChart(gm);
+  if (per.mode === 'all') {
+    renderTendChart(gm);
+  } else {
+    renderTendChart(gm, per.month, per.year);
+  }
   renderBudgetInsights(gm);
 }
 
@@ -1681,6 +1745,9 @@ async function suggestWithLLM(id) {
     save();
     renderRevision();
     renderPendientes();
+    if (d.proposedNewCategory) {
+      alert(`IA sugiere posible nueva categoría: "${d.proposedNewCategory}".\n\nSi te hace sentido, créala en Configuración > Categorías.`);
+    }
   } catch (e) {
     alert('Sugerencia IA: '+(e.message||String(e))+'\n\nRevisa ANTHROPIC_API_KEY en Netlify, redeploy, y que el passcode de la app coincida con APP_PASSCODE.');
   }
