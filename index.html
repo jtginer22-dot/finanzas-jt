@@ -304,9 +304,13 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
             <div class="metric-sub">de Gmail</div>
           </div>
         </div>
-        <div class="filter-bar" style="margin-bottom:14px">
-          <span style="font-size:13px;color:var(--text2);white-space:nowrap">Mes del dashboard</span>
-          <select class="fi" id="dash-period" style="max-width:240px" onchange="onDashPeriodChange()"></select>
+        <div class="card" style="margin-bottom:14px;padding:12px 14px">
+          <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px">Período del dashboard</div>
+          <div class="filter-bar" style="margin-bottom:0">
+            <span style="font-size:13px;color:var(--text3);white-space:nowrap">Ver mes</span>
+            <select class="fi" id="dash-period" style="max-width:280px;min-width:200px" onchange="onDashPeriodChange()" title="Cambia el mes de los totales y gráficos de abajo"></select>
+          </div>
+          <div style="font-size:11px;color:var(--text3);margin-top:8px">Si no ves este selector, fuerza recarga (Cmd+Shift+R) y comprueba en Netlify que el último deploy incluya el commit reciente de <code style="font-size:10px">main</code>.</div>
         </div>
         <div class="info-box" id="insights-hint" style="margin-bottom:14px">Define presupuestos por categoría en <strong>Configuración</strong> para ver gasto vs tope, % ejecutado y alertas al superar el 80%.</div>
         <div class="metrics" id="metrics-budget-row" style="display:none;margin-bottom:14px">
