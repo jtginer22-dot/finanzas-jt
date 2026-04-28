@@ -304,6 +304,10 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
             <div class="metric-sub">de Gmail</div>
           </div>
         </div>
+        <div class="filter-bar" style="margin-bottom:14px">
+          <span style="font-size:13px;color:var(--text2);white-space:nowrap">Mes del dashboard</span>
+          <select class="fi" id="dash-period" style="max-width:240px" onchange="onDashPeriodChange()"></select>
+        </div>
         <div class="info-box" id="insights-hint" style="margin-bottom:14px">Define presupuestos por categoría en <strong>Configuración</strong> para ver gasto vs tope, % ejecutado y alertas al superar el 80%.</div>
         <div class="metrics" id="metrics-budget-row" style="display:none;margin-bottom:14px">
           <div class="metric">
@@ -360,6 +364,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
         <div id="pendientes-list"></div>
         <div class="card" style="margin-top:12px">
           <div class="card-title">Revisión masiva (mismos pendientes)</div>
+          <div class="chart-note" style="margin-bottom:10px">La confirmación aquí registra el <strong>monto total</strong> del movimiento (sin repartir cuotas). Para compras en <strong>cuotas</strong>, compartidos o varias <strong>etiquetas</strong>, usa <strong>Categorizar</strong> en la tarjeta de arriba.</div>
           <div class="filter-bar">
             <button class="btn btn-sm" onclick="bulkRevision('confirm')">Confirmar todas visibles</button>
             <button class="btn btn-sm" onclick="bulkRevision('reject')">Rechazar todas visibles</button>
@@ -378,7 +383,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
             <option value="compartido">Compartido</option><option value="extraordinario">Extraordinario</option><option value="transferencia_interna">Transferencia propia</option>
           </select>
         </div>
-        <div class="card"><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Fecha</th><th>Descripci&#243;n</th><th>Categor&#237;a</th><th>Etiqueta</th><th>Tarjeta</th><th>Monto</th><th></th></tr></thead><tbody id="gastos-body"></tbody></table></div></div>
+        <div class="card"><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Fecha</th><th>Descripci&#243;n</th><th>Categor&#237;a</th><th>Etiquetas</th><th>Tarjeta</th><th>Monto</th><th></th></tr></thead><tbody id="gastos-body"></tbody></table></div></div>
       </div>
 
       <!-- COMPARTIDOS -->
@@ -411,9 +416,10 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
       <div class="page" id="p-historial">
         <div class="filter-bar">
           <input class="fi" style="flex:1;min-width:150px" placeholder=" Buscar..." id="hist-q" oninput="renderHistorial()">
+          <select class="fi" style="width:auto;flex:1;min-width:110px" id="hist-mes" onchange="renderHistorial()"><option value="">Todos los meses</option></select>
           <select class="fi" style="width:auto;flex:1;min-width:120px" id="hist-cat" onchange="renderHistorial()"><option value="">Todas las categor&#237;as</option></select>
         </div>
-        <div class="card"><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Fecha</th><th>Descripci&#243;n</th><th>Categor&#237;a</th><th>Etiqueta</th><th>Monto</th><th>Fuente</th></tr></thead><tbody id="hist-body"></tbody></table></div></div>
+        <div class="card"><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Fecha</th><th>Descripci&#243;n</th><th>Categor&#237;a</th><th>Etiquetas</th><th>Monto</th><th>Fuente</th></tr></thead><tbody id="hist-body"></tbody></table></div></div>
       </div>
 
 
@@ -489,10 +495,15 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
   </div>
   <div class="grid2">
     <div class="form-row"><label class="form-label">Categor&#237;a</label><select class="fi" id="g-cat"></select></div>
-    <div class="form-row"><label class="form-label">Etiqueta</label><select class="fi" id="g-tag"></select></div>
+    <div class="form-row"><label class="form-label">Fecha</label><input class="fi" id="g-fecha" type="date"></div>
+  </div>
+  <div class="form-row">
+    <label class="form-label">Etiquetas</label>
+    <div id="g-tags-picker" style="display:flex;flex-wrap:wrap;gap:2px;margin-bottom:6px"></div>
+    <input class="fi" id="g-tag-extra" placeholder="Otras, separadas por coma (opcional)">
+    <div style="font-size:11px;color:var(--text3);margin-top:4px">Varias etiquetas se guardan en el Sheet en una sola celda, separadas por coma.</div>
   </div>
   <div class="grid2">
-    <div class="form-row"><label class="form-label">Fecha</label><input class="fi" id="g-fecha" type="date"></div>
     <div class="form-row"><label class="form-label">Tarjeta</label>
       <select class="fi" id="g-tarjeta">
         <option value="">Sin especificar</option>
@@ -502,8 +513,6 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
         <option value="Efectivo">Efectivo</option>
       </select>
     </div>
-  </div>
-  <div class="grid2">
     <div class="form-row"><label class="form-label">Tipo</label>
       <select class="fi" id="g-tipo">
         <option value="normal">Normal</option>
@@ -512,8 +521,8 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
         <option value="transferencia_interna">Transferencia propia</option>
       </select>
     </div>
-    <div class="form-row"><label class="form-label">Notas</label><input class="fi" id="g-notas" placeholder="Opcional"></div>
   </div>
+  <div class="form-row"><label class="form-label">Notas</label><input class="fi" id="g-notas" placeholder="Opcional"></div>
   <div class="modal-actions">
     <button class="btn" onclick="closeModal('m-gasto')">Cancelar</button>
     <button class="btn btn-green" onclick="saveGasto()">Guardar</button>
@@ -528,9 +537,11 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
     <div style="font-size:14px;font-weight:600" id="pend-title"></div>
     <div style="font-size:12px;color:var(--text3);margin-top:3px;font-family:var(--mono)" id="pend-meta"></div>
   </div>
-  <div class="grid2">
-    <div class="form-row"><label class="form-label">Categor&#237;a</label><select class="fi" id="pend-cat"></select></div>
-    <div class="form-row"><label class="form-label">Etiqueta</label><select class="fi" id="pend-tag"></select></div>
+  <div class="form-row"><label class="form-label">Categor&#237;a</label><select class="fi" id="pend-cat"></select></div>
+  <div class="form-row">
+    <label class="form-label">Etiquetas</label>
+    <div id="pend-tags-picker" style="display:flex;flex-wrap:wrap;gap:2px;margin-bottom:6px"></div>
+    <input class="fi" id="pend-tag-extra" placeholder="Otras, separadas por coma (opcional)">
   </div>
   <div class="form-row"><label class="form-label">?Es compartido?</label>
     <select class="fi" id="pend-comp" onchange="toggleCompFields()">
@@ -565,7 +576,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
       <div class="form-row"><label class="form-label">N&#250; de cuotas</label><input class="fi" id="pend-n-cuotas" type="number" inputmode="numeric" placeholder="12" min="2" max="60"></div>
       <div class="form-row"><label class="form-label">Monto por cuota ($)</label><input class="fi" id="pend-monto-cuota" type="number" inputmode="numeric" readonly style="background:var(--gris-m)"></div>
     </div>
-    <div style="font-size:11px;color:var(--text3);margin-top:-8px;margin-bottom:8px">Se registra el monto total. El monto por cuota es referencial.</div>
+    <div style="font-size:11px;color:var(--text3);margin-top:-8px;margin-bottom:8px">En el mes del cargo se guarda <strong>solo la cuota mensual</strong> como monto (presupuesto / gráficos). El total de la compra queda en <strong>Monto_Total</strong> y en notas.</div>
   </div>
   <div class="modal-actions">
     <button class="btn" onclick="closeModal('m-cat-pend')">Cancelar</button>
@@ -671,6 +682,7 @@ let S = {
   profileName: 'Usuario',
   appPasscode: '',
   presupuestos:{},
+  dashPeriod: '',
   charts:{}, pendIdx:null, cuentaTipo:'cobrar',
 };
 let compPersonas = [];
@@ -691,6 +703,7 @@ function load() {
   if (!S.presupuestos || typeof S.presupuestos !== 'object') S.presupuestos = {};
   S.cats = (S.cats || []).map(c => ({ ...c, nombre: decodeEntities(c.nombre) }));
   S.tags = (S.tags || []).map(t => decodeEntities(t));
+  if (typeof S.dashPeriod !== 'string') S.dashPeriod = '';
   // Compatibilidad: migrar pendientes antiguos a propuestas.
   if ((!S.propuestas || !S.propuestas.length) && Array.isArray(S.pendientes) && S.pendientes.length) {
     S.propuestas = S.pendientes.map(p => ({
@@ -755,7 +768,32 @@ function esc(s) { return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,5); }
 function catByNombre(n) { return S.cats.find(c=>c.nombre===n) || {color:'gris',tipo:'variable'}; }
 function catBadge(n) { const c=catByNombre(n); return `<span class="badge b-${c.color}">${n}</span>`; }
-function tagBadge(t) { return t ? `<span class="badge b-azul">${t}</span>` : ''; }
+function tagsFromCsv(s) {
+  return String(s == null ? '' : s).split(',').map(t => t.trim()).filter(Boolean);
+}
+function tagsToCsv(parts) {
+  return [...new Set(parts.map(x => String(x).trim()).filter(Boolean))].join(', ');
+}
+function tagBadgesHtml(csvOrStr) {
+  const parts = tagsFromCsv(csvOrStr);
+  return parts.length ? parts.map(t => `<span class="badge b-azul">${esc(t)}</span>`).join(' ') : '';
+}
+function renderTagCheckboxRow(containerId, selectedCsv, namePrefix) {
+  const cont = document.getElementById(containerId);
+  if (!cont) return;
+  const sel = new Set(tagsFromCsv(selectedCsv));
+  cont.innerHTML = (S.tags || []).map(t => {
+    const ck = sel.has(t) ? 'checked' : '';
+    return `<label style="display:inline-flex;align-items:center;gap:4px;margin:4px 10px 4px 0;font-size:13px;cursor:pointer;user-select:none"><input type="checkbox" name="${namePrefix}-tag" value="${esc(t)}" ${ck}/> ${esc(t)}</label>`;
+  }).join('');
+}
+function readTagCheckboxes(containerId, namePrefix, extraInputId) {
+  const cont = document.getElementById(containerId);
+  const fromCk = cont ? [...cont.querySelectorAll(`input[name="${namePrefix}-tag"]:checked`)].map(el => el.value) : [];
+  const ex = document.getElementById(extraInputId);
+  const extra = ex ? tagsFromCsv(ex.value) : [];
+  return tagsToCsv([...fromCk, ...extra]);
+}
 function tipoBadge(t) { const m={normal:'b-gris',compartido:'b-verde',extraordinario:'b-ambar'}; return `<span class="badge ${m[t]||'b-gris'}">${t}</span>`; }
 function avatarColor(name) { let h=0; for(let c of name) h+=c.charCodeAt(0); return AVATAR_COLORS[h%AVATAR_COLORS.length]; }
 function initials(name) { return name.split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase(); }
@@ -797,23 +835,25 @@ function closeModal(id) { document.getElementById(id).classList.remove('open'); 
 document.querySelectorAll('.overlay').forEach(el => el.addEventListener('click', e => { if(e.target===el) el.classList.remove('open'); }));
 
 function fillCat(id) { const s=document.getElementById(id); if(!s)return; s.innerHTML=S.cats.map(c=>`<option value="${c.nombre}">${c.nombre}</option>`).join(''); }
-function fillTag(id) { const s=document.getElementById(id); if(!s)return; s.innerHTML=`<option value="">Sin etiqueta</option>`+S.tags.map(t=>`<option value="${t}">${t}</option>`).join(''); }
 
 function openGastoModal(pre={}) {
-  fillCat('g-cat'); fillTag('g-tag');
+  fillCat('g-cat');
   document.getElementById('g-desc').value=pre.desc||'';
   document.getElementById('g-monto').value=pre.monto||'';
   document.getElementById('g-fecha').value=pre.fecha||HOY;
   document.getElementById('g-tarjeta').value=pre.tarjeta||'';
   document.getElementById('g-notas').value='';
   document.getElementById('g-tipo').value='normal';
+  renderTagCheckboxRow('g-tags-picker', pre.tag || '', 'g');
+  document.getElementById('g-tag-extra').value = '';
   openModal('m-gasto');
 }
 function saveGasto() {
   const desc=document.getElementById('g-desc').value.trim();
   const monto=parseFloat(document.getElementById('g-monto').value);
   if(!desc||isNaN(monto)||monto<=0){alert('Completa descripci&#243;n y monto.');return;}
-  const g = {id:uid(),desc,monto,montoTotal:monto,cat:document.getElementById('g-cat').value,tag:document.getElementById('g-tag').value,fecha:document.getElementById('g-fecha').value,tarjeta:document.getElementById('g-tarjeta').value,tipo:document.getElementById('g-tipo').value,notas:document.getElementById('g-notas').value,fuente:'manual'};
+  const tag = readTagCheckboxes('g-tags-picker', 'g', 'g-tag-extra');
+  const g = {id:uid(),desc,monto,montoTotal:monto,cat:document.getElementById('g-cat').value,tag,fecha:document.getElementById('g-fecha').value,tarjeta:document.getElementById('g-tarjeta').value,tipo:document.getElementById('g-tipo').value,notas:document.getElementById('g-notas').value,fuente:'manual'};
   S.gastos.push(g); save(); closeModal('m-gasto'); renderDashboard(); updateBadge();
   pushGastoToSheets(g);
 }
@@ -854,7 +894,9 @@ function abrirCat(id) {
   if(!p) return;
   document.getElementById('pend-title').textContent=p.comercio;
   document.getElementById('pend-meta').textContent=`${p.fecha} ? ${fmt(p.monto)} ? ${p.tarjeta}`;
-  fillCat('pend-cat'); fillTag('pend-tag');
+  fillCat('pend-cat');
+  if (p.propuesta?.cat) document.getElementById('pend-cat').value = p.propuesta.cat;
+  document.getElementById('pend-tag-extra').value = '';
   document.getElementById('pend-comp').value='no';
   document.getElementById('pend-comp-extra').style.display='none';
   document.getElementById('pend-comp-grupo').style.display='none';
@@ -864,7 +906,9 @@ function abrirCat(id) {
   document.getElementById('pend-personas').value='';
   if (/transferenc|traspaso/i.test(String(p.comercio || ''))) {
     document.getElementById('pend-cat').value = 'Transferencias propias';
-    document.getElementById('pend-tag').value = 'Entre cuentas propias';
+    renderTagCheckboxRow('pend-tags-picker', 'Entre cuentas propias', 'pend');
+  } else {
+    renderTagCheckboxRow('pend-tags-picker', p.propuesta?.tag || '', 'pend');
   }
   openModal('m-cat-pend');
 }
@@ -913,7 +957,13 @@ function confirmarCat() {
   }
   const catSel = document.getElementById('pend-cat').value;
   const isTransfer = catSel === 'Transferencias propias';
-  const g={id:uid(),desc:p.comercio,monto:montoPersonal,montoTotal:p.monto,cat:catSel,tag:document.getElementById('pend-tag').value,fecha:p.fecha,tarjeta:p.tarjeta,tipo:isTransfer?'transferencia_interna':(comp!=='no'?'compartido':'normal'),fuente:'gmail',banco:p.banco,notas,cuotas:cuotas?nCuotas:null};
+  let montoMes = montoPersonal;
+  let montoTotalFila = p.monto;
+  if (cuotas && nCuotas > 1) {
+    montoMes = Math.round(montoPersonal / nCuotas);
+  }
+  const tag = readTagCheckboxes('pend-tags-picker', 'pend', 'pend-tag-extra');
+  const g={id:uid(),desc:p.comercio,monto:montoMes,montoTotal:montoTotalFila,cat:catSel,tag,fecha:p.fecha,tarjeta:p.tarjeta,tipo:isTransfer?'transferencia_interna':(comp!=='no'?'compartido':'normal'),fuente:'gmail',banco:p.banco,notas,cuotas:cuotas?nCuotas:null};
   S.gastos.push(g);
   if(comp==='polola'||comp==='custom') {
     const quien=document.getElementById('pend-quien').value||'Polola';
@@ -1269,20 +1319,26 @@ async function loadFromSheets() {
   try {
     const dG = await sheetsFnGet(`${SHEET_NAME_GASTOS}!A2:L1000`);
     if (dG.values) {
-      S.gastos = dG.values.map(row => ({
-        id: row[0] || uid(),
-        fecha: row[1],
-        desc: decodeEntities(row[2]),
-        cat: decodeEntities(row[3]),
-        tag: decodeEntities(row[4]),
-        monto: parseFloat(row[5]) || 0,
-        tarjeta: row[6],
-        tipo: row[7] || 'normal',
-        fuente: row[8] || 'manual',
-        banco: normalizeBankName(row[9]),
-        notas: decodeEntities(row[10]),
-        montoTotal: parseFloat(row[11]) || (parseFloat(row[5]) || 0),
-      }));
+      const byId = new Map();
+      for (const row of dG.values) {
+        const g = {
+          id: row[0] || uid(),
+          fecha: row[1],
+          desc: decodeEntities(row[2]),
+          cat: decodeEntities(row[3]),
+          tag: decodeEntities(row[4]),
+          monto: parseFloat(row[5]) || 0,
+          tarjeta: row[6],
+          tipo: row[7] || 'normal',
+          fuente: row[8] || 'manual',
+          banco: normalizeBankName(row[9]),
+          notas: decodeEntities(row[10]),
+          montoTotal: parseFloat(row[11]) || (parseFloat(row[5]) || 0),
+        };
+        const idKey = String(g.id || '').trim() || uid();
+        byId.set(idKey, { ...g, id: idKey });
+      }
+      S.gastos = Array.from(byId.values()).sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
     }
     const dP = await sheetsFnGet('Pendientes!A2:H1000');
     if (dP.values) {
@@ -1356,8 +1412,47 @@ function setSyncStatus(ok, msg) {
 // ============================================================
 // RENDER FUNCTIONS
 // ============================================================
+function monthKeyDash(y, m0) {
+  return y + '-' + String(m0 + 1).padStart(2, '0');
+}
+function getDashboardPeriod() {
+  const key = String(S.dashPeriod || '').trim();
+  if (key && /^\d{4}-\d{2}$/.test(key)) {
+    return { year: +key.slice(0, 4), month: +key.slice(5, 7) - 1 };
+  }
+  const now = new Date();
+  return { year: now.getFullYear(), month: now.getMonth() };
+}
+function onDashPeriodChange() {
+  const el = document.getElementById('dash-period');
+  if (!el) return;
+  S.dashPeriod = el.value === '__current__' ? '' : el.value;
+  save();
+  renderDashboard();
+}
+function fillDashPeriodSelect() {
+  const el = document.getElementById('dash-period');
+  if (!el) return;
+  const keys = new Set();
+  (S.gastos || []).forEach(g => {
+    if (g && g.fecha && g.fecha.length >= 7) keys.add(g.fecha.slice(0, 7));
+  });
+  const now = new Date();
+  keys.add(monthKeyDash(now.getFullYear(), now.getMonth()));
+  const sorted = [...keys].filter(k => /^\d{4}-\d{2}$/.test(k)).sort().reverse();
+  const cur = (S.dashPeriod && String(S.dashPeriod).trim()) || '__current__';
+  el.innerHTML =
+    '<option value="__current__"' + (cur === '__current__' ? ' selected' : '') + '>Mes en curso (calendario)</option>' +
+    sorted.map(k => {
+      const m0 = +k.slice(5, 7) - 1;
+      const y = +k.slice(0, 4);
+      return `<option value="${k}"${k === cur ? ' selected' : ''}>${MESES[m0]} ${y}</option>`;
+    }).join('');
+}
+
 function renderDashboard() {
-  const now=new Date(); const mes=now.getMonth(); const anio=now.getFullYear();
+  fillDashPeriodSelect();
+  const { year: anio, month: mes } = getDashboardPeriod();
   const gm=S.gastos.filter(g=>{
     const d=new Date(g.fecha+'T12:00');
     if (g.tipo === 'transferencia_interna') return false;
@@ -1482,7 +1577,7 @@ function renderGastos() {
   let list=S.gastos.filter(g=>{if(fc&&g.cat!==fc)return false;if(fm&&!g.fecha.startsWith(fm))return false;if(ft&&g.tipo!==ft)return false;return true}).sort((a,b)=>b.fecha.localeCompare(a.fecha));
   document.getElementById('gastos-body').innerHTML=list.length?list.map(g=>`<tr>
     <td style="font-family:var(--mono);font-size:11px">${g.fecha}</td>
-    <td>${g.desc}</td><td>${catBadge(g.cat)}</td><td>${tagBadge(g.tag)}</td>
+    <td>${g.desc}</td><td>${catBadge(g.cat)}</td><td>${tagBadgesHtml(g.tag)}</td>
     <td style="font-size:11px;color:var(--text3)">${g.tarjeta||'?'}</td>
     <td style="font-family:var(--mono);font-weight:600">${fmt(g.monto)}</td>
     <td><button class="del-btn" onclick="deleteGasto('${g.id}')"></button></td></tr>`).join(''):
@@ -1535,12 +1630,23 @@ function renderCuentas() {
 function renderHistorial() {
   const q=(document.getElementById('hist-q')?.value||'').toLowerCase();
   const cat=document.getElementById('hist-cat')?.value||'';
+  const mes=document.getElementById('hist-mes')?.value||'';
   const histCat=document.getElementById('hist-cat');
+  const histMes=document.getElementById('hist-mes');
+  if (!histCat || !histMes) return;
   histCat.innerHTML='<option value="">Todas las categor&#237;as</option>'+S.cats.map(c=>`<option value="${c.nombre}"${cat===c.nombre?' selected':''}>${c.nombre}</option>`).join('');
-  const list=S.gastos.filter(g=>{if(q&&!g.desc.toLowerCase().includes(q)&&!g.cat.toLowerCase().includes(q))return false;if(cat&&g.cat!==cat)return false;return true}).sort((a,b)=>b.fecha.localeCompare(a.fecha));
+  const meses=[...new Set(S.gastos.map(g=>g.fecha.slice(0,7)))].sort().reverse();
+  const curMes=histMes.value;
+  histMes.innerHTML='<option value="">Todos los meses</option>'+meses.map(m=>`<option value="${m}"${curMes===m?' selected':''}>${m}</option>`).join('');
+  const list=S.gastos.filter(g=>{
+    if (mes && !g.fecha.startsWith(mes)) return false;
+    if(q&&!g.desc.toLowerCase().includes(q)&&!g.cat.toLowerCase().includes(q))return false;
+    if(cat&&g.cat!==cat)return false;
+    return true;
+  }).sort((a,b)=>b.fecha.localeCompare(a.fecha));
   document.getElementById('hist-body').innerHTML=list.length?list.map(g=>`<tr>
     <td style="font-family:var(--mono);font-size:11px">${g.fecha}</td>
-    <td>${g.desc}</td><td>${catBadge(g.cat)}</td><td>${tagBadge(g.tag)}</td>
+    <td>${g.desc}</td><td>${catBadge(g.cat)}</td><td>${tagBadgesHtml(g.tag)}</td>
     <td style="font-family:var(--mono);font-weight:600">${fmt(g.monto)}</td>
     <td><span class="badge ${g.fuente==='gmail'?'b-azul':'b-gris'}" style="font-size:10px">${g.fuente==='gmail'?' Gmail':' Manual'}</span></td></tr>`).join(''):
     `<tr><td colspan="6" class="empty" style="padding:24px">Sin registros</td></tr>`;
@@ -1558,10 +1664,13 @@ async function suggestWithLLM(id) {
         amount: p.monto,
         date: p.fecha,
         categories: S.cats.map(c=>c.nombre),
+        tags: S.tags || [],
       }),
     });
-    const d = await r.json();
-    if(!r.ok) throw new Error(d.error || 'No disponible');
+    const raw = await r.text();
+    let d;
+    try { d = JSON.parse(raw); } catch { throw new Error((raw || '').slice(0, 280) || 'Respuesta no JSON'); }
+    if(!r.ok) throw new Error(d.error || d.message || raw.slice(0, 280) || 'No disponible');
     p.propuesta = p.propuesta || {};
     p.propuesta.cat = d.category || p.propuesta.cat || '';
     p.propuesta.tag = d.tag || p.propuesta.tag || '';
@@ -1569,7 +1678,7 @@ async function suggestWithLLM(id) {
     renderRevision();
     renderPendientes();
   } catch (e) {
-    alert('Sugerencia IA no disponible todavía: '+(e.message||String(e)));
+    alert('Sugerencia IA: '+(e.message||String(e))+'\n\nRevisa ANTHROPIC_API_KEY en Netlify, redeploy, y que el passcode de la app coincida con APP_PASSCODE.');
   }
 }
 

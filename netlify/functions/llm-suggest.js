@@ -33,6 +33,7 @@ exports.handler = async (event) => {
   }
 
   const categories = Array.isArray(body.categories) ? body.categories.filter(Boolean) : [];
+  const knownTags = Array.isArray(body.tags) ? body.tags.filter(Boolean) : [];
   const text = String(body.text || '').trim();
   const amount = Number(body.amount || 0);
   const date = String(body.date || '');
@@ -43,15 +44,17 @@ exports.handler = async (event) => {
   const systemPrompt = [
     'Eres un clasificador de gastos personales en Chile.',
     'Debes responder SOLO JSON válido, sin markdown, sin texto extra.',
-    'Formato exacto: {"category":"...","tag":"...","reason":"...","confidence":0-1}',
+    'Formato exacto: {"category":"...","tag":"etiqueta1, etiqueta2","reason":"...","confidence":0-1}',
     'Usa category solo desde la lista permitida que te entregan.',
-    'tag debe ser corto (1-4 palabras) y útil para recordar contexto.',
+    'tag puede ser UNA o VARIAS etiquetas separadas por coma (máx. 4 etiquetas, nombres cortos).',
+    'Si hay known_tags, prioriza reutilizar esas etiquetas cuando encajen; si no, inventa etiquetas cortas nuevas.',
     'confidence entre 0 y 1.',
   ].join(' ');
 
   const userPrompt = JSON.stringify({
     transaction: { text, amount, date },
     allowed_categories: categories,
+    known_tags: knownTags,
   });
 
   try {
@@ -87,7 +90,13 @@ exports.handler = async (event) => {
     try { parsed = JSON.parse(candidate); } catch { return { statusCode: 502, headers, body: JSON.stringify({ error: 'JSON inválido desde LLM' }) }; }
 
     const category = categories.includes(parsed.category) ? parsed.category : categories[0];
-    const tag = String(parsed.tag || '').slice(0, 64);
+    const tag = String(parsed.tag || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .slice(0, 6)
+      .join(', ')
+      .slice(0, 120);
     const reason = String(parsed.reason || '').slice(0, 220);
     const confidence = Math.max(0, Math.min(1, Number(parsed.confidence || 0.5)));
 
