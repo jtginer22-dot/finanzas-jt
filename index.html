@@ -898,6 +898,19 @@ function readTagCheckboxes(containerId, namePrefix, extraInputId) {
   const extra = ex ? tagsFromCsv(ex.value) : [];
   return tagsToCsv([...fromCk, ...extra]);
 }
+function mergeTagsIntoGlobal(csv) {
+  const tags = tagsFromCsv(csv);
+  let changed = false;
+  tags.forEach(t => {
+    if (!S.tags.includes(t)) {
+      S.tags.push(t);
+      changed = true;
+    }
+  });
+  if (changed) {
+    saveCategoriasTagsShared().catch(e => console.log('mergeTagsIntoGlobal:', e));
+  }
+}
 function tipoBadge(t) { const m={normal:'b-gris',compartido:'b-verde',extraordinario:'b-ambar'}; return `<span class="badge ${m[t]||'b-gris'}">${t}</span>`; }
 function avatarColor(name) { let h=0; for(let c of name) h+=c.charCodeAt(0); return AVATAR_COLORS[h%AVATAR_COLORS.length]; }
 function initials(name) { return name.split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase(); }
@@ -960,6 +973,7 @@ function saveGasto() {
   const monto=parseFloat(document.getElementById('g-monto').value);
   if(!desc||isNaN(monto)||monto<=0){alert('Completa descripci&#243;n y monto.');return;}
   const tag = readTagCheckboxes('g-tags-picker', 'g', 'g-tag-extra');
+  mergeTagsIntoGlobal(tag);
   const g = {id:uid(),desc,monto,montoTotal:monto,cat:document.getElementById('g-cat').value,tag,fecha:document.getElementById('g-fecha').value,tarjeta:document.getElementById('g-tarjeta').value,tipo:document.getElementById('g-tipo').value,notas:document.getElementById('g-notas').value,fuente:'manual'};
   S.gastos.push(g); save(); closeModal('m-gasto'); renderDashboard(); updateBadge();
   pushGastoToSheets(g);
@@ -1068,6 +1082,7 @@ function confirmarCat() {
   const catSel = document.getElementById('pend-cat').value;
   const isTransfer = catSel === 'Transferencias propias';
   const tag = readTagCheckboxes('pend-tags-picker', 'pend', 'pend-tag-extra');
+  mergeTagsIntoGlobal(tag);
   const tipo = isTransfer ? 'transferencia_interna' : (comp!=='no'?'compartido':'normal');
   let gastosCreados = [];
   if (cuotas && nCuotas > 1) {
