@@ -803,6 +803,15 @@ function tagsFromCsv(s) {
 function tagsToCsv(parts) {
   return [...new Set(parts.map(x => String(x).trim()).filter(Boolean))].join(', ');
 }
+function slugify(s) {
+  return String(s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 40);
+}
 function tagBadgesHtml(csvOrStr) {
   const parts = tagsFromCsv(csvOrStr);
   return parts.length ? parts.map(t => `<span class="badge b-azul">${esc(t)}</span>`).join(' ') : '';
@@ -1175,17 +1184,103 @@ function deleteCuenta(id) { S.cuentas=S.cuentas.filter(x=>x.id!==id); save(); re
 // ============================================================
 // CONFIG
 // ============================================================
-function addCat() {
+async function pushCategoriasToSheets() {
+  if (!S.gsId) return;
+  const rowsCats = S.cats.map(c => [
+    c.id || uid(),
+    c.nombre || '',
+    c.color || 'gris',
+    c.tipo || 'variable',
+    'SI',
+  ]);
+  const rowsTags = (S.tags || []).map((t, i) => [
+    `tag_${slugify(t) || i}`,
+    t,
+    'azul',
+    'tag',
+    'SI',
+  ]);
+  const values = [['ID','Nombre','Color','Tipo','Activa']].concat(rowsCats, rowsTags);
+  await sheetsFnPost({
+    operation: 'put',
+    range: `Categorias!A1:E${Math.max(1, values.length)}`,
+    values,
+    majorDimension: 'ROWS',
+  });
+}
+
+function applyCategoriasFromSheet(values) {
+  if (!values || !values.length) return;
+  const cats = [];
+  const tags = [];
+  values.forEach(row => {
+    const id = String(row[0] || '').trim();
+    const nombre = decodeEntities(String(row[1] || '').trim());
+    const color = String(row[2] || 'gris').trim() || 'gris';
+    const tipo = String(row[3] || '').trim().toLowerCase();
+    const activa = String(row[4] || 'SI').trim().toUpperCase();
+    if (!nombre || activa === 'NO') return;
+    if (tipo === 'tag' || id.startsWith('tag_')) {
+      tags.push(nombre);
+      return;
+    }
+    cats.push({
+      id: id || uid(),
+      nombre,
+      color,
+      tipo: tipo || 'variable',
+    });
+  });
+  if (cats.length) S.cats = cats;
+  if (tags.length) S.tags = [...new Set(tags)];
+}
+
+async function saveCategoriasTagsShared() {
+  save();
+  renderConfig();
+  renderDashboard();
+  renderGastos();
+  renderHistorial();
+  const st = document.getElementById('config-status');
+  if (st) {
+    st.textContent = 'Sincronizando categorías/etiquetas…';
+    st.style.color = 'var(--text3)';
+  }
+  try {
+    await pushCategoriasToSheets();
+    if (st) {
+      st.textContent = 'Categorías/etiquetas sincronizadas en todos tus dispositivos.';
+      st.style.color = 'var(--verde-d)';
+    }
+  } catch (e) {
+    if (st) {
+      st.textContent = 'Error al sincronizar categorías/etiquetas: ' + (e.message || String(e));
+      st.style.color = 'var(--rojo)';
+    }
+  }
+}
+
+async function addCat() {
   const n=document.getElementById('new-cat').value.trim(); if(!n)return;
+  if (S.cats.some(c => c.nombre.toLowerCase() === n.toLowerCase())) return;
   S.cats.push({id:uid(),nombre:n,color:document.getElementById('new-cat-col').value,tipo:'variable'});
-  document.getElementById('new-cat').value=''; save(); renderConfig();
+  document.getElementById('new-cat').value='';
+  await saveCategoriasTagsShared();
 }
-function deleteCat(id) { S.cats=S.cats.filter(c=>c.id!==id); save(); renderConfig(); }
-function addTag() {
+async function deleteCat(id) {
+  S.cats=S.cats.filter(c=>c.id!==id);
+  await saveCategoriasTagsShared();
+}
+async function addTag() {
   const t=document.getElementById('new-tag').value.trim(); if(!t||S.tags.includes(t))return;
-  S.tags.push(t); document.getElementById('new-tag').value=''; save(); renderConfig();
+  S.tags.push(t);
+  document.getElementById('new-tag').value='';
+  await saveCategoriasTagsShared();
 }
-function deleteTag(i) { S.tags.splice(i,1); save(); renderConfig(); }
+async function deleteTag(i) {
+  S.tags.splice(i,1);
+  await saveCategoriasTagsShared();
+}
 async function saveConfig() {
   S.gsId=document.getElementById('gs-id').value.trim();
   S.profileName = document.getElementById('profile-name').value.trim() || 'Usuario';
@@ -1481,6 +1576,12 @@ async function loadFromSheets() {
       }
     } catch (e) {
       console.log('Presupuestos sheet (opcional):', e);
+    }
+    try {
+      const dCats = await sheetsFnGet('Categorias!A2:E1000');
+      if (dCats.values) applyCategoriasFromSheet(dCats.values);
+    } catch (e) {
+      console.log('Categorias sheet (opcional):', e);
     }
     save();
     renderDashboard();
@@ -1898,7 +1999,7 @@ async function initApp() {
     if (!document.getElementById('auth-gate').classList.contains('open') && S.gsId) {
       loadFromSheets().catch(e => console.log('Sheets poll:', e));
     }
-  }, 300000);
+  }, 60000);
 }
 initApp();
 
