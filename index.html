@@ -287,9 +287,24 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
       <div class="page active" id="p-dashboard">
         <div class="metrics">
           <div class="metric">
+            <div class="metric-label">Tasa de ahorro</div>
+            <div class="metric-value" id="m-tasa-val">—</div>
+            <div class="metric-sub" id="m-tasa-sub">—</div>
+          </div>
+          <div class="metric">
             <div class="metric-label">Gastos del mes</div>
-            <div class="metric-value neg" id="m-gasto">$0</div>
-            <div class="metric-sub" id="m-gasto-s">0 transacciones</div>
+            <div class="metric-value neg" id="m-gasto-bruto">$0</div>
+            <div class="metric-sub" id="m-gasto-bruto-s">Total del mes (0 sin categorizar)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Saldo comprometido</div>
+            <div class="metric-value warn" id="m-comprometido">$0</div>
+            <div class="metric-sub" id="m-comprometido-s">Comprometido este mes</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Proyección del mes</div>
+            <div class="metric-value" id="m-proyeccion">—</div>
+            <div class="metric-sub" id="m-proyeccion-s">—</div>
           </div>
           <div class="metric">
             <div class="metric-label">Por cobrar</div>
@@ -304,7 +319,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
           <div class="metric">
             <div class="metric-label">Sin categorizar</div>
             <div class="metric-value warn" id="m-pend">0</div>
-            <div class="metric-sub">de Gmail</div>
+            <div class="metric-sub" id="m-pend-s">Pendientes Gmail</div>
           </div>
         </div>
         <div class="card" style="margin-bottom:14px;padding:12px 14px">
@@ -356,10 +371,6 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
             <div class="chart-note">Resume cómo se distribuye tu gasto personal durante el mes, semana a semana.</div>
           </div>
         </div>
-        <div class="card">
-          <div class="card-title">&#218;ltimos movimientos</div>
-          <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Fecha</th><th>Descripci&#243;n</th><th>Categor&#237;a</th><th>Monto</th><th>Fuente</th></tr></thead><tbody id="recent-body"></tbody></table></div>
-        </div>
       </div>
 
       <!-- PENDIENTES -->
@@ -387,7 +398,8 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
           <select class="fi" style="width:auto;flex:1;min-width:100px" id="f-mes" onchange="renderGastos()"><option value="">Todos los meses</option></select>
           <select class="fi" style="width:auto;flex:1;min-width:100px" id="f-tipo" onchange="renderGastos()">
             <option value="">Todo</option><option value="normal">Normal</option>
-            <option value="compartido">Compartido</option><option value="extraordinario">Extraordinario</option><option value="transferencia_interna">Transferencia propia</option><option value="no_gasto">No-gasto</option>
+            <option value="compartido">Compartido</option><option value="extraordinario">Extraordinario</option>            <option value="transferencia_interna">Transferencia propia</option><option value="no_gasto">No-gasto</option>
+            <option value="tramite_terceros">Trámite de terceros</option><option value="prestamo">Préstamo otorgado</option>
           </select>
         </div>
         <div class="card"><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Fecha</th><th>Descripci&#243;n</th><th>Categor&#237;a</th><th>Etiquetas</th><th>Tarjeta</th><th>Monto</th><th></th></tr></thead><tbody id="gastos-body"></tbody></table></div></div>
@@ -479,7 +491,17 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
           </div>
           <div class="form-row"><label class="form-label">Notas</label><input class="fi" id="co-notas" placeholder="Observaciones conciliación"></div>
           <button class="btn btn-green btn-sm" onclick="saveConciliacion()">Guardar cierre</button>
-          <div class="chart-note" style="margin-top:8px">El total App se calcula desde Gastos del mes (excluye transferencias propias y no-gasto).</div>
+          <div class="chart-note" style="margin-top:8px">El total App se calcula desde Gastos del mes (excluye transferencias propias, no-gasto, trámites de terceros y préstamos otorgados).</div>
+        </div>
+        <div class="card" style="margin-bottom:14px">
+          <div class="card-title">Coincidencias por movimiento</div>
+          <div class="chart-note" style="margin-bottom:10px">Pega líneas desde la cartola o Excel (fecha, texto, monto en cualquier formato razonable). Se comparan con los gastos del mes con el mismo criterio que el total App.</div>
+          <div class="grid3">
+            <div class="form-row"><label class="form-label">Mes</label><input class="fi" id="match-mes" type="month"></div>
+          </div>
+          <div class="form-row"><label class="form-label">Líneas de cartola</label><textarea class="fi" id="match-paste" rows="10" placeholder="Ej: 2026-05-07	COMERCIO	-45.990"></textarea></div>
+          <button class="btn btn-sm btn-green" type="button" onclick="runConciliacionPorMovimiento()">Analizar coincidencias</button>
+          <div id="match-out" style="margin-top:14px;font-size:13px"></div>
         </div>
         <div class="card">
           <div class="card-title">Historial de conciliaciones</div>
@@ -551,7 +573,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
 </div>
 
 <!-- MODAL GASTO -->
-<div class="overlay" id="m-gasto"><div class="modal">
+<div class="overlay" id="overlay-gasto"><div class="modal">
   <div class="modal-handle"></div>
   <div class="modal-title" id="m-gasto-title">Registrar gasto</div>
   <div class="grid2">
@@ -585,12 +607,14 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
         <option value="extraordinario">Extraordinario </option>
         <option value="transferencia_interna">Transferencia propia</option>
         <option value="no_gasto">No-gasto (no cuenta en análisis)</option>
+        <option value="tramite_terceros">Trámite de terceros (no es mi gasto)</option>
+        <option value="prestamo">Préstamo otorgado (no cuenta en gasto mensual)</option>
       </select>
     </div>
   </div>
   <div class="form-row"><label class="form-label">Notas</label><input class="fi" id="g-notas" placeholder="Opcional"></div>
   <div class="modal-actions">
-    <button class="btn" onclick="closeModal('m-gasto')">Cancelar</button>
+    <button class="btn" onclick="closeModal('overlay-gasto')">Cancelar</button>
     <button class="btn btn-green" onclick="saveGasto()">Guardar</button>
   </div>
 </div></div>
@@ -604,6 +628,17 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
     <div style="font-size:12px;color:var(--text3);margin-top:3px;font-family:var(--mono)" id="pend-meta"></div>
   </div>
   <div class="form-row"><label class="form-label">Categor&#237;a</label><select class="fi" id="pend-cat"></select></div>
+  <div class="form-row"><label class="form-label">Naturaleza del movimiento</label>
+    <select class="fi" id="pend-especial" onchange="togglePendEspecial()">
+      <option value="">Gasto convencional (usa compartido / cuotas abajo)</option>
+      <option value="tramite_terceros">Trámite: recibí y pagué a un tercero (no cuenta como gasto ni en totales)</option>
+      <option value="prestamo">Préstamo que te deben (aparece en Por cobrar, no cuenta en gasto mensual)</option>
+    </select>
+  </div>
+  <div id="pend-prestamo-extra" style="display:none;margin-bottom:8px;background:var(--gris-m);border-radius:var(--radius);padding:10px 12px">
+    <div class="form-row"><label class="form-label">Deudor / a quién le prestaste</label><input class="fi" id="pend-prestamo-persona" placeholder="Ej: Papá"></div>
+    <div style="font-size:11px;color:var(--text3)">El monto será el del correo pendiente (<span id="pend-prestamo-monto-hint"></span>) y también quedará trazabilidad en historial como movimiento marcado préstamo.</div>
+  </div>
   <div class="form-row">
     <label class="form-label">Etiquetas</label>
     <div id="pend-tags-picker" style="display:flex;flex-wrap:wrap;gap:2px;margin-bottom:6px"></div>
@@ -813,6 +848,7 @@ function load() {
     sessionStorage.removeItem('finanzas_jt_session_passcode');
     sessionStorage.removeItem('finanzas_jt_session_until');
   }
+  ensureCategoriesFromGastos();
 }
 function save() {
   try {
@@ -966,7 +1002,7 @@ function openGastoModal(pre={}) {
   document.getElementById('g-tipo').value='normal';
   renderTagCheckboxRow('g-tags-picker', pre.tag || '', 'g');
   document.getElementById('g-tag-extra').value = '';
-  openModal('m-gasto');
+  openModal('overlay-gasto');
 }
 function saveGasto() {
   const desc=document.getElementById('g-desc').value.trim();
@@ -975,7 +1011,7 @@ function saveGasto() {
   const tag = readTagCheckboxes('g-tags-picker', 'g', 'g-tag-extra');
   mergeTagsIntoGlobal(tag);
   const g = {id:uid(),desc,monto,montoTotal:monto,cat:document.getElementById('g-cat').value,tag,fecha:document.getElementById('g-fecha').value,tarjeta:document.getElementById('g-tarjeta').value,tipo:document.getElementById('g-tipo').value,notas:document.getElementById('g-notas').value,fuente:'manual'};
-  S.gastos.push(g); save(); closeModal('m-gasto'); renderDashboard(); updateBadge();
+  S.gastos.push(g); save(); closeModal('overlay-gasto'); renderDashboard(); updateBadge();
   pushGastoToSheets(g);
 }
 function deleteGasto(id) { if(!confirm('?Eliminar este gasto?'))return; S.gastos=S.gastos.filter(g=>g.id!==id); save(); renderGastos(); renderDashboard(); }
@@ -986,9 +1022,7 @@ function deleteGasto(id) { if(!confirm('?Eliminar este gasto?'))return; S.gastos
 function updateBadge() {
   const n=S.propuestas.filter(p=>p.estado==='pendiente').length;
   const badge=document.getElementById('badge-pend');
-  const metrica=document.getElementById('m-pend');
   badge.textContent=n; badge.style.display=n?'inline':'none';
-  if(metrica) metrica.textContent=n;
 }
 
 function renderPendientes() {
@@ -1025,6 +1059,11 @@ function abrirCat(id) {
   document.getElementById('pend-cuotas-extra').style.display='none';
   document.getElementById('pend-a-cobrar').value=Math.round(p.monto/2);
   document.getElementById('pend-personas').value='';
+  document.getElementById('pend-especial').value = '';
+  document.getElementById('pend-prestamo-persona').value = '';
+  const ph = document.getElementById('pend-prestamo-monto-hint');
+  if (ph) ph.textContent = fmt(p.monto);
+  togglePendEspecial();
   if (/transferenc|traspaso/i.test(String(p.comercio || ''))) {
     document.getElementById('pend-cat').value = 'Transferencias propias';
     renderTagCheckboxRow('pend-tags-picker', 'Entre cuentas propias', 'pend');
@@ -1032,6 +1071,24 @@ function abrirCat(id) {
     renderTagCheckboxRow('pend-tags-picker', p.propuesta?.tag || '', 'pend');
   }
   openModal('m-cat-pend');
+}
+function togglePendEspecial() {
+  const esp = document.getElementById('pend-especial');
+  const v = esp ? esp.value : '';
+  const prest = document.getElementById('pend-prestamo-extra');
+  if (prest) prest.style.display = v === 'prestamo' ? 'block' : 'none';
+  const block = !!v;
+  const pc = document.getElementById('pend-comp');
+  const pq = document.getElementById('pend-cuotas');
+  if (pc) pc.disabled = block;
+  if (pq) pq.disabled = block;
+  if (block) {
+    pc.value = 'no';
+    pq.value = 'no';
+    document.getElementById('pend-comp-extra').style.display = 'none';
+    document.getElementById('pend-comp-grupo').style.display = 'none';
+    document.getElementById('pend-cuotas-extra').style.display = 'none';
+  }
 }
 function toggleCuotasFields() {
   const v=document.getElementById('pend-cuotas').value;
@@ -1060,6 +1117,40 @@ function toggleCompFields() {
 function confirmarCat() {
   const p=S.propuestas.find(x=>x.id===S.pendIdx);
   if(!p) return;
+  const especial = document.getElementById('pend-especial')?.value || '';
+  if (especial === 'tramite_terceros') {
+    const catSel = document.getElementById('pend-cat').value || 'Otros';
+    const tag = readTagCheckboxes('pend-tags-picker', 'pend', 'pend-tag-extra');
+    mergeTagsIntoGlobal(tag);
+    const g={
+      id:uid(),desc:p.comercio,monto:p.monto,montoTotal:p.monto,cat:catSel,tag,fecha:p.fecha,tarjeta:p.tarjeta,tipo:'tramite_terceros',fuente:'gmail',banco:p.banco,notas:'Trámite por tercero · fuera del gasto mensual',cuotas:null
+    };
+    S.gastos.push(g);
+    p.estado='confirmado';
+    p.propuesta={ cat:catSel, tag:tag||'' };
+    save(); closeModal('m-cat-pend'); updateBadge(); renderPendientes(); renderRevision(); renderDashboard();
+    pushGastoToSheets(g);
+    marcarPendienteProcesado(p);
+    return;
+  }
+  if (especial === 'prestamo') {
+    const persona = (document.getElementById('pend-prestamo-persona').value || '').trim();
+    if(!persona) { alert('Indica quién debe el préstamo (nombre en Por cobrar).'); return; }
+    const catSel = document.getElementById('pend-cat').value || 'Otros';
+    const tag = readTagCheckboxes('pend-tags-picker', 'pend', 'pend-tag-extra');
+    mergeTagsIntoGlobal(tag);
+    const g={
+      id:uid(),desc:p.comercio,monto:p.monto,montoTotal:p.monto,cat:catSel,tag,fecha:p.fecha,tarjeta:p.tarjeta,tipo:'prestamo',fuente:'gmail',banco:p.banco,notas:`Préstamo otorgado a ${persona}`,cuotas:null
+    };
+    S.gastos.push(g);
+    S.cuentas.push({id:uid(),tipo:'cobrar',persona,monto:p.monto,fecha:'',desc:`Préstamo · ${p.comercio}`,pagado:false,dias:0});
+    p.estado='confirmado';
+    p.propuesta={ cat:catSel, tag:tag||'' };
+    save(); closeModal('m-cat-pend'); updateBadge(); renderPendientes(); renderRevision(); renderDashboard(); renderCuentas();
+    pushGastoToSheets(g);
+    marcarPendienteProcesado(p);
+    return;
+  }
   const comp=document.getElementById('pend-comp').value;
   const cuotas=document.getElementById('pend-cuotas').value==='si';
   const nCuotas=cuotas?parseInt(document.getElementById('pend-n-cuotas').value)||1:1;
@@ -1099,7 +1190,7 @@ function confirmarCat() {
         id:uid(),
         desc:p.comercio,
         monto:cuotaMonto,
-        montoTotal:cuotaMonto,
+        montoTotal:totalInt,
         cat:catSel,
         tag,
         fecha:fechaCuota,
@@ -1295,7 +1386,7 @@ async function pushCategoriasToSheets() {
 
 function applyCategoriasFromSheet(values) {
   if (!values || !values.length) return;
-  const cats = [];
+  const fromSheetCats = [];
   const tags = [];
   values.forEach(row => {
     const id = String(row[0] || '').trim();
@@ -1308,15 +1399,36 @@ function applyCategoriasFromSheet(values) {
       tags.push(nombre);
       return;
     }
-    cats.push({
+    fromSheetCats.push({
       id: id || uid(),
       nombre,
       color,
       tipo: tipo || 'variable',
     });
   });
-  if (cats.length) S.cats = cats;
-  if (tags.length) S.tags = [...new Set(tags)];
+  const merged = new Map();
+  const addList = arr => arr.forEach(c => {
+    if (!c?.nombre?.trim()) return;
+    merged.set(String(c.nombre).toLowerCase(), c);
+  });
+  addList(S.cats || []);
+  addList(fromSheetCats);
+  S.cats = Array.from(merged.values()).sort((a,b) => String(a.nombre).localeCompare(String(b.nombre), 'es'));
+  if (tags.length) S.tags = [...new Set([...(S.tags || []), ...tags])];
+}
+
+function ensureCategoriesFromGastos() {
+  const merged = new Map();
+  (S.cats || []).forEach(c => {
+    if (c?.nombre) merged.set(String(c.nombre).toLowerCase(), c);
+  });
+  (S.gastos || []).forEach(g => {
+    const nombre = String(g.cat || '').trim();
+    if (!nombre) return;
+    const k = nombre.toLowerCase();
+    if (!merged.has(k)) merged.set(k, { id: uid(), nombre, color: 'gris', tipo: 'variable' });
+  });
+  if (merged.size) S.cats = Array.from(merged.values()).sort((a,b) => String(a.nombre).localeCompare(String(b.nombre), 'es'));
 }
 
 async function saveCategoriasTagsShared() {
@@ -1711,6 +1823,7 @@ async function loadFromSheets() {
     } catch (e) {
       console.log('Categorias sheet (opcional):', e);
     }
+    ensureCategoriesFromGastos();
     save();
     renderDashboard();
     renderIngresos();
@@ -1761,6 +1874,9 @@ function fillDashPeriodSelect() {
   (S.gastos || []).forEach(g => {
     if (g && g.fecha && g.fecha.length >= 7) keys.add(g.fecha.slice(0, 7));
   });
+  (S.propuestas || []).forEach(p => {
+    if (p && p.fecha && p.fecha.length >= 7) keys.add(String(p.fecha).slice(0, 7));
+  });
   const now = new Date();
   keys.add(monthKeyDash(now.getFullYear(), now.getMonth()));
   const sorted = [...keys].filter(k => /^\d{4}-\d{2}$/.test(k)).sort().reverse();
@@ -1775,36 +1891,137 @@ function fillDashPeriodSelect() {
     }).join('');
 }
 
+function tipoCuentaComoGastoReal(tipo) {
+  const t = tipo || 'normal';
+  return t !== 'transferencia_interna' && t !== 'no_gasto' && t !== 'tramite_terceros' && t !== 'prestamo';
+}
+function esRegistroCuotaDashboard(g) {
+  return !!(g && ((Number(g.cuotas) || 0) > 1 || /\bCuota\s+\d+\s*\/\s*\d+/i.test(String(g.notas || ''))));
+}
+
 function renderDashboard() {
   fillDashPeriodSelect();
   const per = getDashboardPeriod();
-  const gm=S.gastos.filter(g=>{
-    if (g.tipo === 'transferencia_interna' || g.tipo === 'no_gasto') return false;
+  const now = new Date();
+  let monthKeyDashStr = '';
+  if (per.mode === 'month') monthKeyDashStr = monthKeyDash(per.year, per.month);
+
+  const gm = S.gastos.filter(g => {
+    if (!tipoCuentaComoGastoReal(g.tipo)) return false;
     if (per.mode === 'all') return true;
-    const d=new Date(g.fecha+'T12:00');
-    return d.getMonth()===per.month&&d.getFullYear()===per.year;
+    const d = new Date(g.fecha + 'T12:00');
+    return d.getMonth() === per.month && d.getFullYear() === per.year;
   });
-  const total=gm.reduce((a,g)=>a+g.monto,0);
+
+  const totalConfirmed = gm.reduce((a, g) => a + g.monto, 0);
+
+  const allPend = (S.propuestas || []).filter(p => p.estado === 'pendiente');
+  const pendMes = per.mode === 'month'
+    ? allPend.filter(p => String(p.fecha || '').startsWith(monthKeyDashStr))
+    : allPend;
+  const pendSumMes = pendMes.reduce((a, p) => a + (Number(p.monto) || 0), 0);
+
+  const totalBruto = per.mode === 'month' ? (totalConfirmed + pendSumMes) : totalConfirmed;
+  const sinCatCount = pendMes.length;
+  document.getElementById('m-gasto-bruto').textContent = fmt(totalBruto);
+  document.getElementById('m-gasto-bruto-s').textContent = per.mode === 'month'
+    ? `Total del mes (${sinCatCount} sin categorizar) · Confirmados ${fmt(totalConfirmed)} (${gm.length} mov.)`
+    : `Histórico · ${gm.length} mov. clasificados · ${fmt(allPend.reduce((a, p) => a + (Number(p.monto) || 0), 0))} en Gmail pendiente`;
+
+  const ingresList = S.ingresos || [];
+  const ingresoAllTotal = ingresList.reduce((a, x) => a + (Number(x.monto) || 0), 0);
+  const ingresoMesTotal = per.mode === 'month'
+    ? ingresList.filter(x => String(x.fecha || '').startsWith(monthKeyDashStr)).reduce((a, x) => a + (Number(x.monto) || 0), 0)
+    : 0;
+  const ingresosDenom = per.mode === 'month' ? ingresoMesTotal : ingresoAllTotal;
+
+  const tasaEl = document.getElementById('m-tasa-val');
+  const tasaSub = document.getElementById('m-tasa-sub');
+  const gastosRate = per.mode === 'month'
+    ? (totalConfirmed + pendSumMes)
+    : totalConfirmed;
+
+  if (ingresosDenom <= 0) {
+    tasaEl.textContent = '—';
+    tasaSub.textContent = 'Configura tus ingresos para ver tu tasa de ahorro';
+    tasaEl.className = 'metric-value';
+  } else {
+    const tasaPct = Math.round(((ingresosDenom - gastosRate) / ingresosDenom) * 1000) / 10;
+    const cls = tasaPct >= 0 ? 'metric-value pos' : 'metric-value neg';
+    tasaEl.textContent = tasaPct.toFixed(tasaPct % 1 ? 1 : 0) + '%';
+    tasaEl.className = cls;
+    tasaSub.textContent = `(${fmt(gastosRate)} gasto${per.mode === 'month' ? ' bruto este mes (incl. sin cat.)' : ' acum.'} vs ${fmt(ingresosDenom)} ingresos)`;
+  }
+
+  const cobrar = S.cuentas.filter(c => c.tipo === 'cobrar' && !c.pagado);
+  const pagar = S.cuentas.filter(c => c.tipo === 'pagar' && !c.pagado);
+  document.getElementById('m-cobrar').textContent = fmt(cobrar.reduce((a, c) => a + c.monto, 0));
+  document.getElementById('m-cobrar-s').textContent = cobrar.length + ' pendientes';
+  document.getElementById('m-pagar').textContent = fmt(pagar.reduce((a, c) => a + c.monto, 0));
+  document.getElementById('m-pagar-s').textContent = pagar.length + ' pendientes';
+
   const totalTarjetaBruto = gm
-    .filter(g => /^TC\s/i.test((g.tarjeta||'')))
-    .reduce((a,g)=>a+(Number(g.montoTotal ?? g.monto)||0),0);
-  const cobrar=S.cuentas.filter(c=>c.tipo==='cobrar'&&!c.pagado);
-  const pagar=S.cuentas.filter(c=>c.tipo==='pagar'&&!c.pagado);
-  document.getElementById('m-gasto').textContent=fmt(total);
-  document.getElementById('m-gasto-s').textContent=gm.length+` transacciones · Tarjetas (bruto): ${fmt(totalTarjetaBruto)}`;
-  document.getElementById('m-cobrar').textContent=fmt(cobrar.reduce((a,c)=>a+c.monto,0));
-  document.getElementById('m-cobrar-s').textContent=cobrar.length+' pendientes';
-  document.getElementById('m-pagar').textContent=fmt(pagar.reduce((a,c)=>a+c.monto,0));
-  document.getElementById('m-pagar-s').textContent=pagar.length+' pendientes';
+    .filter(g => /^TC\s/i.test((g.tarjeta || '')))
+    .reduce((a, g) => a + (Number(g.montoTotal ?? g.monto) || 0), 0);
+
   document.getElementById('mes-label').textContent = per.mode === 'all' ? 'Histórico acumulado' : `${MESES[per.month]} ${per.year}`;
-  // Recent
-  const rec=[...S.gastos].sort((a,b)=>b.fecha.localeCompare(a.fecha)).slice(0,6);
-  document.getElementById('recent-body').innerHTML=rec.length?rec.map(g=>`<tr>
-    <td style="font-family:var(--mono);font-size:11px">${g.fecha}</td>
-    <td>${g.desc}</td><td>${catBadge(g.cat)}</td>
-    <td style="font-family:var(--mono);font-weight:600">${fmt(g.monto)}</td>
-    <td><span class="badge ${g.fuente==='gmail'?'b-azul':'b-gris'}" style="font-size:10px">${g.fuente==='gmail'?'Gmail':'Manual'}</span></td>
-  </tr>`).join(''):`<tr><td colspan="5" class="empty" style="padding:24px">Sin gastos aún</td></tr>`;
+
+  const compEl = document.getElementById('m-comprometido');
+  const compSub = document.getElementById('m-comprometido-s');
+  if (per.mode === 'month') {
+    let sumCuotasMes = gm.filter(esRegistroCuotaDashboard).reduce((a, g) => a + g.monto, 0);
+    let sumCred = gm.filter(g => !esRegistroCuotaDashboard(g) && String(g.cat) === 'Crédito consumo').reduce((a, g) => a + g.monto, 0);
+    compEl.textContent = fmt(sumCuotasMes + sumCred);
+    compSub.textContent =
+      fmt(sumCuotasMes) +
+      ` cuotas + ${fmt(sumCred)} Crédito consumo · TC bruto período ${fmt(totalTarjetaBruto)}`;
+  } else {
+    compEl.textContent = '—';
+    compSub.textContent = 'Selecciona un mes para comprometidos y cuotas del período';
+  }
+
+  const proyEl = document.getElementById('m-proyeccion');
+  const proySub = document.getElementById('m-proyeccion-s');
+  if (per.mode === 'month') {
+    const mismoMesCal =
+      monthKeyDashStr === HOY.slice(0, 7);
+    const diasMes = new Date(per.year, per.month + 1, 0).getDate();
+
+    const acumMesHastaHoy = gm
+      .filter(g => String(g.fecha || '') <= HOY)
+      .reduce((a, g) => a + g.monto, 0);
+
+    if (mismoMesCal) {
+      const diaActual = Math.max(1, now.getDate());
+      const extrap = diaActual >= 1 ? (acumMesHastaHoy / diaActual) * diasMes : 0;
+      proyEl.textContent = fmt(Math.round(extrap));
+      proyEl.className = 'metric-value';
+      proySub.textContent = `Promedio al cierre (${diaActual}/${diasMes}); sin incluir Gmail pendiente (${fmt(acumMesHastaHoy)} realizados hasta hoy)`;
+    } else {
+      const cierreFuturo = HOY.slice(0, 7) < monthKeyDashStr;
+      const cierrePasado = monthKeyDashStr < HOY.slice(0, 7);
+      if (cierrePasado) {
+        proyEl.textContent = fmt(totalConfirmed);
+        proyEl.className = 'metric-value';
+        proySub.textContent = 'Mes cerrado (total registrado; sin extrapolación)';
+      } else if (cierreFuturo) {
+        proyEl.textContent = '—';
+        proySub.textContent = 'Mes futuro: sin ritmo proyectable';
+      } else {
+        proyEl.textContent = '—';
+        proySub.textContent = 'Selecciona un mes del calendario';
+      }
+    }
+  } else {
+    proyEl.textContent = '—';
+    proySub.textContent = 'Selecciona un mes para extrapolar el mes en curso';
+    proyEl.className = 'metric-value';
+  }
+
+  document.getElementById('m-pend').textContent = String(sinCatCount);
+  const ps = document.getElementById('m-pend-s');
+  if (ps) ps.textContent = per.mode === 'month' ? 'Sin categorizar Gmail (este período)' : 'Sin categorizar Gmail (todas las fechas)';
+
   renderCatChart(gm);
   if (per.mode === 'all') {
     renderTendChart(gm);
@@ -2015,15 +2232,110 @@ function renderInversiones() {
   }).join('') : `<tr><td colspan="5" class="empty" style="padding:24px">Sin inversiones registradas</td></tr>`;
 }
 
-function monthTotalForConciliacion(monthKey) {
+function gastosConciliacionForMonthKey(monthKey) {
   return (S.gastos || []).filter(g => {
     if (!g || !g.fecha || !String(g.fecha).startsWith(monthKey)) return false;
-    if (g.tipo === 'transferencia_interna' || g.tipo === 'no_gasto') return false;
-    return true;
-  }).reduce((a,g)=>a + (Number(g.monto)||0),0);
+    return tipoCuentaComoGastoReal(g.tipo);
+  });
+}
+function monthTotalForConciliacion(monthKey) {
+  return gastosConciliacionForMonthKey(monthKey).reduce((a, g) => a + (Number(g.monto) || 0), 0);
+}
+
+function parseMontoCartolaLine(line) {
+  const sinSeparadorMiles = String(line).replace(/\./g, '').replace(/\s/g, ' ');
+  const nums = sinSeparadorMiles.match(/-?\d[\d,]*/g);
+  if (!nums || !nums.length) return null;
+  const last = nums[nums.length - 1].replace(/,/g, '.');
+  const n = parseFloat(last);
+  if (!isFinite(n)) return null;
+  return Math.abs(Math.round(n));
+}
+function normMatchToken(s) {
+  return String(s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/gi, ' ')
+    .trim();
+}
+function runConciliacionPorMovimiento() {
+  const mesEl = document.getElementById('match-mes');
+  const ta = document.getElementById('match-paste');
+  const out = document.getElementById('match-out');
+  if (!mesEl || !ta || !out) return;
+  const mesKey = (mesEl.value || HOY.slice(0, 7)).trim();
+  mesEl.value = mesKey;
+  const lines = ta.value.split(/\n/).map(l => l.trim()).filter(Boolean);
+  if (!lines.length) {
+    out.innerHTML = '<span style="color:var(--rojo)">Pega al menos una línea de cartola.</span>';
+    return;
+  }
+  const pool = gastosConciliacionForMonthKey(mesKey).map(g => ({ ...g, _used: false }));
+  const cartolas = lines.map((line, i) => ({ line, i, monto: parseMontoCartolaLine(line), tokens: normMatchToken(line).split(/\s+/).filter(t => t.length > 2) }));
+  const hits = [];
+  const sinMontoParsable = [];
+  const cartolaSinMatch = [];
+  cartolas.forEach(c => {
+    if (!c.monto) {
+      sinMontoParsable.push(c);
+      return;
+    }
+    const sameAmt = pool.filter(g => !g._used && Math.abs(Math.round(Number(g.monto) || 0) - c.monto) <= 50);
+    let best = null;
+    if (sameAmt.length === 1) {
+      best = { g: sameAmt[0], score: 100 };
+    } else {
+      sameAmt.forEach(g => {
+        const gn = normMatchToken(g.desc);
+        let score = 0;
+        c.tokens.forEach(t => {
+          if (gn.includes(t)) score += 5;
+        });
+        if (!best || score > best.score) best = { g, score };
+      });
+    }
+    if (best) {
+      best.g._used = true;
+      hits.push({ cart: c, app: best.g, score: best.score });
+    } else {
+      cartolaSinMatch.push(c);
+    }
+  });
+  const sinEnCartola = pool.filter(g => !g._used);
+  let html = `<div style="margin-bottom:10px"><strong>${mesKey}</strong> · ${lines.length} líneas · ${pool.length} gastos app en el mes</div>`;
+  html += `<div><strong>Coincidencias (${hits.length})</strong></div><ul style="margin:6px 0 12px 16px;padding:0">`;
+  hits.forEach(h => {
+    html += `<li style="margin-bottom:4px"><span style="font-family:var(--mono)">${fmt(h.app.monto)}</span> · ${esc(h.app.desc)} <span style="opacity:.6">←</span> <span style="font-size:11px">${esc(h.cart.line.slice(0, 120))}</span></li>`;
+  });
+  html += '</ul>';
+  if (sinMontoParsable.length) {
+    html += `<div><strong>Líneas sin detectar monto (${sinMontoParsable.length})</strong></div><ul style="margin:6px 0 12px 16px;font-size:12px;color:var(--text2)">`;
+    sinMontoParsable.forEach(c => {
+      html += `<li>${esc(c.line.slice(0, 160))}</li>`;
+    });
+    html += '</ul>';
+  }
+  if (cartolaSinMatch.length) {
+    html += `<div><strong>Monto en cartola sin par en App (${cartolaSinMatch.length})</strong></div><ul style="margin:6px 0 12px 16px;font-size:12px;color:var(--text2)">`;
+    cartolaSinMatch.forEach(c => {
+      html += `<li>${esc(c.line.slice(0, 160))}</li>`;
+    });
+    html += '</ul>';
+  }
+  if (sinEnCartola.length) {
+    html += `<div><strong>En la app y no emparejados (${sinEnCartola.length})</strong></div><ul style="margin:6px 0 12px 16px;font-size:12px">`;
+    sinEnCartola.forEach(g => {
+      html += `<li><span style="font-family:var(--mono)">${fmt(g.monto)}</span> · ${esc(g.desc)} (${g.fecha})</li>`;
+    });
+    html += '</ul>';
+  }
+  out.innerHTML = html;
 }
 
 function renderConciliacion() {
+  const mm = document.getElementById('match-mes');
+  if (mm && !mm.value) mm.value = HOY.slice(0, 7);
   const body = document.getElementById('conciliacion-body');
   if (!body) return;
   const list = [...(S.conciliaciones || [])].sort((a,b)=>String(b.mes).localeCompare(String(a.mes)));
