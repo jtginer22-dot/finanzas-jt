@@ -34,6 +34,7 @@ exports.handler = async (event) => {
 
   const categories = Array.isArray(body.categories) ? body.categories.filter(Boolean) : [];
   const knownTags = Array.isArray(body.tags) ? body.tags.filter(Boolean) : [];
+  const recentExamples = Array.isArray(body.recentExamples) ? body.recentExamples.slice(0, 12) : [];
   const text = String(body.text || '').trim();
   const amount = Number(body.amount || 0);
   const date = String(body.date || '');
@@ -48,6 +49,7 @@ exports.handler = async (event) => {
     'Usa category solo desde la lista permitida que te entregan.',
     'tag puede ser UNA o VARIAS etiquetas separadas por coma (máx. 4 etiquetas, nombres cortos).',
     'Si hay known_tags, prioriza reutilizar esas etiquetas cuando encajen; si no, inventa etiquetas cortas nuevas.',
+    'Si el payload incluye recent_user_examples (decisiones recientes del usuario), úsalas como guía fuerte para imitar estilo cuando el comercio o el contexto sea parecido; no contradigas la lista de categorías permitidas.',
     'proposed_new_category es opcional y solo si detectas una categoría faltante (1-3 palabras).',
     'confidence entre 0 y 1.',
   ].join(' ');
@@ -56,6 +58,7 @@ exports.handler = async (event) => {
     transaction: { text, amount, date },
     allowed_categories: categories,
     known_tags: knownTags,
+    recent_user_examples: recentExamples,
   });
 
   try {
@@ -76,7 +79,20 @@ exports.handler = async (event) => {
     });
 
     const raw = await r.text();
-    if (!r.ok) return { statusCode: r.status, headers, body: raw };
+    if (!r.ok) {
+      let msg = raw.slice(0, 800);
+      try {
+        const errJ = JSON.parse(raw);
+        if (typeof errJ.error === 'string') msg = errJ.error;
+        else if (errJ.error && typeof errJ.error.message === 'string') msg = errJ.error.message;
+        else if (typeof errJ.message === 'string') msg = errJ.message;
+      } catch (_) { /* raw ya es texto */ }
+      return {
+        statusCode: r.status >= 400 && r.status < 600 ? r.status : 502,
+        headers,
+        body: JSON.stringify({ error: msg || 'Error desde Anthropic' }),
+      };
+    }
 
     let outer;
     try { outer = JSON.parse(raw); } catch { return { statusCode: 502, headers, body: JSON.stringify({ error: 'Respuesta no JSON desde Anthropic' }) }; }

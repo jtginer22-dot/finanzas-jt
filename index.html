@@ -379,6 +379,18 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
           <span style="font-size:20px"></span>
           <div><strong>Gastos capturados autom&#225;ticamente desde Gmail</strong><br><span style="font-size:11px">Categorizalos con 2 taps para que queden registrados.</span></div>
         </div>
+        <div class="card" style="margin-bottom:12px">
+          <div class="card-title" style="margin-bottom:10px">Filtrar para categorizar</div>
+          <div class="filter-bar" style="flex-wrap:wrap;gap:8px">
+            <input class="fi" id="pend-filter-q" placeholder="Concepto · banco · tarjeta" style="flex:1;min-width:170px" oninput="renderPendientes()">
+            <input class="fi" type="date" id="pend-filter-desde" title="Desde" aria-label="Fecha desde" onchange="renderPendientes()" style="max-width:155px">
+            <input class="fi" type="date" id="pend-filter-hasta" title="Hasta" aria-label="Fecha hasta" onchange="renderPendientes()" style="max-width:155px">
+            <input class="fi" type="number" inputmode="decimal" id="pend-filter-min" placeholder="Monto mín ($)" style="max-width:128px" oninput="renderPendientes()">
+            <input class="fi" type="number" inputmode="decimal" id="pend-filter-max" placeholder="Monto máx ($)" style="max-width:128px" oninput="renderPendientes()">
+            <button type="button" class="btn btn-sm" onclick="clearPendFilters()">Limpiar filtros</button>
+          </div>
+          <div class="chart-note" style="margin-top:8px;margin-bottom:0">Aplica a la lista de Gmail y a la tabla de revisión. “Confirmar / Rechazar todas” sólo opera sobre pendientes que pasan el filtro.</div>
+        </div>
         <div id="pendientes-list"></div>
         <div class="card" style="margin-top:12px">
           <div class="card-title">Revisión masiva (mismos pendientes)</div>
@@ -877,7 +889,29 @@ function authHeaders() {
 const HOY = new Date().toISOString().split('T')[0];
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 function fmt(n) { return '$' + Math.round(Number(n)||0).toLocaleString('es-CL'); }
+/** Monto como número o texto chileno (ej. 45.990) desde Sheet o import. */
+function parseMontoFromSheetCell(cell) {
+  if (cell == null || cell === '') return 0;
+  if (typeof cell === 'number' && Number.isFinite(cell)) return Math.round(cell);
+  const s = String(cell).trim().replace(/\s/g, '');
+  if (!s) return 0;
+  const n = parseFloat(s.replace(/\./g, '').replace(',', '.'));
+  if (Number.isFinite(n)) return Math.round(n);
+  const digits = s.replace(/[^\d.-]/g, '');
+  const n2 = parseFloat(digits);
+  return Number.isFinite(n2) ? Math.round(n2) : 0;
+}
 function esc(s) { return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); }
+function parseJsonSafe(s) {
+  try { return JSON.parse(s); } catch { return null; }
+}
+function errorMessageFromApiBody(d, raw) {
+  if (d == null) return (raw || '').slice(0, 550).trim();
+  if (typeof d.error === 'string') return d.error;
+  if (d.error && typeof d.error === 'object' && typeof d.error.message === 'string') return d.error.message;
+  if (typeof d.message === 'string') return d.message;
+  return (raw || '').slice(0, 550).trim();
+}
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,5); }
 function isoFromDate(d) {
   const y = d.getFullYear();
@@ -1025,18 +1059,69 @@ function updateBadge() {
   badge.textContent=n; badge.style.display=n?'inline':'none';
 }
 
+function clearPendFilters() {
+  ['pend-filter-q', 'pend-filter-desde', 'pend-filter-hasta', 'pend-filter-min', 'pend-filter-max'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  renderPendientes();
+}
+function getPendFilter() {
+  return {
+    q: (document.getElementById('pend-filter-q')?.value || '').trim().toLowerCase(),
+    desde: (document.getElementById('pend-filter-desde')?.value || '').trim(),
+    hasta: (document.getElementById('pend-filter-hasta')?.value || '').trim(),
+    minStr: (document.getElementById('pend-filter-min')?.value || '').trim(),
+    maxStr: (document.getElementById('pend-filter-max')?.value || '').trim(),
+  };
+}
+function passesPendFilter(p, f) {
+  if (!f) return true;
+  if (f.q) {
+    const blob = `${p.comercio || ''} ${p.banco || ''} ${p.tarjeta || ''}`.toLowerCase();
+    if (!blob.includes(f.q)) return false;
+  }
+  const fe = String(p.fecha || '');
+  if (f.desde && fe && fe < f.desde) return false;
+  if (f.hasta && fe && fe > f.hasta) return false;
+  const m = Number(p.monto);
+  if (!Number.isNaN(m)) {
+    if (f.minStr !== '') {
+      const lo = parseFloat(String(f.minStr).replace(/\./g, '').replace(',', '.'));
+      if (Number.isFinite(lo) && m < lo) return false;
+    }
+    if (f.maxStr !== '') {
+      const hi = parseFloat(String(f.maxStr).replace(/\./g, '').replace(',', '.'));
+      if (Number.isFinite(hi) && m > hi) return false;
+    }
+  }
+  return true;
+}
+
 function renderPendientes() {
   const el=document.getElementById('pendientes-list');
-  const pend=S.propuestas.filter(p=>p.estado==='pendiente');
-  if(!pend.length) { el.innerHTML=`<div class="empty"><div class="empty-icon"></div>Sin gastos pendientes de categorizar</div>`; return; }
+  const f = getPendFilter();
+  const totalPend = S.propuestas.filter(p => p.estado === 'pendiente');
+  const pend = totalPend.filter(p => passesPendFilter(p, f));
+  if (!totalPend.length) {
+    el.innerHTML = `<div class="empty"><div class="empty-icon"></div>Sin gastos pendientes de categorizar</div>`;
+    renderRevision();
+    return;
+  }
+  if (!pend.length) {
+    el.innerHTML = `<div class="empty"><div class="empty-icon"></div>Ningún pendiente coincide con el filtro (${totalPend.length} en total). Prueba otro texto o límites de fecha/monto.</div>`;
+    renderRevision();
+    return;
+  }
   el.innerHTML=pend.map((p)=>`
     <div class="gmail-item">
       <div style="font-size:20px">${p.banco==='Santander'?'SAN':'BCH'}</div>
       <div class="gmail-item-info">
-        <div class="gmail-item-title">${p.comercio}</div>
-        <div class="gmail-item-sub">${p.fecha} ? ${p.tarjeta} ? ${p.banco}</div>
+        <div class="gmail-item-title">${esc(p.comercio)}</div>
+        <div class="gmail-item-sub">${esc(p.fecha)} · ${esc(p.tarjeta)} · ${esc(p.banco)}</div>
       </div>
       <div class="gmail-item-amount">${fmt(p.monto)}</div>
+      <button type="button" class="btn btn-sm" onclick="editarMontoPropuesta('${p.id}')" title="Corregir monto si llegó en $0 por error">Monto</button>
       <button class="btn btn-sm btn-green" onclick="abrirCat('${p.id}')">Categorizar</button>
       <button class="del-btn" onclick="descartarPend('${p.id}')"></button>
     </div>`).join('');
@@ -1253,6 +1338,105 @@ async function marcarPendienteProcesado(p) {
     });
   } catch (e) { console.log('Error marcando procesado:', e); }
 }
+
+async function updatePendienteMontoEnSheet(p) {
+  if (!S.gsId || !p) return;
+  try {
+    const d = await sheetsFnGet('Pendientes!A2:H1000');
+    if (!d.values) return;
+    const emailId = String(p.emailId || '').trim();
+    const idRef = String(p.id || '').trim();
+    const fila = d.values.findIndex(row => {
+      const rowUid = String(row[0] || '').trim();
+      const rowEmailId = String(row[6] || '').trim();
+      if (emailId) return rowEmailId === emailId;
+      if (idRef) return rowUid === idRef;
+      return false;
+    });
+    if (fila < 0) return;
+    const filaNum = fila + 2;
+    await sheetsFnPost({
+      operation: 'put',
+      range: `Pendientes!D${filaNum}`,
+      values: [[Number(p.monto) || 0]],
+    });
+  } catch (e) { console.log('updatePendienteMontoEnSheet:', e); }
+}
+
+async function editarMontoPropuesta(id) {
+  const p = S.propuestas.find(x => x.id === id);
+  if (!p || p.estado !== 'pendiente') return;
+  const cur = Number(p.monto);
+  const hint = Number.isFinite(cur) ? Math.round(cur) : 0;
+  const v = prompt('Monto correcto en pesos (solo número). Puedes quitar puntos de miles; ej 45990:', String(hint));
+  if (v === null) return;
+  const cleaned = String(v).trim().replace(/\s/g, '');
+  const n = parseFloat(cleaned.replace(/\./g, '').replace(',', '.'));
+  if (!Number.isFinite(n) || n < 0) {
+    alert('Monto inválido.');
+    return;
+  }
+  p.monto = Math.round(n);
+  save();
+  updateBadge();
+  renderPendientes();
+  renderDashboard();
+  try {
+    await updatePendienteMontoEnSheet(p);
+    setSyncStatus(true, 'Monto pendiente sincronizado');
+  } catch (_) {
+    setSyncStatus(false, 'Monto guardado solo en este dispositivo');
+  }
+}
+
+async function updateGastoRowInSheets(g) {
+  if (!S.gsId || !g) return;
+  try {
+    const d = await sheetsFnGet(`${SHEET_NAME_GASTOS}!A2:L1000`);
+    if (!d.values) return;
+    const idx = d.values.findIndex(row => String(row[0]).trim() === String(g.id).trim());
+    if (idx < 0) return;
+    const rowNum = idx + 2;
+    const row = [[
+      g.id, g.fecha, g.desc, g.cat, g.tag || '',
+      Number(g.monto) || 0, g.tarjeta || '',
+      g.tipo, g.fuente || 'manual', g.banco || '',
+      g.notas || '', g.montoTotal ?? g.monto,
+    ]];
+    await sheetsFnPost({
+      operation: 'put',
+      range: `${SHEET_NAME_GASTOS}!A${rowNum}:L${rowNum}`,
+      values: row,
+      majorDimension: 'ROWS',
+    });
+  } catch (e) { console.log('updateGastoRowInSheets:', e); }
+}
+
+async function editarMontoGasto(id) {
+  const g = S.gastos.find(x => x.id === id);
+  if (!g) return;
+  const v = prompt('Monto correcto en pesos:', String(Math.round(Number(g.monto) || 0)));
+  if (v === null) return;
+  const n = parseFloat(String(v).trim().replace(/\./g, '').replace(',', '.'));
+  if (!Number.isFinite(n) || n < 0) {
+    alert('Monto inválido.');
+    return;
+  }
+  g.monto = Math.round(n);
+  const mt = Number(g.montoTotal);
+  if (Number.isFinite(mt) && mt > 0 && mt < g.monto) g.montoTotal = g.monto;
+  save();
+  renderGastos();
+  renderHistorial();
+  renderDashboard();
+  try {
+    await updateGastoRowInSheets(g);
+    setSyncStatus(true, 'Monto gasto sincronizado');
+  } catch (_) {
+    setSyncStatus(false, 'Guardado local; revisar Sheet');
+  }
+}
+
 function descartarPend(id) {
   const p=S.propuestas.find(x=>x.id===id);
   if (p) p.estado='rechazado';
@@ -1714,13 +1898,13 @@ async function loadFromSheets() {
           desc: decodeEntities(row[2]),
           cat: decodeEntities(row[3]),
           tag: decodeEntities(row[4]),
-          monto: parseFloat(row[5]) || 0,
+          monto: parseMontoFromSheetCell(row[5]),
           tarjeta: row[6],
           tipo: row[7] || 'normal',
           fuente: row[8] || 'manual',
           banco: normalizeBankName(row[9]),
           notas: decodeEntities(row[10]),
-          montoTotal: parseFloat(row[11]) || (parseFloat(row[5]) || 0),
+          montoTotal: row[11] !== undefined && row[11] !== '' ? parseMontoFromSheetCell(row[11]) : parseMontoFromSheetCell(row[5]),
         };
         const idKey = String(g.id || '').trim() || uid();
         byId.set(idKey, { ...g, id: idKey });
@@ -1757,7 +1941,7 @@ async function loadFromSheets() {
           id: row[0] || uid(),
           fecha: row[1],
           comercio: decodeEntities(row[2]),
-          monto: parseFloat(row[3]) || 0,
+          monto: parseMontoFromSheetCell(row[3]),
           tarjeta: row[4] || '',
           banco: normalizeBankName(row[5]),
           emailId: row[6],
@@ -2128,7 +2312,7 @@ function renderGastos() {
     <td>${g.desc}</td><td>${catBadge(g.cat)}</td><td>${tagBadgesHtml(g.tag)}</td>
     <td style="font-size:11px;color:var(--text3)">${g.tarjeta||'?'}</td>
     <td style="font-family:var(--mono);font-weight:600">${fmt(g.monto)}</td>
-    <td><button class="del-btn" onclick="deleteGasto('${g.id}')"></button></td></tr>`).join(''):
+    <td><button type="button" class="btn btn-sm" style="padding:2px 6px;margin-right:4px" onclick="editarMontoGasto('${g.id}')" title="Corregir monto">$</button><button class="del-btn" onclick="deleteGasto('${g.id}')"></button></td></tr>`).join(''):
     `<tr><td colspan="7" class="empty" style="padding:24px">Sin gastos</td></tr>`;
 }
 
@@ -2418,6 +2602,15 @@ async function saveConciliacion() {
 async function suggestWithLLM(id) {
   const p = S.propuestas.find(x=>x.id===id);
   if(!p) return;
+  const recentExamples = [...(S.gastos || [])]
+    .sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')))
+    .filter(g => g.desc && g.cat && tipoCuentaComoGastoReal(g.tipo))
+    .slice(0, 12)
+    .map(g => ({
+      desc: String(g.desc).slice(0, 120),
+      category: g.cat,
+      tags: String(g.tag || '').slice(0, 80),
+    }));
   try {
     const r = await fetch('/.netlify/functions/llm-suggest', {
       method:'POST',
@@ -2428,12 +2621,18 @@ async function suggestWithLLM(id) {
         date: p.fecha,
         categories: S.cats.map(c=>c.nombre),
         tags: S.tags || [],
+        recentExamples,
       }),
     });
     const raw = await r.text();
-    let d;
-    try { d = JSON.parse(raw); } catch { throw new Error((raw || '').slice(0, 280) || 'Respuesta no JSON'); }
-    if(!r.ok) throw new Error(d.error || d.message || raw.slice(0, 280) || 'No disponible');
+    const d = parseJsonSafe(raw);
+    if (!r.ok) {
+      const msg = errorMessageFromApiBody(d, raw);
+      throw new Error(msg || `HTTP ${r.status}`);
+    }
+    if (!d || typeof d.category !== 'string') {
+      throw new Error(errorMessageFromApiBody(d, raw) || 'Respuesta inválida del servidor');
+    }
     p.propuesta = p.propuesta || {};
     p.propuesta.cat = d.category || p.propuesta.cat || '';
     p.propuesta.tag = d.tag || p.propuesta.tag || '';
@@ -2444,7 +2643,8 @@ async function suggestWithLLM(id) {
       alert(`IA sugiere posible nueva categoría: "${d.proposedNewCategory}".\n\nSi te hace sentido, créala en Configuración > Categorías.`);
     }
   } catch (e) {
-    alert('Sugerencia IA: '+(e.message||String(e))+'\n\nRevisa ANTHROPIC_API_KEY en Netlify, redeploy, y que el passcode de la app coincida con APP_PASSCODE.');
+    const msg = (e && e.message) ? e.message : String(e);
+    alert('Sugerencia IA: ' + msg + '\n\nSi no es claro el error: revisa ANTHROPIC_API_KEY en Netlify, redeploy, y que el passcode de la app coincida con APP_PASSCODE.');
   }
 }
 
@@ -2469,8 +2669,12 @@ function confirmProposalSimple(id) {
 }
 
 function bulkRevision(action) {
-  const pend = S.propuestas.filter(p=>p.estado==='pendiente');
-  if(!pend.length) return;
+  const f = getPendFilter();
+  const pend = S.propuestas.filter(p=>p.estado==='pendiente' && passesPendFilter(p, f));
+  if(!pend.length) {
+    alert('No hay pendientes que cumplan el filtro actual.');
+    return;
+  }
   if(action==='confirm') {
     pend.forEach(p=>confirmProposalSimple(p.id));
   } else if(action==='reject') {
@@ -2486,9 +2690,10 @@ function bulkRevision(action) {
 function renderRevision() {
   const el = document.getElementById('revision-body');
   if(!el) return;
-  const list = [...S.propuestas].sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha)));
+  const f = getPendFilter();
+  const list = [...S.propuestas].filter(p => passesPendFilter(p, f)).sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha)));
   if(!list.length) {
-    el.innerHTML = `<tr><td colspan="6" class="empty" style="padding:24px">Sin movimientos propuestos</td></tr>`;
+    el.innerHTML = `<tr><td colspan="6" class="empty" style="padding:24px">Sin movimientos con este filtro (o ninguno en Gmail)</td></tr>`;
     return;
   }
   el.innerHTML = list.map(p => {
@@ -2499,10 +2704,13 @@ function renderRevision() {
       : (p.estado==='confirmado'
         ? `<button class="btn btn-sm" onclick="reabrirPendiente('${p.id}')">Reabrir / Reprocesar</button>`
         : `<span style="color:var(--text3);font-size:12px">Sin acciones</span>`);
+    const montoBtn = p.estado === 'pendiente'
+      ? ` <button type="button" class="btn btn-sm" style="padding:2px 6px;font-size:10px;margin-left:4px" onclick="editarMontoPropuesta('${p.id}')">Mont.</button>`
+      : '';
     return `<tr>
       <td style="font-family:var(--mono);font-size:11px">${esc(p.fecha)}</td>
       <td>${esc(p.comercio)}</td>
-      <td style="font-family:var(--mono);font-weight:600">${fmt(p.monto)}</td>
+      <td style="font-family:var(--mono);font-weight:600">${fmt(p.monto)}${montoBtn}</td>
       <td><select class="fi" style="min-width:150px" onchange="setProposalCategory('${p.id}', this.value)">${catOpts}</select></td>
       <td>${estadoBadge}</td>
       <td>${actions}</td>
