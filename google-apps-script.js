@@ -99,6 +99,28 @@ function inicializar() {
 // ============================================================
 // SCANNER GMAIL — Corre cada 1 hora
 // ============================================================
+
+/** Monto en pesos chilenos desde cuerpo de correo BCI (compras, Apple Pay, etc.). */
+function parseMontoDesdeCorreoBci_(cuerpo) {
+  if (!cuerpo) return null;
+  const patterns = [
+    /compra por\s*\$?\s*([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]+)?)/i,
+    /compra por\s*\$?\s*([0-9]+(?:,[0-9]+)?)/i,
+    /monto\s*(?:de\s*)?(?:la\s*)?(?:compra\s*)?[:\s]*\$?\s*([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]+)?)/i,
+    /total\s*(?:a\s*)?pagar\s*[:\s]*\$?\s*([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]+)?)/i,
+    /total\s*[:\s]*\$?\s*([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]+)?)/i,
+    /\$\s*([0-9]{1,3}(?:\.[0-9]{3})+(?:,[0-9]+)?)/,
+  ];
+  for (var i = 0; i < patterns.length; i++) {
+    var m = cuerpo.match(patterns[i]);
+    if (m && m[1]) {
+      var n = parseFloat(String(m[1]).replace(/\./g, '').replace(',', '.'));
+      if (n > 0) return n;
+    }
+  }
+  return null;
+}
+
 function scanearGmail() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const pendSheet = ss.getSheetByName(SHEETS.PENDIENTES);
@@ -106,38 +128,49 @@ function scanearGmail() {
   // IDs ya procesados
   const procesados = new Set();
   if (pendSheet.getLastRow() > 1) {
-    const ids = pendSheet.getRange(2, 7, pendSheet.getLastRow()-1, 1).getValues().flat();
+    const last = pendSheet.getLastRow();
+    const ids = pendSheet.getRange(2, 7, last, 7).getValues().flat();
     ids.forEach(id => procesados.add(id));
   }
   
   let nuevos = 0;
   
-  // ---- BANCO DE CHILE ----
-  const hilosBCI = GmailApp.search('from:enviodigital@bancochile.cl subject:"Compra con Tarjeta de Crédito" newer_than:7d', 0, 20);
-  hilosBCI.forEach(hilo => {
-    const msgs = hilo.getMessages();
-    msgs.forEach(msg => {
-      const msgId = msg.getId();
-      if (procesados.has(msgId)) return;
-      
-      const cuerpo = msg.getPlainBody() || msg.getBody();
-      const fecha = Utilities.formatDate(msg.getDate(), CONFIG.TIMEZONE, 'yyyy-MM-dd');
-      
-      // Parser BCI: "compra por $28.140 con Tarjeta de Crédito ****7076 en BRUNAPOLI LOS DOMINICOS"
-      const montoMatch = cuerpo.match(/compra por \$([0-9.,]+)/i);
-      const comercioMatch = cuerpo.match(/en ([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ\s]+?) el \d/i);
-      const tarjetaMatch = cuerpo.match(/\*{4}(\d{4})/);
-      
-      if (!montoMatch) return;
-      
-      const monto = parseFloat(montoMatch[1].replace(/\./g,'').replace(',','.'));
-      const comercio = comercioMatch ? comercioMatch[1].trim() : msg.getSubject();
-      const tarjeta = tarjetaMatch ? `TC BCI ****${tarjetaMatch[1]}` : 'TC Banco de Chile';
-      
-      const uid = Utilities.getUuid().slice(0,8);
-      pendSheet.appendRow([uid, fecha, comercio, monto, tarjeta, 'Banco de Chile', msgId, 'NO']);
-      nuevos++;
-      Logger.log(`BCI detectado: ${comercio} $${monto}`);
+  // ---- BANCO DE CHILE (TC + Apple Pay y variantes de texto) ----
+  const queriesBci = [
+    'from:enviodigital@bancochile.cl subject:"Compra con Tarjeta de Crédito" newer_than:7d',
+    'from:enviodigital@bancochile.cl ("Apple Pay" OR "APPLE PAY") newer_than:7d',
+    'from:enviodigital@bancochile.cl (compra OR cargo) (tarjeta OR crédito) newer_than:7d',
+  ];
+  const seenMsg = new Set();
+  queriesBci.forEach(function (q) {
+    const hilosBCI = GmailApp.search(q, 0, 15);
+    hilosBCI.forEach(function (hilo) {
+      const msgs = hilo.getMessages();
+      msgs.forEach(function (msg) {
+        const msgId = msg.getId();
+        if (seenMsg.has(msgId) || procesados.has(msgId)) return;
+        seenMsg.add(msgId);
+
+        const cuerpo = msg.getPlainBody() || msg.getBody();
+        const fecha = Utilities.formatDate(msg.getDate(), CONFIG.TIMEZONE, 'yyyy-MM-dd');
+
+        const monto = parseMontoDesdeCorreoBci_(cuerpo);
+        if (monto === null || monto <= 0) return;
+
+        const comercioMatch = cuerpo.match(/en ([A-ZÁÉÍÓÚÑ0-9][A-ZÁÉÍÓÚÑ0-9\s\.\-]+?) el \d/i);
+        var comercio = comercioMatch ? comercioMatch[1].trim() : msg.getSubject();
+        if (/apple\s*pay/i.test(cuerpo) || /apple\s*pay/i.test(msg.getSubject())) {
+          comercio = 'Apple Pay · ' + comercio;
+        }
+
+        const tarjetaMatch = cuerpo.match(/\*{4}(\d{4})/);
+        const tarjeta = tarjetaMatch ? ('TC BCI ****' + tarjetaMatch[1]) : 'TC Banco de Chile';
+
+        const uid = Utilities.getUuid().slice(0, 8);
+        pendSheet.appendRow([uid, fecha, comercio, monto, tarjeta, 'Banco de Chile', msgId, 'NO']);
+        nuevos++;
+        Logger.log('BCI detectado: ' + comercio + ' $' + monto);
+      });
     });
   });
   
@@ -189,7 +222,7 @@ function enviarNotificacionNuevos(n) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const pendSheet = ss.getSheetByName(SHEETS.PENDIENTES);
   const pendientes = pendSheet.getLastRow() > 1 
-    ? pendSheet.getRange(2, 1, pendSheet.getLastRow()-1, 8).getValues().filter(r => r[7] === 'NO')
+    ? pendSheet.getRange(2, 1, pendSheet.getLastRow(), 8).getValues().filter(r => r[7] === 'NO')
     : [];
   
   if (!pendientes.length) return;
@@ -259,20 +292,20 @@ function enviarResumenDiario() {
   
   // Pendientes sin categorizar
   const pendientes = pendSheet.getLastRow() > 1
-    ? pendSheet.getRange(2,1,pendSheet.getLastRow()-1,8).getValues().filter(r=>r[7]==='NO')
+    ? pendSheet.getRange(2,1,pendSheet.getLastRow(),8).getValues().filter(r=>r[7]==='NO')
     : [];
   
   // Gastos de este mes
   const hoy = new Date();
   const mesActual = Utilities.formatDate(hoy, CONFIG.TIMEZONE, 'yyyy-MM');
   const gastos = gastoSheet.getLastRow() > 1
-    ? gastoSheet.getRange(2,1,gastoSheet.getLastRow()-1,11).getValues().filter(r=>String(r[1]).startsWith(mesActual))
+    ? gastoSheet.getRange(2,1,gastoSheet.getLastRow(),11).getValues().filter(r=>String(r[1]).startsWith(mesActual))
     : [];
   const totalMes = gastos.reduce((a,r)=>a+parseFloat(r[5]||0),0);
   
   // Cuentas por cobrar activas
   const cuentas = cuentaSheet.getLastRow() > 1
-    ? cuentaSheet.getRange(2,1,cuentaSheet.getLastRow()-1,8).getValues().filter(r=>r[1]==='cobrar'&&r[6]!=='pagado')
+    ? cuentaSheet.getRange(2,1,cuentaSheet.getLastRow(),8).getValues().filter(r=>r[1]==='cobrar'&&r[6]!=='pagado')
     : [];
   const totalCobrar = cuentas.reduce((a,r)=>a+parseFloat(r[3]||0),0);
   

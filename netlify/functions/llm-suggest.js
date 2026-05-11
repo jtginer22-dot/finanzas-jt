@@ -6,7 +6,8 @@
  */
 exports.handler = async (event) => {
   const apiKey = process.env.ANTHROPIC_API_KEY || '';
-  const model = process.env.ANTHROPIC_MODEL || 'claude-3-5-haiku-latest';
+  // Evitar alias "-latest" si Anthropic lo retira: el error suele ser literal "model: nombre".
+  const model = process.env.ANTHROPIC_MODEL || 'claude-3-5-haiku-20241022';
   const requiredPasscode = process.env.APP_PASSCODE || '';
 
   const headers = {
@@ -84,8 +85,10 @@ exports.handler = async (event) => {
       try {
         const errJ = JSON.parse(raw);
         if (typeof errJ.error === 'string') msg = errJ.error;
-        else if (errJ.error && typeof errJ.error.message === 'string') msg = errJ.error.message;
-        else if (typeof errJ.message === 'string') msg = errJ.message;
+        else if (errJ.error && typeof errJ.error === 'object') {
+          const e = errJ.error;
+          msg = [e.type, e.message].filter(Boolean).join(': ') || JSON.stringify(e).slice(0, 400);
+        } else if (typeof errJ.message === 'string') msg = errJ.message;
       } catch (_) { /* raw ya es texto */ }
       return {
         statusCode: r.status >= 400 && r.status < 600 ? r.status : 502,

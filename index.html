@@ -641,15 +641,16 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
   </div>
   <div class="form-row"><label class="form-label">Categor&#237;a</label><select class="fi" id="pend-cat"></select></div>
   <div class="form-row"><label class="form-label">Naturaleza del movimiento</label>
-    <select class="fi" id="pend-especial" onchange="togglePendEspecial()">
-      <option value="">Gasto convencional (usa compartido / cuotas abajo)</option>
-      <option value="tramite_terceros">Trámite: recibí y pagué a un tercero (no cuenta como gasto ni en totales)</option>
-      <option value="prestamo">Préstamo que te deben (aparece en Por cobrar, no cuenta en gasto mensual)</option>
+    <select class="fi" id="pend-especial" title="Préstamo: no suma al gasto mensual y crea ítem en Por cobrar. Trámite: dinero que pasaste a un tercero, tampoco es tu gasto." onchange="togglePendEspecial()">
+      <option value="">Gasto normal (compartido / cuotas abajo)</option>
+      <option value="tramite_terceros">Trámite terceros (no es mi gasto)</option>
+      <option value="prestamo">Préstamo por cobrar</option>
     </select>
   </div>
   <div id="pend-prestamo-extra" style="display:none;margin-bottom:8px;background:var(--gris-m);border-radius:var(--radius);padding:10px 12px">
     <div class="form-row"><label class="form-label">Deudor / a quién le prestaste</label><input class="fi" id="pend-prestamo-persona" placeholder="Ej: Papá"></div>
-    <div style="font-size:11px;color:var(--text3)">El monto será el del correo pendiente (<span id="pend-prestamo-monto-hint"></span>) y también quedará trazabilidad en historial como movimiento marcado préstamo.</div>
+    <div class="form-row"><label class="form-label">Detalle (opcional)</label><input class="fi" id="pend-prestamo-detalle" placeholder="Ej: sin interés, devolución pactada mayo"></div>
+    <div style="font-size:11px;color:var(--text3)">Monto del correo: <span id="pend-prestamo-monto-hint"></span>. Queda en historial como préstamo y en Por cobrar.</div>
   </div>
   <div class="form-row">
     <label class="form-label">Etiquetas</label>
@@ -1133,7 +1134,7 @@ function abrirCat(id) {
   const p=S.propuestas.find(x=>x.id===id);
   if(!p) return;
   document.getElementById('pend-title').textContent=p.comercio;
-  document.getElementById('pend-meta').textContent=`${p.fecha} ? ${fmt(p.monto)} ? ${p.tarjeta}`;
+  document.getElementById('pend-meta').textContent=`${p.fecha} | ${fmt(p.monto)} | ${p.tarjeta || ''}`;
   fillCat('pend-cat');
   if (p.propuesta?.cat) document.getElementById('pend-cat').value = p.propuesta.cat;
   document.getElementById('pend-tag-extra').value = '';
@@ -1146,6 +1147,8 @@ function abrirCat(id) {
   document.getElementById('pend-personas').value='';
   document.getElementById('pend-especial').value = '';
   document.getElementById('pend-prestamo-persona').value = '';
+  const det = document.getElementById('pend-prestamo-detalle');
+  if (det) det.value = '';
   const ph = document.getElementById('pend-prestamo-monto-hint');
   if (ph) ph.textContent = fmt(p.monto);
   togglePendEspecial();
@@ -1221,14 +1224,17 @@ function confirmarCat() {
   if (especial === 'prestamo') {
     const persona = (document.getElementById('pend-prestamo-persona').value || '').trim();
     if(!persona) { alert('Indica quién debe el préstamo (nombre en Por cobrar).'); return; }
+    const extra = (document.getElementById('pend-prestamo-detalle')?.value || '').trim();
     const catSel = document.getElementById('pend-cat').value || 'Otros';
     const tag = readTagCheckboxes('pend-tags-picker', 'pend', 'pend-tag-extra');
     mergeTagsIntoGlobal(tag);
+    const notasG = extra ? (`Préstamo otorgado a ${persona}. ` + extra) : `Préstamo otorgado a ${persona}`;
+    const descCuenta = extra ? (`Préstamo · ${p.comercio} · ` + extra) : (`Préstamo · ${p.comercio}`);
     const g={
-      id:uid(),desc:p.comercio,monto:p.monto,montoTotal:p.monto,cat:catSel,tag,fecha:p.fecha,tarjeta:p.tarjeta,tipo:'prestamo',fuente:'gmail',banco:p.banco,notas:`Préstamo otorgado a ${persona}`,cuotas:null
+      id:uid(),desc:p.comercio,monto:p.monto,montoTotal:p.monto,cat:catSel,tag,fecha:p.fecha,tarjeta:p.tarjeta,tipo:'prestamo',fuente:'gmail',banco:p.banco,notas:notasG,cuotas:null
     };
     S.gastos.push(g);
-    S.cuentas.push({id:uid(),tipo:'cobrar',persona,monto:p.monto,fecha:'',desc:`Préstamo · ${p.comercio}`,pagado:false,dias:0});
+    S.cuentas.push({id:uid(),tipo:'cobrar',persona,monto:p.monto,fecha:'',desc:descCuenta,pagado:false,dias:0});
     p.estado='confirmado';
     p.propuesta={ cat:catSel, tag:tag||'' };
     save(); closeModal('m-cat-pend'); updateBadge(); renderPendientes(); renderRevision(); renderDashboard(); renderCuentas();
@@ -1539,6 +1545,27 @@ function saveCuenta() {
 }
 function toggleCuenta(id) { const c=S.cuentas.find(x=>x.id===id); if(c){c.pagado=!c.pagado;save();renderCuentas();renderDashboard();} }
 function deleteCuenta(id) { S.cuentas=S.cuentas.filter(x=>x.id!==id); save(); renderCuentas(); renderDashboard(); }
+
+function abonarCuentaCobrar(id) {
+  const c = S.cuentas.find(x => x.id === id);
+  if (!c || c.tipo !== 'cobrar' || c.pagado) return;
+  const actual = Math.round(Number(c.monto) || 0);
+  const v = prompt(`Abono / devolución parcial (pesos). Saldo actual: ${fmt(actual)}`, '');
+  if (v === null) return;
+  const n = parseFloat(String(v).trim().replace(/\./g, '').replace(',', '.'));
+  if (!Number.isFinite(n) || n <= 0) { alert('Ingresa un monto mayor a 0.'); return; }
+  const abono = Math.round(n);
+  if (abono > actual) { alert('El abono no puede ser mayor al saldo pendiente.'); return; }
+  const resto = actual - abono;
+  c.monto = resto;
+  const suf = ` | Abono ${HOY}: ${fmt(abono)}`;
+  c.desc = (c.desc || '') + suf;
+  if (resto <= 0) c.pagado = true;
+  save();
+  renderCuentas();
+  renderDashboard();
+  alert(resto <= 0 ? 'Saldo liquidado; marcado como cobrado.' : `Queda por cobrar: ${fmt(resto)}`);
+}
 
 // ============================================================
 // CONFIG
@@ -2345,13 +2372,17 @@ function renderCuentas() {
     el.innerHTML=items.map((c,i)=>{
       const ac=avatarColor(c.persona); const ini=initials(c.persona);
       const dias=c.fecha?daysAgo(c.fecha):-1;
+      const abonoBtn = (c.tipo === 'cobrar' && !c.pagado && c.monto > 0)
+        ? `<button type="button" class="btn btn-sm" style="padding:5px 8px" onclick="abonarCuentaCobrar('${c.id}')" title="Registrar devolución parcial">Abono</button>`
+        : '';
       return`<div class="cuenta-row" style="${c.pagado?'opacity:.45':''}">
         <div class="cuenta-avatar" style="background:${ac}22;color:${ac}">${ini}</div>
         <div class="cuenta-info">
           <div class="cuenta-name">${c.persona}</div>
-          <div class="cuenta-sub">${c.desc||''}${c.fecha?` ? Vence ${c.fecha}`:''}${dias>7?` ? <span style="color:var(--rojo)">${dias}d</span>`:''}</div>
+          <div class="cuenta-sub">${c.desc||''}${c.fecha?` | Vence ${c.fecha}`:''}${dias>7?` | <span style="color:var(--rojo)">${dias}d</span>`:''}</div>
         </div>
         <div class="cuenta-amount" style="color:${c.tipo==='cobrar'?'var(--verde-d)':'var(--rojo)'}">${fmt(c.monto)}</div>
+        ${abonoBtn}
         <button class="btn btn-sm" style="padding:5px 8px" onclick="toggleCuenta('${c.id}')" title="${c.pagado?'Reabrir':'Marcar cobrado'}">${c.pagado?'?':'OK'}</button>
         <button class="del-btn" onclick="deleteCuenta('${c.id}')"></button>
       </div>`;}).join('');
@@ -2630,12 +2661,18 @@ async function suggestWithLLM(id) {
       const msg = errorMessageFromApiBody(d, raw);
       throw new Error(msg || `HTTP ${r.status}`);
     }
-    if (!d || typeof d.category !== 'string') {
+    if (!d || typeof d !== 'object') {
       throw new Error(errorMessageFromApiBody(d, raw) || 'Respuesta inválida del servidor');
     }
+    let cat = typeof d.category === 'string' ? d.category.trim() : '';
+    const allowed = S.cats.map(c => c.nombre);
+    if (!cat || !allowed.includes(cat)) {
+      const prev = (p.propuesta && p.propuesta.cat && allowed.includes(p.propuesta.cat)) ? p.propuesta.cat : '';
+      cat = prev || allowed[0] || 'Otros';
+    }
     p.propuesta = p.propuesta || {};
-    p.propuesta.cat = d.category || p.propuesta.cat || '';
-    p.propuesta.tag = d.tag || p.propuesta.tag || '';
+    p.propuesta.cat = cat;
+    p.propuesta.tag = (typeof d.tag === 'string' ? d.tag : '') || p.propuesta.tag || '';
     save();
     renderRevision();
     renderPendientes();
