@@ -65,7 +65,23 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
 /* TOPBAR */
 .page-title { font-size: 15px; font-weight: 600; color: var(--text); white-space: nowrap; }
 .topbar-actions { display: flex; gap: 8px; flex-shrink: 0; align-items: center; }
-.hamburger { display: none; background: none; border: none; cursor: pointer; padding: 6px; border-radius: 8px; color: var(--text2); font-size: 18px; }
+.hamburger {
+  display: none; background: none; border: none; cursor: pointer;
+  padding: 8px; border-radius: 8px; color: var(--text);
+  min-width: 40px; min-height: 40px; flex-shrink: 0;
+}
+.hamburger-icon {
+  display: block; width: 20px; height: 14px; position: relative;
+}
+.hamburger-icon::before,
+.hamburger-icon::after,
+.hamburger-icon span {
+  content: ''; position: absolute; left: 0; right: 0; height: 2px;
+  background: currentColor; border-radius: 1px;
+}
+.hamburger-icon::before { top: 0; }
+.hamburger-icon span { top: 6px; }
+.hamburger-icon::after { bottom: 0; }
 
 /* BUTTONS */
 .btn {
@@ -237,10 +253,11 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
 </style>
 </head>
 <body>
+<datalist id="iv-inst-list"></datalist>
 
 <div class="app">
   <!-- Backdrop mobile -->
-  <div class="sidebar-backdrop" id="sb-backdrop" onclick="toggleSidebar()" onclick="closeSidebar()"></div>
+  <div class="sidebar-backdrop" id="sb-backdrop" onclick="closeSidebar()"></div>
 
   <!-- SIDEBAR -->
   <div class="sidebar" id="sidebar">
@@ -272,7 +289,9 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
   <div class="main">
     <div class="topbar">
       <div style="display:flex;align-items:center;gap:10px">
-        <button class="hamburger" onclick="toggleSidebar()"></button>
+        <button type="button" class="hamburger" onclick="toggleSidebar()" aria-label="Abrir menú" title="Menú">
+          <span class="hamburger-icon" aria-hidden="true"><span></span></span>
+        </button>
         <div class="page-title" id="page-title">Dashboard</div>
       </div>
       <div class="topbar-actions">
@@ -463,11 +482,12 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
             <div class="form-row"><label class="form-label">Fuente</label><input class="fi" id="in-fuente" placeholder="Sueldo / Freelance"></div>
           </div>
           <div class="form-row"><label class="form-label">Notas</label><input class="fi" id="in-notas" placeholder="Opcional"></div>
-          <button class="btn btn-green btn-sm" onclick="saveIngreso()">Guardar ingreso</button>
+          <button class="btn btn-green btn-sm" id="btn-in-save" onclick="saveIngreso()">Guardar ingreso</button>
+          <button type="button" class="btn btn-sm" id="btn-in-cancel" style="display:none;margin-left:8px" onclick="cancelEditIngreso()">Cancelar edición</button>
         </div>
         <div class="card">
           <div class="card-title">Historial de ingresos</div>
-          <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Fecha</th><th>Fuente</th><th>Monto</th><th>Notas</th></tr></thead><tbody id="ingresos-body"></tbody></table></div>
+          <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Fecha</th><th>Fuente</th><th>Monto</th><th>Notas</th><th style="width:1%">Acciones</th></tr></thead><tbody id="ingresos-body"></tbody></table></div>
         </div>
       </div>
 
@@ -477,18 +497,26 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
           <div class="card-title">Registrar inversión</div>
           <div class="grid3">
             <div class="form-row"><label class="form-label">Fecha</label><input class="fi" id="iv-fecha" type="date"></div>
-            <div class="form-row"><label class="form-label">Instrumento</label><input class="fi" id="iv-inst" placeholder="Fintual / Acción / FM"></div>
+            <div class="form-row"><label class="form-label">Instrumento</label><input class="fi" id="iv-inst" list="iv-inst-list" placeholder="Escribe o elige…" autocomplete="off" oninput="onInstrumentoInput()"></div>
             <div class="form-row"><label class="form-label">Monto invertido ($)</label><input class="fi" id="iv-monto" type="number" inputmode="numeric"></div>
           </div>
           <div class="grid2">
-            <div class="form-row"><label class="form-label">Valor actual ($)</label><input class="fi" id="iv-actual" type="number" inputmode="numeric" placeholder="Opcional"></div>
-            <div class="form-row"><label class="form-label">Notas</label><input class="fi" id="iv-notas" placeholder="Opcional"></div>
+            <div class="form-row"><label class="form-label">Cantidad (opcional)</label><input class="fi" id="iv-cantidad" type="number" inputmode="decimal" step="any" placeholder="Ej: 10 acciones"></div>
+            <div class="form-row"><label class="form-label">Ticker Yahoo (opcional)</label><input class="fi" id="iv-ticker" list="iv-inst-list" placeholder="Ej: AAPL, MSFT, SPY" autocomplete="off" oninput="onInstrumentoInput()"></div>
           </div>
-          <button class="btn btn-green btn-sm" onclick="saveInversion()">Guardar inversión</button>
+          <div class="grid2">
+            <div class="form-row"><label class="form-label">Valor actual ($)</label><input class="fi" id="iv-actual" type="number" inputmode="numeric" placeholder="Opcional / o usar Cotizar"></div>
+            <div class="form-row"><label class="form-label">Tipo cambio USD→CLP (solo si ticker en USD)</label><input class="fi" id="iv-usd-clp" type="number" inputmode="numeric" placeholder="Ej: 950" title="Solo referencia para estimar valor en pesos"></div>
+          </div>
+          <div class="form-row"><label class="form-label">Notas</label><input class="fi" id="iv-notas" placeholder="Opcional"></div>
+          <div class="chart-note" style="margin-bottom:10px">Cotización: Yahoo Finance (sin API key). Puede fallar intermitente; instrumentos solo en Chile o en Fintual pueden quedar con valor manual.</div>
+          <button class="btn btn-green btn-sm" id="btn-iv-save" onclick="saveInversion()">Guardar inversión</button>
+          <button type="button" class="btn btn-sm" id="btn-iv-cancel" style="display:none;margin-left:8px" onclick="cancelEditInversion()">Cancelar edición</button>
+          <button type="button" class="btn btn-sm" style="margin-left:8px" onclick="cotizarInversionesTickers()">Cotizar tickers (Yahoo)</button>
         </div>
         <div class="card">
           <div class="card-title">Portafolio manual</div>
-          <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Fecha</th><th>Instrumento</th><th>Invertido</th><th>Actual</th><th>Resultado</th></tr></thead><tbody id="inversiones-body"></tbody></table></div>
+          <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Fecha</th><th>Instrumento</th><th>Cant.</th><th>Ticker</th><th>Invertido</th><th>Actual</th><th>Resultado</th><th></th></tr></thead><tbody id="inversiones-body"></tbody></table></div>
         </div>
       </div>
 
@@ -625,6 +653,22 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
     </div>
   </div>
   <div class="form-row"><label class="form-label">Notas</label><input class="fi" id="g-notas" placeholder="Opcional"></div>
+  <div class="grid2" style="margin-top:8px">
+    <div class="form-row" style="display:flex;align-items:center;gap:8px">
+      <input type="checkbox" id="g-recurrente" style="width:18px;height:18px">
+      <label for="g-recurrente" class="form-label" style="margin:0">Gasto recurrente (flujo de caja)</label>
+    </div>
+    <div class="form-row"><label class="form-label">Frecuencia</label>
+      <select class="fi" id="g-rec-freq">
+        <option value="mensual">Mensual</option>
+        <option value="anual">Anual</option>
+      </select>
+    </div>
+  </div>
+  <div class="form-row"><label class="form-label">Proyección hasta (opcional)</label>
+    <input class="fi" id="g-rec-hasta" type="date" title="Después de esta fecha deja de contarse en comprometido">
+    <div style="font-size:11px;color:var(--text3);margin-top:4px">Vacío = sigue proyectándose (ej. al cancelar un seguro indica la última cuota).</div>
+  </div>
   <div class="modal-actions">
     <button class="btn" onclick="closeModal('overlay-gasto')">Cancelar</button>
     <button class="btn btn-green" onclick="saveGasto()">Guardar</button>
@@ -765,8 +809,20 @@ const SHEET_NAME_PRESUPUESTOS = 'Presupuestos';
 const SHEET_NAME_INGRESOS = 'Ingresos';
 const SHEET_NAME_INVERSIONES = 'Inversiones';
 const SHEET_NAME_CONCILIACION = 'Conciliacion_Mensual';
+const SHEET_NAME_COMPARTIDOS = 'Compartidos';
 /** Misma ruta en producción y con `netlify dev` (no expone la API key al browser). */
 const SHEETS_FN = '/.netlify/functions/sheets';
+
+const INSTRUMENTOS_CATALOGO = [
+  { instrumento: 'Fintual', ticker: '' },
+  { instrumento: 'Santander Renta', ticker: '' },
+  { instrumento: 'Apple', ticker: 'AAPL' },
+  { instrumento: 'Microsoft', ticker: 'MSFT' },
+  { instrumento: 'SPDR S&P 500', ticker: 'SPY' },
+  { instrumento: 'iShares MSCI Chile', ticker: 'ECH' },
+  { instrumento: 'Banco de Chile', ticker: 'CHILE.SN' },
+  { instrumento: 'SQM', ticker: 'SQM-B.SN' },
+];
 
 // ============================================================
 // COLORES
@@ -811,6 +867,8 @@ let S = {
   charts:{}, pendIdx:null, cuentaTipo:'cobrar',
 };
 let compPersonas = [];
+let editingIngresoId = null;
+let editingInversionId = null;
 const AUTH_IDLE_MS = 30 * 60 * 1000;
 const AUTH_MAX_MS = 8 * 60 * 60 * 1000;
 let authIdleTimer = null;
@@ -891,6 +949,79 @@ const HOY = new Date().toISOString().split('T')[0];
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 function fmt(n) { return '$' + Math.round(Number(n)||0).toLocaleString('es-CL'); }
 /** Monto como número o texto chileno (ej. 45.990) desde Sheet o import. */
+function instrumentOptionLabel(inst) {
+  const i = inst.instrumento || '';
+  const t = (inst.ticker || '').trim();
+  return t ? `${i} (${t})` : i;
+}
+function refreshInstrumentDatalist() {
+  const dl = document.getElementById('iv-inst-list');
+  if (!dl) return;
+  const seen = new Set();
+  const items = [];
+  const add = (inst) => {
+    const label = instrumentOptionLabel(inst);
+    const key = label.toLowerCase();
+    if (!label || seen.has(key)) return;
+    seen.add(key);
+    items.push({ label, instrumento: inst.instrumento || '', ticker: (inst.ticker || '').trim() });
+  };
+  INSTRUMENTOS_CATALOGO.forEach(add);
+  (S.inversiones || []).forEach(iv => add({ instrumento: iv.instrumento, ticker: iv.ticker }));
+  dl.innerHTML = items.map(x => `<option value="${esc(x.label)}"></option>`).join('');
+  dl._map = Object.fromEntries(items.map(x => [x.label, x]));
+}
+function onInstrumentoInput() {
+  const dl = document.getElementById('iv-inst-list');
+  const val = (document.getElementById('iv-inst')?.value || document.getElementById('iv-ticker')?.value || '').trim();
+  if (!dl || !dl._map || !val) return;
+  const hit = dl._map[val];
+  if (!hit) return;
+  const instEl = document.getElementById('iv-inst');
+  const tickEl = document.getElementById('iv-ticker');
+  if (instEl) instEl.value = hit.instrumento;
+  if (tickEl) tickEl.value = hit.ticker;
+}
+function readRecurrenteFromForm() {
+  const chk = document.getElementById('g-recurrente');
+  const recurrente = !!(chk && chk.checked);
+  const hasta = (document.getElementById('g-rec-hasta')?.value || '').trim();
+  const freq = (document.getElementById('g-rec-freq')?.value || 'mensual').trim() || 'mensual';
+  return {
+    recurrente,
+    recurrenteHasta: recurrente && hasta ? hasta : '',
+    recurrenteFrecuencia: recurrente ? freq : '',
+  };
+}
+function resetRecurrenteForm() {
+  const chk = document.getElementById('g-recurrente');
+  if (chk) chk.checked = false;
+  const h = document.getElementById('g-rec-hasta');
+  if (h) h.value = '';
+  const f = document.getElementById('g-rec-freq');
+  if (f) f.value = 'mensual';
+}
+function aplicaRecurrenteEnMes(g, monthKeyDash) {
+  if (!g || !g.recurrente || !monthKeyDash) return false;
+  if (!tipoCuentaComoGastoReal(g.tipo)) return false;
+  const desde = String(g.fecha || '').slice(0, 7);
+  if (desde && monthKeyDash < desde) return false;
+  const hasta = String(g.recurrenteHasta || '').slice(0, 7);
+  if (hasta && monthKeyDash > hasta) return false;
+  const freq = (g.recurrenteFrecuencia || 'mensual').toLowerCase();
+  if (freq === 'anual') {
+    const m0 = String(g.fecha || '').slice(5, 7);
+    const m1 = monthKeyDash.slice(5, 7);
+    return m0 === m1;
+  }
+  return true;
+}
+function montoRecurrenteProyectado(g) {
+  const m = Number(g.monto) || 0;
+  if ((g.recurrenteFrecuencia || 'mensual').toLowerCase() === 'anual') return Math.round(m / 12);
+  return m;
+}
+
 function parseMontoFromSheetCell(cell) {
   if (cell == null || cell === '') return 0;
   if (typeof cell === 'number' && Number.isFinite(cell)) return Math.round(cell);
@@ -1006,7 +1137,7 @@ function nav(page) {
   if (page==='cuentas') renderCuentas();
   if (page==='historial') renderHistorial();
   if (page==='ingresos') renderIngresos();
-  if (page==='inversiones') renderInversiones();
+  if (page==='inversiones') { refreshInstrumentDatalist(); renderInversiones(); }
   if (page==='conciliacion') renderConciliacion();
   if (page==='config') renderConfig();
 }
@@ -1035,6 +1166,7 @@ function openGastoModal(pre={}) {
   document.getElementById('g-tarjeta').value=pre.tarjeta||'';
   document.getElementById('g-notas').value='';
   document.getElementById('g-tipo').value='normal';
+  resetRecurrenteForm();
   renderTagCheckboxRow('g-tags-picker', pre.tag || '', 'g');
   document.getElementById('g-tag-extra').value = '';
   openModal('overlay-gasto');
@@ -1045,11 +1177,26 @@ function saveGasto() {
   if(!desc||isNaN(monto)||monto<=0){alert('Completa descripci&#243;n y monto.');return;}
   const tag = readTagCheckboxes('g-tags-picker', 'g', 'g-tag-extra');
   mergeTagsIntoGlobal(tag);
-  const g = {id:uid(),desc,monto,montoTotal:monto,cat:document.getElementById('g-cat').value,tag,fecha:document.getElementById('g-fecha').value,tarjeta:document.getElementById('g-tarjeta').value,tipo:document.getElementById('g-tipo').value,notas:document.getElementById('g-notas').value,fuente:'manual'};
+  const rec = readRecurrenteFromForm();
+  const g = {id:uid(),desc,monto,montoTotal:monto,cat:document.getElementById('g-cat').value,tag,fecha:document.getElementById('g-fecha').value,tarjeta:document.getElementById('g-tarjeta').value,tipo:document.getElementById('g-tipo').value,notas:document.getElementById('g-notas').value,fuente:'manual',...rec};
   S.gastos.push(g); save(); closeModal('overlay-gasto'); renderDashboard(); updateBadge();
   pushGastoToSheets(g);
 }
-function deleteGasto(id) { if(!confirm('?Eliminar este gasto?'))return; S.gastos=S.gastos.filter(g=>g.id!==id); save(); renderGastos(); renderDashboard(); }
+async function deleteGasto(id) {
+  if (!confirm('¿Eliminar este gasto?')) return;
+  S.gastos = S.gastos.filter(g => g.id !== id);
+  save();
+  renderGastos();
+  renderHistorial();
+  renderDashboard();
+  try {
+    await pushGastosFullToSheets();
+    setSyncStatus(true, 'Gastos sincronizados');
+  } catch (e) {
+    console.log('deleteGasto sheets:', e);
+    setSyncStatus(false, 'Eliminado local; revisar Sheet');
+  }
+}
 
 // ============================================================
 // PENDIENTES
@@ -1218,6 +1365,7 @@ function confirmarCat() {
     p.propuesta={ cat:catSel, tag:tag||'' };
     save(); closeModal('m-cat-pend'); updateBadge(); renderPendientes(); renderRevision(); renderDashboard();
     pushGastoToSheets(g);
+    void syncCuentasToSheets().catch(() => {});
     marcarPendienteProcesado(p);
     return;
   }
@@ -1239,6 +1387,7 @@ function confirmarCat() {
     p.propuesta={ cat:catSel, tag:tag||'' };
     save(); closeModal('m-cat-pend'); updateBadge(); renderPendientes(); renderRevision(); renderDashboard(); renderCuentas();
     pushGastoToSheets(g);
+    void syncCuentasToSheets().catch(() => {});
     marcarPendienteProcesado(p);
     return;
   }
@@ -1318,6 +1467,7 @@ function confirmarCat() {
   p.propuesta={ cat:catSel, tag:tag||'' };
   save(); closeModal('m-cat-pend'); updateBadge(); renderPendientes(); renderRevision(); renderDashboard();
   gastosCreados.forEach(g => pushGastoToSheets(g));
+  void syncCuentasToSheets().catch(() => {});
   marcarPendienteProcesado(p);
 }
 
@@ -1436,7 +1586,7 @@ async function editarMontoGasto(id) {
   renderHistorial();
   renderDashboard();
   try {
-    await updateGastoRowInSheets(g);
+    await pushGastosFullToSheets();
     setSyncStatus(true, 'Monto gasto sincronizado');
   } catch (_) {
     setSyncStatus(false, 'Guardado local; revisar Sheet');
@@ -1512,19 +1662,58 @@ function recalcComp() {
   if(total>0) { el.style.display='block'; el.innerHTML=compPersonas.map(p=>`<strong>${p.nombre||'?'}</strong>: ${fmt(p.monto)}`).join(' ? ')+(Math.abs(sum-total)>1?'  No cuadra':''); }
   else el.style.display='none';
 }
-function saveCompartido() {
+async function saveCompartido() {
   const desc=document.getElementById('c-desc').value.trim();
   const total=parseFloat(document.getElementById('c-total').value);
   if(!desc||isNaN(total)){alert('Completa descripci&#243;n y monto.');return;}
-  const div={id:uid(),desc,total,fecha:HOY,cat:document.getElementById('c-cat').value,method:document.getElementById('c-method').value,personas:[...compPersonas]};
-  S.compartidos.push(div);
+  const gastoId = uid();
+  const divId = uid();
+  const cuentaIds = [];
   const yo=compPersonas[0];
-  const g={id:uid(),desc,monto:yo.monto,montoTotal:total,cat:div.cat,tag:'',fecha:HOY,tarjeta:'',tipo:'compartido',fuente:'manual'};
+  const catSel = document.getElementById('c-cat').value;
+  const g={id:gastoId,desc,monto:yo.monto,montoTotal:total,cat:catSel,tag:'',fecha:HOY,tarjeta:'',tipo:'compartido',fuente:'manual',recurrente:false,recurrenteHasta:'',recurrenteFrecuencia:''};
+  compPersonas.slice(1).forEach(p=> {
+    if (p.monto > 0) {
+      const cid = uid();
+      cuentaIds.push(cid);
+      S.cuentas.push({id: cid, tipo:'cobrar', persona:p.nombre||'?', monto:p.monto, fecha:'', desc, pagado:false, dias:0});
+    }
+  });
+  const div={id:divId,desc,total,fecha:HOY,cat:catSel,method:document.getElementById('c-method').value,personas:[...compPersonas],gastoId,cuentaIds};
+  S.compartidos.push(div);
   S.gastos.push(g);
-  compPersonas.slice(1).forEach(p=>{ if(p.monto>0) S.cuentas.push({id:uid(),tipo:'cobrar',persona:p.nombre||'?',monto:p.monto,fecha:'',desc,pagado:false,dias:0}); });
-  save(); closeModal('m-compartido'); renderCompartidos(); renderDashboard(); pushGastoToSheets(g);
+  save(); closeModal('m-compartido'); renderCompartidos(); renderDashboard();
+  try {
+    await pushGastoToSheets(g);
+    await pushCompartidosFullToSheets();
+    await syncCuentasToSheets();
+    setSyncStatus(true, 'Compartido sincronizado');
+  } catch (e) {
+    console.log('saveCompartido sheets:', e);
+    setSyncStatus(false, 'Guardado local; revisar Sheet');
+  }
 }
-function deleteCompartido(id) { S.compartidos=S.compartidos.filter(c=>c.id!==id); save(); renderCompartidos(); }
+async function deleteCompartido(id) {
+  if (!confirm('¿Eliminar este gasto compartido? También quita el gasto vinculado y las cuentas por cobrar creadas.')) return;
+  const div = S.compartidos.find(c => c.id === id);
+  if (div) {
+    if (div.gastoId) S.gastos = S.gastos.filter(g => g.id !== div.gastoId);
+    if (Array.isArray(div.cuentaIds) && div.cuentaIds.length) {
+      const drop = new Set(div.cuentaIds);
+      S.cuentas = S.cuentas.filter(c => !drop.has(c.id));
+    }
+  }
+  S.compartidos = S.compartidos.filter(c => c.id !== id);
+  save();
+  renderCompartidos();
+  renderDashboard();
+  renderCuentas();
+  try {
+    await pushGastosFullToSheets();
+    await pushCompartidosFullToSheets();
+    await syncCuentasToSheets();
+  } catch (e) { console.log('deleteCompartido sheets:', e); }
+}
 
 // ============================================================
 // CUENTAS
@@ -1536,15 +1725,31 @@ function openCuentaModal(tipo) {
   document.getElementById('cu-fecha').value='';
   openModal('m-cuenta');
 }
-function saveCuenta() {
+async function saveCuenta() {
   const persona=document.getElementById('cu-persona').value.trim();
   const monto=parseFloat(document.getElementById('cu-monto').value);
   if(!persona||isNaN(monto)){alert('Completa los campos.');return;}
   S.cuentas.push({id:uid(),tipo:S.cuentaTipo,persona,monto,fecha:document.getElementById('cu-fecha').value,desc:document.getElementById('cu-desc').value,pagado:false});
   save(); closeModal('m-cuenta'); renderCuentas(); renderDashboard();
+  try { await syncCuentasToSheets(); } catch (e) { console.log('sync cuentas:', e); }
 }
-function toggleCuenta(id) { const c=S.cuentas.find(x=>x.id===id); if(c){c.pagado=!c.pagado;save();renderCuentas();renderDashboard();} }
-function deleteCuenta(id) { S.cuentas=S.cuentas.filter(x=>x.id!==id); save(); renderCuentas(); renderDashboard(); }
+function toggleCuenta(id) {
+  const c=S.cuentas.find(x=>x.id===id);
+  if (c) {
+    c.pagado=!c.pagado;
+    save();
+    renderCuentas();
+    renderDashboard();
+    void syncCuentasToSheets().catch(e => console.log('sync cuentas:', e));
+  }
+}
+function deleteCuenta(id) {
+  S.cuentas=S.cuentas.filter(x=>x.id!==id);
+  save();
+  renderCuentas();
+  renderDashboard();
+  void syncCuentasToSheets().catch(e => console.log('sync cuentas:', e));
+}
 
 function abonarCuentaCobrar(id) {
   const c = S.cuentas.find(x => x.id === id);
@@ -1564,6 +1769,7 @@ function abonarCuentaCobrar(id) {
   save();
   renderCuentas();
   renderDashboard();
+  void syncCuentasToSheets().catch(e => console.log('sync cuentas:', e));
   alert(resto <= 0 ? 'Saldo liquidado; marcado como cobrado.' : `Queda por cobrar: ${fmt(resto)}`);
 }
 
@@ -1758,7 +1964,6 @@ function parseSheetsFnResponse(text, r) {
 function normalizeBankName(v) {
   const s = decodeEntities(String(v || '')).trim();
   if (!s) return '';
-  if (/^bci\b/i.test(s)) return 'Banco de Chile';
   if (/banco\s*de\s*chile/i.test(s)) return 'Banco de Chile';
   if (/santander/i.test(s)) return 'Santander';
   return s;
@@ -1851,17 +2056,92 @@ async function pushPresupuestosToSheets() {
   });
 }
 
+function gastoToSheetRow(g) {
+  return [
+    g.id,
+    g.fecha || '',
+    g.desc || '',
+    g.cat || '',
+    g.tag || '',
+    Math.round(Number(g.monto) || 0),
+    g.tarjeta || '',
+    g.tipo || 'normal',
+    g.fuente || 'manual',
+    g.banco || '',
+    g.notas || '',
+    g.montoTotal ?? g.monto,
+    g.recurrente ? 'SI' : 'NO',
+    g.recurrenteHasta || '',
+    g.recurrenteFrecuencia || '',
+  ];
+}
+function gastoFromSheetRow(row) {
+  const g = {
+    id: row[0] || uid(),
+    fecha: row[1],
+    desc: decodeEntities(row[2]),
+    cat: decodeEntities(row[3]),
+    tag: decodeEntities(row[4]),
+    monto: parseMontoFromSheetCell(row[5]),
+    tarjeta: row[6],
+    tipo: row[7] || 'normal',
+    fuente: row[8] || 'manual',
+    banco: normalizeBankName(row[9]),
+    notas: decodeEntities(row[10]),
+    montoTotal: row[11] !== undefined && row[11] !== '' ? parseMontoFromSheetCell(row[11]) : parseMontoFromSheetCell(row[5]),
+    recurrente: String(row[12] || '').trim().toUpperCase() === 'SI',
+    recurrenteHasta: row[13] || '',
+    recurrenteFrecuencia: row[14] || '',
+  };
+  const idKey = String(g.id || '').trim() || uid();
+  return { ...g, id: idKey };
+}
+
 async function pushGastoToSheets(g) {
   if (!S.gsId) return;
   try {
-    const row = [[g.id, g.fecha, g.desc, g.cat, g.tag || '', g.monto, g.tarjeta || '', g.tipo, g.fuente || 'manual', g.banco || '', g.notas || '', g.montoTotal ?? g.monto]];
-    await sheetsAppend(SHEET_NAME_GASTOS, row);
+    await sheetsAppend(SHEET_NAME_GASTOS, [gastoToSheetRow(g)]);
     setSyncStatus(true);
   } catch (e) { setSyncStatus(false); }
 }
 
+async function pushGastosFullToSheets() {
+  if (!S.gsId) return;
+  const headers = [['ID', 'Fecha', 'Descripción', 'Categoría', 'Etiqueta', 'Monto', 'Tarjeta', 'Tipo', 'Fuente', 'Banco', 'Notas', 'Monto_Total', 'Recurrente', 'Recurrente_Hasta', 'Recurrente_Frecuencia']];
+  const rows = (S.gastos || []).map(gastoToSheetRow);
+  const values = headers.concat(rows);
+  await sheetsFnPost({
+    operation: 'put',
+    range: `${SHEET_NAME_GASTOS}!A1:O${Math.max(1, values.length)}`,
+    values,
+    majorDimension: 'ROWS',
+  });
+}
+
+async function pushCompartidosFullToSheets() {
+  if (!S.gsId) return;
+  const headers = [['ID', 'Fecha', 'Descripcion', 'Total', 'Categoria', 'Metodo', 'Personas_JSON', 'Gasto_ID']];
+  const rows = (S.compartidos || []).map(c => [
+    c.id,
+    c.fecha || '',
+    c.desc || '',
+    Math.round(Number(c.total) || 0),
+    c.cat || '',
+    c.method || 'igual',
+    JSON.stringify(c.personas || []),
+    c.gastoId || '',
+  ]);
+  const values = headers.concat(rows);
+  await sheetsFnPost({
+    operation: 'put',
+    range: `${SHEET_NAME_COMPARTIDOS}!A1:H${Math.max(1, values.length)}`,
+    values,
+    majorDimension: 'ROWS',
+  });
+}
+
 async function sheetsAppend(sheet, values) {
-  const range = `${sheet}!A:L`;
+  const range = `${sheet}!A:O`;
   return sheetsFnPost({
     operation: 'append',
     range,
@@ -1872,29 +2152,80 @@ async function sheetsAppend(sheet, values) {
   });
 }
 
+async function syncCuentasToSheets() {
+  if (!S.gsId) return;
+  const headers = [['ID', 'Tipo', 'Persona', 'Monto', 'Fecha_Creacion', 'Fecha_Limite', 'Estado', 'Descripción']];
+  const rows = (S.cuentas || []).map(c => [
+    c.id,
+    c.tipo || 'cobrar',
+    c.persona || '',
+    Math.round(Number(c.monto) || 0),
+    c.fechaCreacion || '',
+    c.fecha || '',
+    c.pagado ? 'pagado' : 'pendiente',
+    c.desc || '',
+  ]);
+  const values = headers.concat(rows);
+  await sheetsFnPost({
+    operation: 'put',
+    range: `${SHEET_NAME_CUENTAS}!A1:H${Math.max(1, values.length)}`,
+    values,
+    majorDimension: 'ROWS',
+  });
+}
+
+async function pushIngresosFullToSheets() {
+  if (!S.gsId) return;
+  const headers = [['ID', 'Fecha', 'Fuente', 'Monto', 'Notas']];
+  const rows = (S.ingresos || []).map(x => [
+    x.id,
+    x.fecha || '',
+    x.fuente || '',
+    Math.round(Number(x.monto) || 0),
+    x.notas || '',
+  ]);
+  const values = headers.concat(rows);
+  await sheetsFnPost({
+    operation: 'put',
+    range: `${SHEET_NAME_INGRESOS}!A1:E${Math.max(1, values.length)}`,
+    values,
+    majorDimension: 'ROWS',
+  });
+}
+
+async function pushInversionesFullToSheets() {
+  if (!S.gsId) return;
+  const headers = [['ID', 'Fecha', 'Instrumento', 'Monto_Invertido', 'Valor_Actual', 'Notas', 'Cantidad', 'Ticker']];
+  const rows = (S.inversiones || []).map(x => [
+    x.id,
+    x.fecha || '',
+    x.instrumento || '',
+    Math.round(Number(x.monto) || 0),
+    x.actual != null && x.actual !== '' && !isNaN(Number(x.actual)) ? Math.round(Number(x.actual)) : '',
+    x.notas || '',
+    x.cantidad != null && x.cantidad !== '' && !isNaN(Number(x.cantidad)) ? Number(x.cantidad) : '',
+    (x.ticker || '').trim(),
+  ]);
+  const values = headers.concat(rows);
+  await sheetsFnPost({
+    operation: 'put',
+    range: `${SHEET_NAME_INVERSIONES}!A1:H${Math.max(1, values.length)}`,
+    values,
+    majorDimension: 'ROWS',
+  });
+}
+
 async function syncSheets() {
   if (!S.gsId) { nav('config'); alert('Primero configura el ID de la hoja en Configuración.'); return; }
   const btn = document.getElementById('btn-sync');
   btn.textContent = '…';
   btn.disabled = true;
   try {
-    const headers = [['ID', 'Fecha', 'Descripción', 'Categoría', 'Etiqueta', 'Monto', 'Tarjeta', 'Tipo', 'Fuente', 'Banco', 'Notas', 'Monto_Total']];
-    await sheetsFnPost({
-      operation: 'put',
-      range: `${SHEET_NAME_GASTOS}!A1:L1`,
-      values: headers,
-    });
-    if (S.gastos.length) {
-      const rows = S.gastos.map(g => [g.id, g.fecha, g.desc, g.cat, g.tag || '', g.monto, g.tarjeta || '', g.tipo, g.fuente || 'manual', g.banco || '', g.notas || '', g.montoTotal ?? g.monto]);
-      await sheetsFnPost({
-        operation: 'put',
-        range: `${SHEET_NAME_GASTOS}!A2:L${rows.length + 1}`,
-        values: rows,
-        majorDimension: 'ROWS',
-      });
-    }
+    await pushGastosFullToSheets();
+    await pushCompartidosFullToSheets();
+    await syncCuentasToSheets();
     setSyncStatus(true, 'Sincronizado OK');
-    alert(`OK ${S.gastos.length} gastos sincronizados con Google Sheets.`);
+    alert(`OK: ${S.gastos.length} gastos, ${(S.compartidos||[]).length} compartidos y cuentas sincronizados.`);
   } catch (e) {
     setSyncStatus(false);
     const msg = String(e.message || e);
@@ -1915,26 +2246,12 @@ async function syncSheets() {
 async function loadFromSheets() {
   if (!S.gsId) return;
   try {
-    const dG = await sheetsFnGet(`${SHEET_NAME_GASTOS}!A2:L1000`);
+    const dG = await sheetsFnGet(`${SHEET_NAME_GASTOS}!A2:O1000`);
     if (dG.values) {
       const byId = new Map();
       for (const row of dG.values) {
-        const g = {
-          id: row[0] || uid(),
-          fecha: row[1],
-          desc: decodeEntities(row[2]),
-          cat: decodeEntities(row[3]),
-          tag: decodeEntities(row[4]),
-          monto: parseMontoFromSheetCell(row[5]),
-          tarjeta: row[6],
-          tipo: row[7] || 'normal',
-          fuente: row[8] || 'manual',
-          banco: normalizeBankName(row[9]),
-          notas: decodeEntities(row[10]),
-          montoTotal: row[11] !== undefined && row[11] !== '' ? parseMontoFromSheetCell(row[11]) : parseMontoFromSheetCell(row[5]),
-        };
-        const idKey = String(g.id || '').trim() || uid();
-        byId.set(idKey, { ...g, id: idKey });
+        const g = gastoFromSheetRow(row);
+        byId.set(g.id, g);
       }
       S.gastos = Array.from(byId.values()).sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
     }
@@ -1943,6 +2260,32 @@ async function loadFromSheets() {
       const noProcesados = dP.values.filter(row => {
         const estado = String(row[7] || '').trim().toUpperCase();
         return estado === 'NO' || !estado;
+      });
+      const sheetRowById = new Map();
+      const sheetRowByEmail = new Map();
+      noProcesados.forEach(row => {
+        const id = String(row[0] || '').trim();
+        const emailId = String(row[6] || '').trim();
+        if (id) sheetRowById.set(id, row);
+        if (emailId) sheetRowByEmail.set(emailId, row);
+      });
+      S.propuestas = (S.propuestas || []).map(p => {
+        if (p.estado !== 'pendiente') return p;
+        const row = sheetRowById.get(String(p.id || '').trim())
+          || (p.emailId ? sheetRowByEmail.get(String(p.emailId).trim()) : null);
+        if (!row) return p;
+        const sheetMonto = parseMontoFromSheetCell(row[3]);
+        const localMonto = Number(p.monto) || 0;
+        if (sheetMonto > 0 && localMonto === 0) {
+          return {
+            ...p,
+            monto: sheetMonto,
+            comercio: decodeEntities(row[2] || '') || p.comercio,
+            tarjeta: row[4] || p.tarjeta,
+            banco: normalizeBankName(row[5] || p.banco),
+          };
+        }
+        return p;
       });
       const emailIdsExistentes = new Set(
         S.propuestas
@@ -1958,8 +2301,6 @@ async function loadFromSheets() {
         .filter(row => {
           const emailId = (row[6] || '').trim();
           const id = (row[0] || '').trim();
-          // Si hay emailId (flujo Gmail), deduplicamos por emailId.
-          // Si no hay emailId (flujo Wallet/ingest-mobile), deduplicamos por id.
           if (emailId) return !emailIdsExistentes.has(emailId);
           if (id) return !idsExistentes.has(id);
           return true;
@@ -1972,7 +2313,7 @@ async function loadFromSheets() {
           tarjeta: row[4] || '',
           banco: normalizeBankName(row[5]),
           emailId: row[6],
-          fuente: 'gmail',
+          fuente: (row[6] || '').trim() ? 'gmail' : 'mobile',
           propuesta: { cat: '', tag: '' },
           estado: 'pendiente',
         }));
@@ -1991,29 +2332,69 @@ async function loadFromSheets() {
     }
     try {
       const dIn = await sheetsFnGet(`${SHEET_NAME_INGRESOS}!A2:E1000`);
-      if (dIn.values) {
+      if (dIn.values && dIn.values.length) {
         S.ingresos = dIn.values.map(r => ({
           id: r[0] || uid(),
           fecha: r[1] || '',
           fuente: decodeEntities(r[2] || ''),
-          monto: parseFloat(r[3]) || 0,
+          monto: parseMontoFromSheetCell(r[3]),
           notas: decodeEntities(r[4] || ''),
         }));
       }
     } catch (e) { console.log('Ingresos sheet (opcional):', e); }
     try {
-      const dIv = await sheetsFnGet(`${SHEET_NAME_INVERSIONES}!A2:F1000`);
-      if (dIv.values) {
+      const dIv = await sheetsFnGet(`${SHEET_NAME_INVERSIONES}!A2:H1000`);
+      if (dIv.values && dIv.values.length) {
         S.inversiones = dIv.values.map(r => ({
           id: r[0] || uid(),
           fecha: r[1] || '',
           instrumento: decodeEntities(r[2] || ''),
-          monto: parseFloat(r[3]) || 0,
-          actual: r[4] === '' ? null : (parseFloat(r[4]) || null),
+          monto: parseMontoFromSheetCell(r[3]),
+          actual: r[4] === '' || r[4] == null ? null : parseMontoFromSheetCell(r[4]),
           notas: decodeEntities(r[5] || ''),
+          cantidad: r[6] === '' || r[6] == null ? null : (parseFloat(r[6]) || null),
+          ticker: decodeEntities(String(r[7] || '').trim()),
         }));
       }
     } catch (e) { console.log('Inversiones sheet (opcional):', e); }
+    try {
+      const dCu = await sheetsFnGet(`${SHEET_NAME_CUENTAS}!A2:H1000`);
+      if (dCu.values && dCu.values.length) {
+        S.cuentas = dCu.values.map(r => ({
+          id: String(r[0] || '').trim() || uid(),
+          tipo: String(r[1] || 'cobrar').trim() === 'pagar' ? 'pagar' : 'cobrar',
+          persona: decodeEntities(r[2] || ''),
+          monto: parseMontoFromSheetCell(r[3]),
+          fechaCreacion: r[4] || '',
+          fecha: r[5] || '',
+          pagado: String(r[6] || '').toLowerCase() === 'pagado',
+          desc: decodeEntities(r[7] || ''),
+          dias: 0,
+        }));
+      }
+    } catch (e) { console.log('Cuentas sheet (opcional):', e); }
+    try {
+      const dCp = await sheetsFnGet(`${SHEET_NAME_COMPARTIDOS}!A2:H1000`);
+      if (dCp.values && dCp.values.length) {
+        S.compartidos = dCp.values.map(row => {
+          let personas = [];
+          try {
+            personas = JSON.parse(row[6] || '[]');
+          } catch (_) { personas = []; }
+          return {
+            id: String(row[0] || '').trim() || uid(),
+            fecha: row[1] || '',
+            desc: decodeEntities(row[2] || ''),
+            total: parseMontoFromSheetCell(row[3]),
+            cat: decodeEntities(row[4] || ''),
+            method: row[5] || 'igual',
+            personas: Array.isArray(personas) ? personas : [],
+            gastoId: String(row[7] || '').trim(),
+            cuentaIds: [],
+          };
+        });
+      }
+    } catch (e) { console.log('Compartidos sheet (opcional):', e); }
     try {
       const dCo = await sheetsFnGet(`${SHEET_NAME_CONCILIACION}!A2:G1000`);
       if (dCo.values) {
@@ -2039,7 +2420,10 @@ async function loadFromSheets() {
     renderDashboard();
     renderIngresos();
     renderInversiones();
+    renderCuentas();
+    renderCompartidos();
     renderConciliacion();
+    refreshInstrumentDatalist();
     updateBadge();
     if (document.getElementById('p-config')?.classList.contains('active')) renderConfig();
     setSyncStatus(true, 'Sincronizado OK');
@@ -2182,10 +2566,12 @@ function renderDashboard() {
   if (per.mode === 'month') {
     let sumCuotasMes = gm.filter(esRegistroCuotaDashboard).reduce((a, g) => a + g.monto, 0);
     let sumCred = gm.filter(g => !esRegistroCuotaDashboard(g) && String(g.cat) === 'Crédito consumo').reduce((a, g) => a + g.monto, 0);
-    compEl.textContent = fmt(sumCuotasMes + sumCred);
+    const sumRec = S.gastos
+      .filter(g => aplicaRecurrenteEnMes(g, monthKeyDashStr) && !esRegistroCuotaDashboard(g))
+      .reduce((a, g) => a + montoRecurrenteProyectado(g), 0);
+    compEl.textContent = fmt(sumCuotasMes + sumCred + sumRec);
     compSub.textContent =
-      fmt(sumCuotasMes) +
-      ` cuotas + ${fmt(sumCred)} Crédito consumo · TC bruto período ${fmt(totalTarjetaBruto)}`;
+      fmt(sumCuotasMes) + ' cuotas + ' + fmt(sumCred) + ' crédito + ' + fmt(sumRec) + ' recurrentes · TC ' + fmt(totalTarjetaBruto);
   } else {
     compEl.textContent = '—';
     compSub.textContent = 'Selecciona un mes para comprometidos y cuotas del período';
@@ -2424,7 +2810,11 @@ function renderIngresos() {
     <td>${esc(x.fuente || '')}</td>
     <td style="font-family:var(--mono);font-weight:600">${fmt(x.monto || 0)}</td>
     <td>${esc(x.notas || '')}</td>
-  </tr>`).join('') : `<tr><td colspan="4" class="empty" style="padding:24px">Sin ingresos registrados</td></tr>`;
+    <td style="white-space:nowrap">
+      <button type="button" class="btn btn-sm" onclick='startEditIngreso(${JSON.stringify(x.id)})'>Editar</button>
+      <button type="button" class="btn btn-sm" onclick='deleteIngreso(${JSON.stringify(x.id)})'>Eliminar</button>
+    </td>
+  </tr>`).join('') : `<tr><td colspan="5" class="empty" style="padding:24px">Sin ingresos registrados</td></tr>`;
 }
 
 function renderInversiones() {
@@ -2433,18 +2823,26 @@ function renderInversiones() {
   const list = [...(S.inversiones || [])].sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha)));
   body.innerHTML = list.length ? list.map(x => {
     const inv = Number(x.monto || 0);
-    const act = Number(x.actual || 0);
-    const hasAct = Number.isFinite(act) && act > 0;
-    const diff = hasAct ? act - inv : 0;
-    const cls = diff >= 0 ? 'pos' : 'neg';
+    const actNum = x.actual != null && x.actual !== '' ? Number(x.actual) : NaN;
+    const hasAct = Number.isFinite(actNum);
+    const diff = hasAct ? actNum - inv : NaN;
+    const cls = hasAct && diff >= 0 ? 'pos' : 'neg';
+    const qty = x.cantidad != null && x.cantidad !== '' && Number.isFinite(Number(x.cantidad)) ? esc(String(x.cantidad)) : '—';
+    const tk = (x.ticker || '').trim() ? esc(x.ticker) : '—';
     return `<tr>
       <td style="font-family:var(--mono);font-size:11px">${esc(x.fecha || '')}</td>
       <td>${esc(x.instrumento || '')}</td>
+      <td style="font-family:var(--mono);font-size:11px">${qty}</td>
+      <td style="font-family:var(--mono);font-size:11px">${tk}</td>
       <td style="font-family:var(--mono);font-weight:600">${fmt(inv)}</td>
-      <td style="font-family:var(--mono)">${hasAct ? fmt(act) : '—'}</td>
+      <td style="font-family:var(--mono)">${hasAct ? fmt(actNum) : '—'}</td>
       <td class="${cls}" style="font-family:var(--mono);font-weight:600">${hasAct ? fmt(diff) : '—'}</td>
+      <td style="white-space:nowrap">
+        <button type="button" class="btn btn-sm" onclick='startEditInversion(${JSON.stringify(x.id)})'>Editar</button>
+        <button type="button" class="btn btn-sm" onclick='deleteInversion(${JSON.stringify(x.id)})'>Eliminar</button>
+      </td>
     </tr>`;
-  }).join('') : `<tr><td colspan="5" class="empty" style="padding:24px">Sin inversiones registradas</td></tr>`;
+  }).join('') : `<tr><td colspan="8" class="empty" style="padding:24px">Sin inversiones registradas</td></tr>`;
 }
 
 function gastosConciliacionForMonthKey(monthKey) {
@@ -2570,44 +2968,223 @@ function renderConciliacion() {
   }).join('') : `<tr><td colspan="6" class="empty" style="padding:24px">Sin conciliaciones registradas</td></tr>`;
 }
 
+function resetIngresoForm() {
+  editingIngresoId = null;
+  const bc = document.getElementById('btn-in-cancel');
+  const bs = document.getElementById('btn-in-save');
+  if (bc) bc.style.display = 'none';
+  if (bs) bs.textContent = 'Guardar ingreso';
+  const fe = document.getElementById('in-fecha');
+  if (fe) fe.value = HOY;
+  ['in-monto', 'in-fuente', 'in-notas'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+}
+function startEditIngreso(id) {
+  const x = (S.ingresos || []).find(i => i.id === id);
+  if (!x) return;
+  editingIngresoId = id;
+  const fe = document.getElementById('in-fecha');
+  if (fe) fe.value = x.fecha || HOY;
+  const mo = document.getElementById('in-monto');
+  if (mo) mo.value = x.monto ?? '';
+  const fu = document.getElementById('in-fuente');
+  if (fu) fu.value = x.fuente || '';
+  const no = document.getElementById('in-notas');
+  if (no) no.value = x.notas || '';
+  const bc = document.getElementById('btn-in-cancel');
+  const bs = document.getElementById('btn-in-save');
+  if (bc) bc.style.display = 'inline-block';
+  if (bs) bs.textContent = 'Actualizar ingreso';
+}
+function cancelEditIngreso() {
+  resetIngresoForm();
+}
+async function deleteIngreso(id) {
+  if (!confirm('¿Eliminar este ingreso?')) return;
+  S.ingresos = (S.ingresos || []).filter(x => x.id !== id);
+  if (editingIngresoId === id) resetIngresoForm();
+  save();
+  renderIngresos();
+  renderDashboard();
+  try { await pushIngresosFullToSheets(); } catch (e) { console.log('saveIngreso sheets:', e); }
+}
+
 async function saveIngreso() {
   const fecha = document.getElementById('in-fecha')?.value || HOY;
-  const monto = parseFloat(document.getElementById('in-monto')?.value || '');
+  const montoStr = String(document.getElementById('in-monto')?.value || '').trim().replace(/\./g, '').replace(',', '.');
+  const monto = parseFloat(montoStr);
   const fuente = (document.getElementById('in-fuente')?.value || '').trim();
   const notas = (document.getElementById('in-notas')?.value || '').trim();
-  if (!fuente || isNaN(monto) || monto <= 0) { alert('Completa fuente y monto del ingreso.'); return; }
-  const row = { id: uid(), fecha, monto, fuente, notas };
-  S.ingresos.push(row);
-  save(); renderIngresos();
+  if (!fuente || !Number.isFinite(monto) || monto <= 0) { alert('Completa fuente y monto del ingreso.'); return; }
+  if (!S.ingresos) S.ingresos = [];
+  if (editingIngresoId) {
+    const ex = S.ingresos.find(x => x.id === editingIngresoId);
+    if (ex) {
+      ex.fecha = fecha;
+      ex.monto = monto;
+      ex.fuente = fuente;
+      ex.notas = notas;
+    }
+    resetIngresoForm();
+  } else {
+    S.ingresos.push({ id: uid(), fecha, monto, fuente, notas });
+  }
+  save();
+  renderIngresos();
+  renderDashboard();
+  try { await pushIngresosFullToSheets(); } catch (e) { console.log('saveIngreso sheets:', e); }
+}
+
+function resetInversionForm() {
+  editingInversionId = null;
+  const bc = document.getElementById('btn-iv-cancel');
+  const bs = document.getElementById('btn-iv-save');
+  if (bc) bc.style.display = 'none';
+  if (bs) bs.textContent = 'Guardar inversión';
+  const fe = document.getElementById('iv-fecha');
+  if (fe) fe.value = HOY;
+  ['iv-inst', 'iv-monto', 'iv-cantidad', 'iv-ticker', 'iv-actual', 'iv-notas'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+}
+function startEditInversion(id) {
+  const x = (S.inversiones || []).find(i => i.id === id);
+  if (!x) return;
+  editingInversionId = id;
+  const fe = document.getElementById('iv-fecha');
+  if (fe) fe.value = x.fecha || HOY;
+  const inst = document.getElementById('iv-inst');
+  if (inst) inst.value = x.instrumento || '';
+  const mo = document.getElementById('iv-monto');
+  if (mo) mo.value = x.monto ?? '';
+  const ca = document.getElementById('iv-cantidad');
+  if (ca) ca.value = x.cantidad != null && x.cantidad !== '' ? x.cantidad : '';
+  const tk = document.getElementById('iv-ticker');
+  if (tk) tk.value = x.ticker || '';
+  const ac = document.getElementById('iv-actual');
+  if (ac) ac.value = x.actual != null && x.actual !== '' ? x.actual : '';
+  const no = document.getElementById('iv-notas');
+  if (no) no.value = x.notas || '';
+  const bc = document.getElementById('btn-iv-cancel');
+  const bs = document.getElementById('btn-iv-save');
+  if (bc) bc.style.display = 'inline-block';
+  if (bs) bs.textContent = 'Actualizar inversión';
+}
+function cancelEditInversion() {
+  resetInversionForm();
+}
+async function deleteInversion(id) {
+  if (!confirm('¿Eliminar esta inversión del portafolio?')) return;
+  S.inversiones = (S.inversiones || []).filter(x => x.id !== id);
+  if (editingInversionId === id) resetInversionForm();
+  save();
+  renderInversiones();
+  renderDashboard();
+  try { await pushInversionesFullToSheets(); } catch (e) { console.log('saveInversion sheets:', e); }
+}
+
+async function cotizarInversionesTickers() {
+  const tickers = [...new Set((S.inversiones || []).map(iv => String(iv.ticker || '').trim()).filter(Boolean))];
+  if (!tickers.length) {
+    alert('Agrega al menos un ticker Yahoo (ej. AAPL, SPY, IPSA) en alguna fila de inversiones.');
+    return;
+  }
+  const usdEl = document.getElementById('iv-usd-clp');
+  const usdDef = parseFloat(String(usdEl?.value || '').replace(/\./g, '').replace(',', '.')) || 950;
   try {
-    await sheetsFnPost({
-      operation:'append',
-      range:`${SHEET_NAME_INGRESOS}!A:E`,
-      values:[[row.id,row.fecha,row.fuente,row.monto,row.notas]],
-      majorDimension:'ROWS',
+    const r = await fetch('/.netlify/functions/market-quote', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ tickers }),
     });
-  } catch (e) { console.log('saveIngreso sheets:', e); }
+    const raw = await r.text();
+    const d = parseJsonSafe(raw);
+    if (!r.ok) {
+      alert(errorMessageFromApiBody(d, raw) || `Error HTTP ${r.status}`);
+      return;
+    }
+    const prices = (d && d.prices) || {};
+    let n = 0;
+    for (const iv of S.inversiones || []) {
+      const sym = String(iv.ticker || '').trim();
+      if (!sym) continue;
+      const info = prices[sym];
+      const price = info && info.price != null ? Number(info.price) : NaN;
+      if (!Number.isFinite(price)) continue;
+      const qtyRaw = iv.cantidad;
+      const qty = qtyRaw != null && qtyRaw !== '' && Number.isFinite(Number(qtyRaw)) ? Number(qtyRaw) : null;
+      const cur = String(info.currency || '').toUpperCase();
+      let clp;
+      if (cur === 'CLP') clp = price * (qty != null && qty > 0 ? qty : 1);
+      else if (cur === 'USD') clp = price * (qty != null && qty > 0 ? qty : 1) * usdDef;
+      else clp = price * (qty != null && qty > 0 ? qty : 1) * usdDef;
+      if (Number.isFinite(clp)) {
+        iv.actual = Math.round(clp);
+        n++;
+      }
+    }
+    save();
+    await pushInversionesFullToSheets().catch(e => console.log(e));
+    renderInversiones();
+    renderDashboard();
+    alert(
+      n
+        ? `Actualizadas ${n} posición(es). Referencia Yahoo; USD→CLP usado: ${usdDef}.`
+        : 'No se obtuvo precio usable para ningún ticker (revisa símbolo o intenta más tarde).'
+    );
+  } catch (e) {
+    alert('Cotización: ' + (e && e.message ? e.message : String(e)));
+  }
 }
 
 async function saveInversion() {
+  onInstrumentoInput();
   const fecha = document.getElementById('iv-fecha')?.value || HOY;
   const instrumento = (document.getElementById('iv-inst')?.value || '').trim();
-  const monto = parseFloat(document.getElementById('iv-monto')?.value || '');
+  const montoStr = String(document.getElementById('iv-monto')?.value || '').trim().replace(/\./g, '').replace(',', '.');
+  const monto = parseFloat(montoStr);
   const actualRaw = document.getElementById('iv-actual')?.value || '';
-  const actual = actualRaw === '' ? '' : parseFloat(actualRaw);
+  const actualParsed = actualRaw === '' ? null : parseFloat(String(actualRaw).replace(/\./g, '').replace(',', '.'));
   const notas = (document.getElementById('iv-notas')?.value || '').trim();
-  if (!instrumento || isNaN(monto) || monto <= 0) { alert('Completa instrumento y monto invertido.'); return; }
-  const row = { id: uid(), fecha, instrumento, monto, actual: actual === '' || isNaN(actual) ? null : actual, notas };
-  S.inversiones.push(row);
-  save(); renderInversiones();
-  try {
-    await sheetsFnPost({
-      operation:'append',
-      range:`${SHEET_NAME_INVERSIONES}!A:F`,
-      values:[[row.id,row.fecha,row.instrumento,row.monto,row.actual ?? '',row.notas]],
-      majorDimension:'ROWS',
+  const cantStr = String(document.getElementById('iv-cantidad')?.value || '').trim();
+  const cantidad = cantStr === '' ? null : parseFloat(cantStr.replace(',', '.'));
+  const ticker = (document.getElementById('iv-ticker')?.value || '').trim();
+  if (!instrumento || !Number.isFinite(monto) || monto <= 0) { alert('Completa instrumento y monto invertido.'); return; }
+  if (cantStr !== '' && !Number.isFinite(cantidad)) { alert('Cantidad no válida.'); return; }
+  const actual = actualParsed != null && Number.isFinite(actualParsed) ? actualParsed : null;
+  if (!S.inversiones) S.inversiones = [];
+  if (editingInversionId) {
+    const ex = S.inversiones.find(x => x.id === editingInversionId);
+    if (ex) {
+      ex.fecha = fecha;
+      ex.instrumento = instrumento;
+      ex.monto = monto;
+      ex.actual = actual;
+      ex.notas = notas;
+      ex.cantidad = cantidad;
+      ex.ticker = ticker;
+    }
+    resetInversionForm();
+  } else {
+    S.inversiones.push({
+      id: uid(),
+      fecha,
+      instrumento,
+      monto,
+      actual,
+      notas,
+      cantidad,
+      ticker,
     });
-  } catch (e) { console.log('saveInversion sheets:', e); }
+  }
+  save();
+  refreshInstrumentDatalist();
+  renderInversiones();
+  renderDashboard();
+  try { await pushInversionesFullToSheets(); } catch (e) { console.log('saveInversion sheets:', e); }
 }
 
 async function saveConciliacion() {
@@ -2793,6 +3370,7 @@ async function initApp() {
   renderDashboard();
   renderCuentas();
   renderRevision();
+  refreshInstrumentDatalist();
   updateBadge();
   let needsPasscode = false;
   if (S.gsId) {

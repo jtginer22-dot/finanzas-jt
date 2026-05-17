@@ -33,6 +33,7 @@ const SHEETS = {
   INGRESOS: 'Ingresos',
   INVERSIONES: 'Inversiones',
   CONCILIACION: 'Conciliacion_Mensual',
+  COMPARTIDOS: 'Compartidos',
 };
 
 // ============================================================
@@ -43,14 +44,15 @@ function inicializar() {
   
   // Crear pestañas si no existen
   const tabs = {
-    [SHEETS.GASTOS]: ['ID','Fecha','Descripción','Categoría','Etiqueta','Monto','Tarjeta','Tipo','Fuente','Banco','Notas','Monto_Total'],
+    [SHEETS.GASTOS]: ['ID','Fecha','Descripción','Categoría','Etiqueta','Monto','Tarjeta','Tipo','Fuente','Banco','Notas','Monto_Total','Recurrente','Recurrente_Hasta','Recurrente_Frecuencia'],
+    [SHEETS.COMPARTIDOS]: ['ID','Fecha','Descripcion','Total','Categoria','Metodo','Personas_JSON','Gasto_ID'],
     [SHEETS.PENDIENTES]: ['ID','Fecha','Comercio','Monto','Tarjeta','Banco','Email_ID','Procesado'],
     [SHEETS.CUENTAS]: ['ID','Tipo','Persona','Monto','Fecha_Creacion','Fecha_Limite','Estado','Descripción'],
     [SHEETS.CATEGORIAS]: ['ID','Nombre','Color','Tipo','Activa'],
     [SHEETS.METRICAS]: ['Mes','Total_Gastos','Total_Fijos','Total_Variables','Total_Extraordinarios','N_Transacciones','Por_Cobrar','Por_Pagar'],
     [SHEETS.PRESUPUESTOS]: ['Categoria','Monto_Mensual'],
     [SHEETS.INGRESOS]: ['ID','Fecha','Fuente','Monto','Notas'],
-    [SHEETS.INVERSIONES]: ['ID','Fecha','Instrumento','Monto_Invertido','Valor_Actual','Notas'],
+    [SHEETS.INVERSIONES]: ['ID','Fecha','Instrumento','Monto_Invertido','Valor_Actual','Notas','Cantidad','Ticker'],
     [SHEETS.CONCILIACION]: ['ID','Mes','Banco','Total_Cartola','Total_App','Diferencia','Notas'],
   };
   
@@ -100,8 +102,8 @@ function inicializar() {
 // SCANNER GMAIL — Corre cada 1 hora
 // ============================================================
 
-/** Monto en pesos chilenos desde cuerpo de correo BCI (compras, Apple Pay, etc.). */
-function parseMontoDesdeCorreoBci_(cuerpo) {
+/** Monto en pesos chilenos desde cuerpo de correo Banco de Chile (enviodigital@bancochile.cl): compras, Apple Pay, etc. */
+function parseMontoDesdeCorreoBancoDeChile_(cuerpo) {
   if (!cuerpo) return null;
   const patterns = [
     /compra por\s*\$?\s*([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]+)?)/i,
@@ -136,15 +138,15 @@ function scanearGmail() {
   let nuevos = 0;
   
   // ---- BANCO DE CHILE (TC + Apple Pay y variantes de texto) ----
-  const queriesBci = [
+  const queriesBancoDeChile = [
     'from:enviodigital@bancochile.cl subject:"Compra con Tarjeta de Crédito" newer_than:7d',
     'from:enviodigital@bancochile.cl ("Apple Pay" OR "APPLE PAY") newer_than:7d',
     'from:enviodigital@bancochile.cl (compra OR cargo) (tarjeta OR crédito) newer_than:7d',
   ];
   const seenMsg = new Set();
-  queriesBci.forEach(function (q) {
-    const hilosBCI = GmailApp.search(q, 0, 15);
-    hilosBCI.forEach(function (hilo) {
+  queriesBancoDeChile.forEach(function (q) {
+    const hilosBdC = GmailApp.search(q, 0, 15);
+    hilosBdC.forEach(function (hilo) {
       const msgs = hilo.getMessages();
       msgs.forEach(function (msg) {
         const msgId = msg.getId();
@@ -154,7 +156,7 @@ function scanearGmail() {
         const cuerpo = msg.getPlainBody() || msg.getBody();
         const fecha = Utilities.formatDate(msg.getDate(), CONFIG.TIMEZONE, 'yyyy-MM-dd');
 
-        const monto = parseMontoDesdeCorreoBci_(cuerpo);
+        const monto = parseMontoDesdeCorreoBancoDeChile_(cuerpo);
         if (monto === null || monto <= 0) return;
 
         const comercioMatch = cuerpo.match(/en ([A-ZÁÉÍÓÚÑ0-9][A-ZÁÉÍÓÚÑ0-9\s\.\-]+?) el \d/i);
@@ -164,12 +166,12 @@ function scanearGmail() {
         }
 
         const tarjetaMatch = cuerpo.match(/\*{4}(\d{4})/);
-        const tarjeta = tarjetaMatch ? ('TC BCI ****' + tarjetaMatch[1]) : 'TC Banco de Chile';
+        const tarjeta = tarjetaMatch ? ('TC Banco de Chile ****' + tarjetaMatch[1]) : 'TC Banco de Chile';
 
         const uid = Utilities.getUuid().slice(0, 8);
         pendSheet.appendRow([uid, fecha, comercio, monto, tarjeta, 'Banco de Chile', msgId, 'NO']);
         nuevos++;
-        Logger.log('BCI detectado: ' + comercio + ' $' + monto);
+        Logger.log('Banco de Chile (correo): ' + comercio + ' $' + monto);
       });
     });
   });

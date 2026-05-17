@@ -46,26 +46,54 @@ exports.handler = async (event) => {
   }
 
   function parseMoney(input) {
-    if (typeof input === 'number' && Number.isFinite(input)) return input;
+    if (typeof input === 'number' && Number.isFinite(input)) return Math.round(input);
 
-    // En iOS Shortcuts el campo puede llegar como objeto/diccionario.
-    if (input && typeof input === 'object') {
+    // Shortcuts a veces manda el monto en otra clave o anidado (Dictionary).
+    if (input && typeof input === 'object' && !Array.isArray(input)) {
+      let best = 0;
       const candidateKeys = [
-        'amount',
-        'value',
         'monto',
+        'Monto',
+        'amount',
+        'Amount',
+        'value',
+        'Value',
+        'importe',
+        'Importe',
         'numberValue',
         'rawValue',
         'displayValue',
         'formatted',
+        'WFCurrencyAmount', // Workflow/Shortcuts currency
+        'amountValue',
       ];
       for (const key of candidateKeys) {
         if (Object.prototype.hasOwnProperty.call(input, key)) {
           const parsed = parseMoney(input[key]);
-          if (parsed !== 0) return parsed;
+          if (parsed > best) best = parsed;
         }
       }
-      return 0;
+      if (best > 0) return best;
+      for (const k of Object.keys(input)) {
+        if (/monto|amount|import|valor|precio|total|price|currency/i.test(k)) {
+          const parsed = parseMoney(input[k]);
+          if (parsed > best) best = parsed;
+        }
+      }
+      if (best > 0) return best;
+      for (const v of Object.values(input)) {
+        if (typeof v === 'number' && Number.isFinite(v) && v !== 0) {
+          const n = Math.round(v);
+          if (n > best) best = n;
+        } else if (typeof v === 'string' && /[\d]/.test(v)) {
+          const p = parseMoney(v);
+          if (p > best) best = p;
+        } else if (v && typeof v === 'object') {
+          const p = parseMoney(v);
+          if (p > best) best = p;
+        }
+      }
+      return best;
     }
 
     const raw = String(input ?? '')
@@ -73,33 +101,56 @@ exports.handler = async (event) => {
       .trim();
     if (!raw) return 0;
 
-    // Conserva solo dígitos y separadores decimales comunes.
-    const cleaned = raw.replace(/[^\d,.-]/g, '');
-    if (!cleaned) return 0;
-
-    const sign = cleaned.startsWith('-') ? -1 : 1;
-    const unsigned = cleaned.replace(/-/g, '');
+    // Formato chileno típico en texto: "45.990" o "CLP 45.990" (punto = miles).
+    const digits = raw.replace(/[^\d.,-]/g, '');
+    if (!digits) return 0;
+    const sign = digits.startsWith('-') ? -1 : 1;
+    const unsigned = digits.replace(/-/g, '');
     const lastComma = unsigned.lastIndexOf(',');
     const lastDot = unsigned.lastIndexOf('.');
     const decimalIdx = Math.max(lastComma, lastDot);
-
     let normalized;
     if (decimalIdx !== -1) {
-      const intPart = unsigned.slice(0, decimalIdx).replace(/[.,]/g, '');
-      const decPart = unsigned.slice(decimalIdx + 1).replace(/[.,]/g, '');
-      normalized = `${intPart || '0'}.${decPart || '0'}`;
+      const after = unsigned.slice(decimalIdx + 1).replace(/[.,]/g, '');
+      const before = unsigned.slice(0, decimalIdx).replace(/[.,]/g, '');
+      if (after.length === 3 && /^\d{3}$/.test(after) && before.length >= 1) {
+        normalized = `${before}${after}`;
+      } else {
+        const intPart = unsigned.slice(0, decimalIdx).replace(/[.,]/g, '');
+        const decPart = after;
+        normalized = `${intPart || '0'}.${decPart || '0'}`;
+      }
     } else {
       normalized = unsigned.replace(/[.,]/g, '');
     }
 
     const n = Number(normalized);
-    return Number.isFinite(n) ? sign * n : 0;
+    if (!Number.isFinite(n)) return 0;
+    return sign * Math.round(n);
+  }
+
+  /** Prueba varias claves de primer nivel; `??` no sirve si `monto` viene como "" */
+  function extractMoneyFromBody(b) {
+    const topKeys = [
+      'monto', 'Monto', 'amount', 'Amount', 'importe', 'Importe',
+      'value', 'Value', 'precio', 'total', 'Total',
+    ];
+    let best = 0;
+    for (const k of topKeys) {
+      if (!Object.prototype.hasOwnProperty.call(b, k)) continue;
+      const v = b[k];
+      if (v === null || v === undefined) continue;
+      const p = parseMoney(v);
+      if (p > best) best = p;
+    }
+    if (best > 0) return best;
+    return parseMoney(b);
   }
 
   const uid = body.uid || Date.now().toString(36);
   const fecha = body.fecha || new Date().toISOString().split('T')[0];
   const comercio = body.comercio || 'Compra';
-  const monto = parseMoney(body.monto);
+  const monto = extractMoneyFromBody(body);
   const tarjeta = body.tarjeta || 'TC';
   const banco = body.banco || 'Santander';
   const emailId = body.emailId || '';
@@ -144,10 +195,15 @@ exports.handler = async (event) => {
     });
     const text = await r.text();
     if (!r.ok) return { statusCode: r.status, headers, body: text };
+    const responseBody = { ok: true, message: 'OK', uid, monto };
+    if (monto === 0) {
+      responseBody.warn = 'monto_parseado_cero';
+      responseBody.receivedKeys = Object.keys(body || {});
+    }
     return {
       statusCode: 200,
       headers,
-      body: JSON.stringify({ ok: true, message: 'OK', uid }),
+      body: JSON.stringify(responseBody),
     };
   } catch (err) {
     return { statusCode: 500, headers, body: JSON.stringify({ error: err.message || String(err) }) };

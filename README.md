@@ -28,7 +28,7 @@ La app **no** guarda la API Key de Google en `localStorage`. Una función server
    - **`GOOGLE_SHEETS_API_KEY`**: tu API key de Google Cloud (solo lectura/escritura Sheets según la restrinja en Google Cloud Console).
    - **`APP_PASSCODE`** (recomendado): código secreto para autorizar uso de la app contra tu proxy (header `x-app-passcode`).
    - **`ANTHROPIC_API_KEY`**: clave API para sugerencias LLM de categorización (Claude).
-   - (Opcional) **`ANTHROPIC_MODEL`**: modelo a usar (por defecto `claude-3-5-haiku-latest`).
+   - (Opcional) **`ANTHROPIC_MODEL`**: modelo Anthropic con **fecha** (ej. `claude-3-5-haiku-20241022`). Evita IDs tipo `claude-3-5-haiku-latest`: la API suele rechazarlos.
 3. (Recomendado) **`SHEETS_ALLOWED_SPREADSHEET_IDS`**: el ID de tu spreadsheet (ej. `1Aeiav6ZIiC_o8zgqwM7qRxgFtXB3eHROW9-NtJ4GU5g`). Si está definido, el proxy **solo** acepta ese ID y rechaza otros (reduce abuso si alguien descubre la URL de la función).
 4. Vuelve a desplegar el sitio tras cambiar variables.
 
@@ -94,25 +94,34 @@ Un servidor solo estático (`python -m http.server`) **no** incluye las funcione
 
 ---
 
-## PASO 3 — Instalar Google Apps Script
+## PASO 3 — Google Apps Script (detallado)
 
-1. Abre tu Google Sheet
-2. Menú: **Extensiones → Apps Script**
-3. Borra el contenido del editor y pega TODO el contenido de `google-apps-script.js`
-4. Edita la línea `APP_URL` con tu URL de Netlify
-5. Menú: **Ejecutar → inicializar** (primera vez, crea las pestañas)
-6. Autoriza los permisos cuando te lo pida
+Usa **la misma spreadsheet** cuyo ID configuraste en la app (Netlify / Configuración).
 
-### Configurar activadores automáticos:
-1. Menú izquierdo: **Activadores** (ícono de reloj)
-2. Agregar activador 1:
+1. Abre esa hoja en [sheets.google.com](https://sheets.google.com).
+2. Menú **Extensiones → Apps Script**. Si es la primera vez, ponle un nombre al proyecto (ej. `Finanzas JT`).
+3. En el editor, abre `Código.gs` (o el archivo por defecto), selecciona todo el texto (`Cmd+A` / `Ctrl+A`) y bórralo.
+4. En tu computador, abre el archivo **`google-apps-script.js`** de esta carpeta, cópialo **entero** y pégalo en Apps Script.
+5. Edita el objeto **`CONFIG`** arriba del archivo:
+   - **`APP_URL`**: tu URL pública de la app, ej. `https://tu-sitio.netlify.app` (sin barra final también funciona en los enlaces del script).
+   - **`EMAIL_DESTINO`**: el correo donde quieres recibir avisos (debe ser una cuenta a la que tengas acceso).
+6. Pulsa **Guardar** (diskette) en Apps Script.
+7. En el desplegable de funciones (arriba), elige **`inicializar`** y pulsa **Ejecutar** (▶).
+8. Google pedirá **revisar permisos** → elige la cuenta → “Avanzado” → “Ir a … (no seguro)” si aparece → **Permitir**. Sin esto no puede leer Gmail ni escribir la hoja.
+9. Vuelve a la **spreadsheet**: deberían existir (o actualizarse) las pestañas que define el script (`Gastos`, `Pendientes`, `Cuentas_Por_Cobrar`, etc.). Si tu libro **ya tenía** una pestaña `Inversiones` con solo 6 columnas, agrega manualmente las columnas **`Cantidad`** y **`Ticker`** en G1 y H1 para alinear con la app.
+
+### Activadores (automatización)
+
+1. En Apps Script, menú izquierdo: **Activadores** (ícono de reloj) → **Agregar activador**.
+2. **Activador 1 — Gmail a la hoja**
    - Función: `scanearGmail`
-   - Fuente: Basado en tiempo
-   - Tipo: Cada hora
-3. Agregar activador 2:
+   - Evento: **Basado en tiempo**
+   - Tipo de evento: **De hora en hora** (o el intervalo que prefieras).
+3. **Activador 2 — Resumen diario**
    - Función: `enviarResumenDiario`
-   - Fuente: Basado en tiempo
-   - Tipo: Día (8:00 AM - 9:00 AM)
+   - Evento: **Basado en tiempo**
+   - Tipo: **Día** → elige un rango horario (ej. 8:00–9:00).
+4. Tras el primer deploy de Netlify, prueba **Ejecutar → scanearGmail** una vez a mano y revisa la pestaña `Pendientes` y tu correo.
 
 ---
 
@@ -144,7 +153,8 @@ Un servidor solo estático (`python -m http.server`) **no** incluye las funcione
 
 ## Notas importantes
 
-- La app guarda datos en `localStorage` del navegador ADEMÁS de Google Sheets (categorías, etiquetas, presupuestos en caché; **no** la API Key de Google).
+- La app usa `localStorage` como caché rápida y **Google Sheets** como fuente compartida entre dispositivos. Tras **Guardar / sincronizar** o recargar con ID de hoja, **Cuentas por cobrar/pagar**, **Ingresos** e **Inversiones** se leen y escriben en sus pestañas (`Cuentas_Por_Cobrar`, `Ingresos`, `Inversiones`) para que celular y PC vean lo mismo.
+- **Cotización de inversiones**: botón “Cotizar tickers (Yahoo)” llama a `/.netlify/functions/market-quote` (requiere el mismo `APP_PASSCODE` que el resto). Es referencia de mercado, no asesoría.
 - Google Sheets es el respaldo permanente y multi-dispositivo.
 - **Presupuestos**: pestaña `Presupuestos` con columnas `Categoria` y `Monto_Mensual`. Si el libro ya existía, ejecuta de nuevo `inicializar` en Apps Script o crea la pestaña manualmente con esos encabezados.
 - Los parsers bancarios activos:
