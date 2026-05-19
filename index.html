@@ -1022,6 +1022,33 @@ function montoRecurrenteProyectado(g) {
   return m;
 }
 
+/** Sheet manda en pendientes: evita 570 vs 610 entre dispositivos por caché local. */
+function mergePropuestasFromSheetRows(noProcesados, prev) {
+  const fromSheet = noProcesados.map(row => ({
+    id: row[0] || uid(),
+    fecha: row[1],
+    comercio: decodeEntities(row[2]),
+    monto: parseMontoFromSheetCell(row[3]),
+    tarjeta: row[4] || '',
+    banco: normalizeBankName(row[5]),
+    emailId: row[6],
+    fuente: (row[6] || '').trim() ? 'gmail' : 'mobile',
+    propuesta: { cat: '', tag: '' },
+    estado: 'pendiente',
+  }));
+  const sheetIds = new Set(fromSheet.map(p => String(p.id || '').trim()).filter(Boolean));
+  const sheetEmails = new Set(fromSheet.map(p => String(p.emailId || '').trim()).filter(Boolean));
+  const kept = (prev || []).filter(p => {
+    if (p.estado === 'pendiente') return false;
+    const id = String(p.id || '').trim();
+    const em = String(p.emailId || '').trim();
+    if (id && sheetIds.has(id)) return false;
+    if (em && sheetEmails.has(em)) return false;
+    return true;
+  });
+  return kept.concat(fromSheet);
+}
+
 function parseMontoFromSheetCell(cell) {
   if (cell == null || cell === '') return 0;
   if (typeof cell === 'number' && Number.isFinite(cell)) return Math.round(cell);
@@ -1171,7 +1198,7 @@ function openGastoModal(pre={}) {
   document.getElementById('g-tag-extra').value = '';
   openModal('overlay-gasto');
 }
-function saveGasto() {
+async function saveGasto() {
   const desc=document.getElementById('g-desc').value.trim();
   const monto=parseFloat(document.getElementById('g-monto').value);
   if(!desc||isNaN(monto)||monto<=0){alert('Completa descripci&#243;n y monto.');return;}
@@ -1179,8 +1206,20 @@ function saveGasto() {
   mergeTagsIntoGlobal(tag);
   const rec = readRecurrenteFromForm();
   const g = {id:uid(),desc,monto,montoTotal:monto,cat:document.getElementById('g-cat').value,tag,fecha:document.getElementById('g-fecha').value,tarjeta:document.getElementById('g-tarjeta').value,tipo:document.getElementById('g-tipo').value,notas:document.getElementById('g-notas').value,fuente:'manual',...rec};
-  S.gastos.push(g); save(); closeModal('overlay-gasto'); renderDashboard(); updateBadge();
-  pushGastoToSheets(g);
+  S.gastos.push(g);
+  save();
+  closeModal('overlay-gasto');
+  renderGastos();
+  renderDashboard();
+  updateBadge();
+  try {
+    await pushGastoToSheets(g);
+    setSyncStatus(true, 'Gasto en Sheet');
+  } catch (e) {
+    console.log('saveGasto sheets:', e);
+    setSyncStatus(false, 'Gasto solo en este dispositivo');
+    alert('No se pudo guardar en Google Sheet. Revisa passcode y conexión; el gasto quedó solo en este navegador.');
+  }
 }
 async function deleteGasto(id) {
   if (!confirm('¿Eliminar este gasto?')) return;
@@ -2246,7 +2285,7 @@ async function syncSheets() {
 async function loadFromSheets() {
   if (!S.gsId) return;
   try {
-    const dG = await sheetsFnGet(`${SHEET_NAME_GASTOS}!A2:O1000`);
+    const dG = await sheetsFnGet(`${SHEET_NAME_GASTOS}!A2:O5000`);
     if (dG.values) {
       const byId = new Map();
       for (const row of dG.values) {
@@ -2255,69 +2294,13 @@ async function loadFromSheets() {
       }
       S.gastos = Array.from(byId.values()).sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
     }
-    const dP = await sheetsFnGet('Pendientes!A2:H1000');
+    const dP = await sheetsFnGet('Pendientes!A2:H5000');
     if (dP.values) {
       const noProcesados = dP.values.filter(row => {
         const estado = String(row[7] || '').trim().toUpperCase();
         return estado === 'NO' || !estado;
       });
-      const sheetRowById = new Map();
-      const sheetRowByEmail = new Map();
-      noProcesados.forEach(row => {
-        const id = String(row[0] || '').trim();
-        const emailId = String(row[6] || '').trim();
-        if (id) sheetRowById.set(id, row);
-        if (emailId) sheetRowByEmail.set(emailId, row);
-      });
-      S.propuestas = (S.propuestas || []).map(p => {
-        if (p.estado !== 'pendiente') return p;
-        const row = sheetRowById.get(String(p.id || '').trim())
-          || (p.emailId ? sheetRowByEmail.get(String(p.emailId).trim()) : null);
-        if (!row) return p;
-        const sheetMonto = parseMontoFromSheetCell(row[3]);
-        const localMonto = Number(p.monto) || 0;
-        if (sheetMonto > 0 && localMonto === 0) {
-          return {
-            ...p,
-            monto: sheetMonto,
-            comercio: decodeEntities(row[2] || '') || p.comercio,
-            tarjeta: row[4] || p.tarjeta,
-            banco: normalizeBankName(row[5] || p.banco),
-          };
-        }
-        return p;
-      });
-      const emailIdsExistentes = new Set(
-        S.propuestas
-          .map(p => (p.emailId || '').trim())
-          .filter(Boolean)
-      );
-      const idsExistentes = new Set(
-        S.propuestas
-          .map(p => (p.id || '').trim())
-          .filter(Boolean)
-      );
-      const nuevos = noProcesados
-        .filter(row => {
-          const emailId = (row[6] || '').trim();
-          const id = (row[0] || '').trim();
-          if (emailId) return !emailIdsExistentes.has(emailId);
-          if (id) return !idsExistentes.has(id);
-          return true;
-        })
-        .map(row => ({
-          id: row[0] || uid(),
-          fecha: row[1],
-          comercio: decodeEntities(row[2]),
-          monto: parseMontoFromSheetCell(row[3]),
-          tarjeta: row[4] || '',
-          banco: normalizeBankName(row[5]),
-          emailId: row[6],
-          fuente: (row[6] || '').trim() ? 'gmail' : 'mobile',
-          propuesta: { cat: '', tag: '' },
-          estado: 'pendiente',
-        }));
-      S.propuestas = [...S.propuestas, ...nuevos];
+      S.propuestas = mergePropuestasFromSheetRows(noProcesados, S.propuestas);
     }
     try {
       const dPr = await sheetsFnGet(`${SHEET_NAME_PRESUPUESTOS}!A2:B500`);
@@ -2423,6 +2406,8 @@ async function loadFromSheets() {
     renderCuentas();
     renderCompartidos();
     renderConciliacion();
+    renderPendientes();
+    renderRevision();
     refreshInstrumentDatalist();
     updateBadge();
     if (document.getElementById('p-config')?.classList.contains('active')) renderConfig();
@@ -3392,7 +3377,12 @@ async function initApp() {
     if (!document.getElementById('auth-gate').classList.contains('open') && S.gsId) {
       loadFromSheets().catch(e => console.log('Sheets poll:', e));
     }
-  }, 60000);
+  }, 45000);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && S.gsId && !document.getElementById('auth-gate').classList.contains('open')) {
+      loadFromSheets().catch(e => console.log('Sheets refresh:', e));
+    }
+  });
 }
 initApp();
 
