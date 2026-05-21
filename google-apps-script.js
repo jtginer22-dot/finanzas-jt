@@ -109,9 +109,6 @@ function parseMontoDesdeCorreoBancoDeChile_(cuerpo) {
     /compra por\s*\$?\s*([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]+)?)/i,
     /compra por\s*\$?\s*([0-9]+(?:,[0-9]+)?)/i,
     /monto\s*(?:de\s*)?(?:la\s*)?(?:compra\s*)?[:\s]*\$?\s*([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]+)?)/i,
-    /total\s*(?:a\s*)?pagar\s*[:\s]*\$?\s*([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]+)?)/i,
-    /total\s*[:\s]*\$?\s*([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]+)?)/i,
-    /\$\s*([0-9]{1,3}(?:\.[0-9]{3})+(?:,[0-9]+)?)/,
   ];
   for (var i = 0; i < patterns.length; i++) {
     var m = cuerpo.match(patterns[i]);
@@ -130,8 +127,8 @@ function scanearGmail() {
   // IDs ya procesados
   const procesados = new Set();
   if (pendSheet.getLastRow() > 1) {
-    const last = pendSheet.getLastRow();
-    const ids = pendSheet.getRange(2, 7, last, 7).getValues().flat();
+    const numRows = pendSheet.getLastRow() - 1;
+    const ids = pendSheet.getRange(2, 7, numRows, 1).getValues().flat();
     ids.forEach(id => procesados.add(id));
   }
   
@@ -223,8 +220,9 @@ function scanearGmail() {
 function enviarNotificacionNuevos(n) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const pendSheet = ss.getSheetByName(SHEETS.PENDIENTES);
-  const pendientes = pendSheet.getLastRow() > 1 
-    ? pendSheet.getRange(2, 1, pendSheet.getLastRow(), 8).getValues().filter(r => r[7] === 'NO')
+  const pendNumRows = Math.max(0, pendSheet.getLastRow() - 1);
+  const pendientes = pendNumRows > 0
+    ? pendSheet.getRange(2, 1, pendNumRows, 8).getValues().filter(r => r[7] === 'NO')
     : [];
   
   if (!pendientes.length) return;
@@ -293,21 +291,24 @@ function enviarResumenDiario() {
   const cuentaSheet = ss.getSheetByName(SHEETS.CUENTAS);
   
   // Pendientes sin categorizar
-  const pendientes = pendSheet.getLastRow() > 1
-    ? pendSheet.getRange(2,1,pendSheet.getLastRow(),8).getValues().filter(r=>r[7]==='NO')
+  const pendNumRows2 = Math.max(0, pendSheet.getLastRow() - 1);
+  const pendientes = pendNumRows2 > 0
+    ? pendSheet.getRange(2, 1, pendNumRows2, 8).getValues().filter(r => r[7] === 'NO')
     : [];
-  
+
   // Gastos de este mes
   const hoy = new Date();
   const mesActual = Utilities.formatDate(hoy, CONFIG.TIMEZONE, 'yyyy-MM');
-  const gastos = gastoSheet.getLastRow() > 1
-    ? gastoSheet.getRange(2,1,gastoSheet.getLastRow(),11).getValues().filter(r=>String(r[1]).startsWith(mesActual))
+  const gastoNumRows = Math.max(0, gastoSheet.getLastRow() - 1);
+  const gastos = gastoNumRows > 0
+    ? gastoSheet.getRange(2, 1, gastoNumRows, 11).getValues().filter(r => String(r[1]).startsWith(mesActual))
     : [];
   const totalMes = gastos.reduce((a,r)=>a+parseFloat(r[5]||0),0);
   
   // Cuentas por cobrar activas
-  const cuentas = cuentaSheet.getLastRow() > 1
-    ? cuentaSheet.getRange(2,1,cuentaSheet.getLastRow(),8).getValues().filter(r=>r[1]==='cobrar'&&r[6]!=='pagado')
+  const cuentaNumRows = Math.max(0, cuentaSheet.getLastRow() - 1);
+  const cuentas = cuentaNumRows > 0
+    ? cuentaSheet.getRange(2, 1, cuentaNumRows, 8).getValues().filter(r => r[1] === 'cobrar' && r[6] !== 'pagado')
     : [];
   const totalCobrar = cuentas.reduce((a,r)=>a+parseFloat(r[3]||0),0);
   

@@ -45,6 +45,37 @@ exports.handler = async (event) => {
     return { statusCode: 403, headers, body: JSON.stringify({ error: 'spreadsheetId no permitido' }) };
   }
 
+  /** Elige monto de compra entre varios $ en el texto (evita cupo/deuda total). */
+  function pickTransactionMonto(amounts) {
+    const valid = amounts.filter((n) => Number.isFinite(n) && n >= 50 && n < 15_000_000);
+    if (!valid.length) return 0;
+    valid.sort((a, b) => a - b);
+    while (valid.length > 1) {
+      const max = valid[valid.length - 1];
+      const median = valid[Math.floor(valid.length / 2)];
+      if (max > Math.max(median * 8, 800_000) && max > 1_000_000) valid.pop();
+      else break;
+    }
+    return valid[0];
+  }
+
+  function parseMoneyFromNotificationText(text) {
+    const raw = String(text ?? '').replace(/\u00A0/g, ' ').trim();
+    if (!raw) return 0;
+    const amounts = [];
+    const compraRe = /(?:compra|consumo|cargo|monto|pagaste|pag[oó]|por)\s*(?:de\s*)?(?:en\s*)?(?:\$|CLP)?\s*([\d.,]+)/gi;
+    let m;
+    while ((m = compraRe.exec(raw)) !== null) {
+      const p = parseMoney(m[1]);
+      if (p > 0) amounts.push(p);
+    }
+    for (const m2 of raw.matchAll(/\$\s*([\d]{1,3}(?:\.\d{3})+)/g)) {
+      const p = parseMoney(m2[1]);
+      if (p > 0) amounts.push(p);
+    }
+    return pickTransactionMonto(amounts);
+  }
+
   function parseMoney(input) {
     if (typeof input === 'number' && Number.isFinite(input)) return Math.round(input);
 
@@ -81,19 +112,19 @@ exports.handler = async (event) => {
         }
       }
       if (best > 0) return best;
+      const collected = [];
       for (const v of Object.values(input)) {
         if (typeof v === 'number' && Number.isFinite(v) && v !== 0) {
-          const n = Math.round(v);
-          if (n > best) best = n;
+          collected.push(Math.round(v));
         } else if (typeof v === 'string' && /[\d]/.test(v)) {
           const p = parseMoney(v);
-          if (p > best) best = p;
+          if (p > 0) collected.push(p);
         } else if (v && typeof v === 'object') {
           const p = parseMoney(v);
-          if (p > best) best = p;
+          if (p > 0) collected.push(p);
         }
       }
-      return best;
+      return pickTransactionMonto(collected);
     }
 
     const raw = String(input ?? '')
@@ -129,22 +160,37 @@ exports.handler = async (event) => {
     return sign * Math.round(n);
   }
 
-  /** Prueba varias claves de primer nivel; `??` no sirve si `monto` viene como "" */
+  /** Prioriza texto de notificación; no usa el mayor $ del payload (cupo/deuda). */
   function extractMoneyFromBody(b) {
-    const topKeys = [
+    const textKeys = ['texto', 'text', 'body', 'notification', 'mensaje', 'raw', 'clipboard', 'contenido'];
+    let fromText = 0;
+    for (const k of textKeys) {
+      if (typeof b[k] === 'string' && b[k].trim()) {
+        const p = parseMoneyFromNotificationText(b[k]);
+        if (p > 0) {
+          fromText = p;
+          break;
+        }
+      }
+    }
+    const explicitKeys = [
       'monto', 'Monto', 'amount', 'Amount', 'importe', 'Importe',
-      'value', 'Value', 'precio', 'total', 'Total',
+      'value', 'Value', 'precio',
     ];
-    let best = 0;
-    for (const k of topKeys) {
+    let explicit = 0;
+    for (const k of explicitKeys) {
       if (!Object.prototype.hasOwnProperty.call(b, k)) continue;
       const v = b[k];
       if (v === null || v === undefined) continue;
       const p = parseMoney(v);
-      if (p > best) best = p;
+      if (p > 0 && (explicit === 0 || p < explicit)) explicit = p;
     }
-    if (best > 0) return best;
-    return parseMoney(b);
+    if (fromText > 0) {
+      if (explicit <= 0 || explicit > fromText * 5 || explicit > 2_000_000) return fromText;
+      return explicit;
+    }
+    if (explicit > 0) return explicit;
+    return parseMoneyFromNotificationText(JSON.stringify(b));
   }
 
   const uid = body.uid || Date.now().toString(36);
@@ -199,6 +245,8 @@ exports.handler = async (event) => {
     if (monto === 0) {
       responseBody.warn = 'monto_parseado_cero';
       responseBody.receivedKeys = Object.keys(body || {});
+    } else if (monto >= 2_000_000) {
+      responseBody.warn = 'monto_muy_alto_revisar';
     }
     return {
       statusCode: 200,

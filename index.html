@@ -254,6 +254,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
 </head>
 <body>
 <datalist id="iv-inst-list"></datalist>
+<datalist id="personas-list"></datalist>
 
 <div class="app">
   <!-- Backdrop mobile -->
@@ -561,6 +562,12 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
           <div class="chart-note" style="margin-top:-4px;margin-bottom:10px">Solo se exige si defines <code style="font-size:11px">APP_PASSCODE</code> en Netlify (o en tu <code style="font-size:11px">.env</code> local).</div>
           <button class="btn btn-green btn-sm" onclick="saveConfig()">Guardar y probar conexi&#243;n</button>
           <div id="config-status" style="margin-top:10px;font-size:12px;color:var(--text3)"></div>
+          <div class="info-box ambar" id="monto-repair-box" style="margin-top:12px;display:none;font-size:12px">
+            <strong>Montos sospechosos en pendientes</strong>
+            <p id="monto-repair-desc" style="margin:8px 0 0"></p>
+            <button type="button" class="btn btn-sm" style="margin-top:8px" onclick="irRevisarMontosSospechosos()">Ver en Pendientes</button>
+            <button type="button" class="btn btn-sm" style="margin-top:8px;margin-left:6px" onclick="repararMontosDesdeComercioEnSheet()">Reparar desde texto en comercio</button>
+          </div>
           <div class="info-box" style="margin-top:12px;font-size:12px">Desarrollo local: usa <code style="font-size:11px">netlify dev</code> para que <code>/.netlify/functions/sheets</code> exista en el mismo origen.</div>
         </div>
         <div class="card" style="margin-bottom:14px">
@@ -712,7 +719,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
   </div>
   <div id="pend-comp-extra" style="display:none">
     <div class="grid2">
-      <div class="form-row"><label class="form-label">&#191;Con qui&#233;n?</label><input class="fi" id="pend-quien" placeholder="Nombre"></div>
+      <div class="form-row"><label class="form-label">&#191;Con qui&#233;n?</label><input class="fi" id="pend-quien" list="personas-list" placeholder="Nombre"></div>
       <div class="form-row"><label class="form-label">A cobrar ($)</label><input class="fi" id="pend-a-cobrar" type="number" inputmode="numeric"></div>
     </div>
   </div>
@@ -1024,18 +1031,26 @@ function montoRecurrenteProyectado(g) {
 
 /** Sheet manda en pendientes: evita 570 vs 610 entre dispositivos por caché local. */
 function mergePropuestasFromSheetRows(noProcesados, prev) {
-  const fromSheet = noProcesados.map(row => ({
-    id: row[0] || uid(),
-    fecha: row[1],
-    comercio: decodeEntities(row[2]),
-    monto: parseMontoFromSheetCell(row[3]),
-    tarjeta: row[4] || '',
-    banco: normalizeBankName(row[5]),
-    emailId: row[6],
-    fuente: (row[6] || '').trim() ? 'gmail' : 'mobile',
-    propuesta: { cat: '', tag: '' },
-    estado: 'pendiente',
-  }));
+  const fromSheet = noProcesados.map(row => {
+    const comercio = decodeEntities(row[2]);
+    const rawMonto = parseMontoFromSheetCell(row[3]);
+    const fromDesc = extractMontoFromComercio(comercio);
+    let monto = rawMonto;
+    if (fromDesc > 0 && (rawMonto <= 0 || rawMonto >= 2_000_000)) monto = fromDesc;
+    return {
+      id: row[0] || uid(),
+      fecha: row[1],
+      comercio,
+      monto,
+      tarjeta: row[4] || '',
+      banco: normalizeBankName(row[5]),
+      emailId: row[6],
+      fuente: (row[6] || '').trim() ? 'gmail' : 'mobile',
+      propuesta: { cat: '', tag: '' },
+      estado: 'pendiente',
+    };
+  });
+  marcarMontosSospechososPendientes(fromSheet);
   const sheetIds = new Set(fromSheet.map(p => String(p.id || '').trim()).filter(Boolean));
   const sheetEmails = new Set(fromSheet.map(p => String(p.emailId || '').trim()).filter(Boolean));
   const kept = (prev || []).filter(p => {
@@ -1051,14 +1066,146 @@ function mergePropuestasFromSheetRows(noProcesados, prev) {
 
 function parseMontoFromSheetCell(cell) {
   if (cell == null || cell === '') return 0;
-  if (typeof cell === 'number' && Number.isFinite(cell)) return Math.round(cell);
-  const s = String(cell).trim().replace(/\s/g, '');
-  if (!s) return 0;
-  const n = parseFloat(s.replace(/\./g, '').replace(',', '.'));
-  if (Number.isFinite(n)) return Math.round(n);
-  const digits = s.replace(/[^\d.-]/g, '');
-  const n2 = parseFloat(digits);
-  return Number.isFinite(n2) ? Math.round(n2) : 0;
+  if (typeof cell === 'number' && Number.isFinite(cell)) {
+    const n = Number(cell);
+    if (n > 40_000 && n < 60_000) return 0;
+    return Math.round(n);
+  }
+  const raw = String(cell).replace(/\u00A0/g, ' ').trim();
+  if (!raw) return 0;
+  const digits = raw.replace(/[^\d.,-]/g, '');
+  if (!digits) return 0;
+  const sign = digits.startsWith('-') ? -1 : 1;
+  const unsigned = digits.replace(/-/g, '');
+  const lastComma = unsigned.lastIndexOf(',');
+  const lastDot = unsigned.lastIndexOf('.');
+  const decimalIdx = Math.max(lastComma, lastDot);
+  let normalized;
+  if (decimalIdx !== -1) {
+    const after = unsigned.slice(decimalIdx + 1).replace(/[.,]/g, '');
+    const before = unsigned.slice(0, decimalIdx).replace(/[.,]/g, '');
+    if (after.length === 3 && /^\d{3}$/.test(after) && before.length >= 1) {
+      normalized = `${before}${after}`;
+    } else {
+      normalized = `${before || '0'}.${after || '0'}`;
+    }
+  } else {
+    normalized = unsigned.replace(/[.,]/g, '');
+  }
+  const n = Number(normalized);
+  return Number.isFinite(n) ? sign * Math.round(n) : 0;
+}
+
+function extractMontoFromComercio(text) {
+  const amounts = [];
+  for (const m of String(text || '').matchAll(/\$\s*([\d]{1,3}(?:\.\d{3})+)/g)) {
+    const p = parseMontoFromSheetCell(m[1]);
+    if (p > 0) amounts.push(p);
+  }
+  if (!amounts.length) return 0;
+  amounts.sort((a, b) => a - b);
+  while (amounts.length > 1) {
+    const max = amounts[amounts.length - 1];
+    const median = amounts[Math.floor(amounts.length / 2)];
+    if (max > Math.max(median * 8, 800_000) && max > 1_000_000) amounts.pop();
+    else break;
+  }
+  return amounts[0];
+}
+
+function marcarMontosSospechososPendientes(list) {
+  const pend = (list || []).filter(p => p.estado === 'pendiente');
+  const freq = new Map();
+  pend.forEach(p => {
+    const m = Math.round(Number(p.monto) || 0);
+    if (m > 0) freq.set(m, (freq.get(m) || 0) + 1);
+  });
+  let dominante = 0;
+  let dominanteN = 0;
+  for (const [m, n] of freq) {
+    if (n > dominanteN && m >= 500_000) {
+      dominante = m;
+      dominanteN = n;
+    }
+  }
+  if (dominanteN < 4) return;
+  pend.forEach(p => {
+    if (Math.round(Number(p.monto) || 0) === dominante) p.montoSospechoso = true;
+  });
+}
+
+function personasConocidas() {
+  const s = new Set();
+  (S.cuentas || []).forEach(c => {
+    const n = String(c.persona || '').trim();
+    if (n) s.add(n);
+  });
+  (S.compartidos || []).forEach(cp => {
+    (cp.personas || []).forEach(p => {
+      const n = String(p.nombre || '').trim();
+      if (n && n.toLowerCase() !== 'yo') s.add(n);
+    });
+  });
+  return [...s].sort((a, b) => a.localeCompare(b, 'es'));
+}
+
+function refreshPersonasDatalist() {
+  const dl = document.getElementById('personas-list');
+  if (!dl) return;
+  dl.innerHTML = personasConocidas().map(n => `<option value="${esc(n)}">`).join('');
+}
+
+function updateMontoRepairBanner() {
+  const box = document.getElementById('monto-repair-box');
+  const desc = document.getElementById('monto-repair-desc');
+  if (!box || !desc) return;
+  const n = S.propuestas.filter(p => p.estado === 'pendiente' && p.montoSospechoso).length;
+  if (!n) {
+    box.style.display = 'none';
+    return;
+  }
+  box.style.display = 'block';
+  const ej = S.propuestas.find(p => p.montoSospechoso);
+  const m = ej ? fmt(ej.monto) : '';
+  desc.textContent = `${n} pendiente(s) comparten un monto atípico (${m}), típico de cupo o deuda en la notificación del banco. Corrige con el botón Monto en cada fila. Los nuevos gastos desde el celular ya no deberían repetir ese error tras el deploy.`;
+}
+
+function irRevisarMontosSospechosos() {
+  nav('pendientes');
+  const el = document.getElementById('pend-filter-min');
+  if (el) {
+    el.value = '500000';
+    renderPendientes();
+  }
+}
+
+async function repararMontosDesdeComercioEnSheet() {
+  const fixes = S.propuestas.filter(p => {
+    if (p.estado !== 'pendiente' || !p.montoSospechoso) return false;
+    const n = extractMontoFromComercio(p.comercio);
+    return n > 0 && n < Number(p.monto);
+  });
+  if (!fixes.length) {
+    alert('Ningún pendiente tiene un monto recuperable desde el texto del comercio (líneas [TC CARGO] con $). Usa el botón Monto en cada fila.');
+    return;
+  }
+  if (!confirm(`¿Actualizar ${fixes.length} monto(s) en el Sheet y en esta app?`)) return;
+  let ok = 0;
+  for (const p of fixes) {
+    p.monto = extractMontoFromComercio(p.comercio);
+    p.montoSospechoso = false;
+    try {
+      await updatePendienteMontoEnSheet(p);
+      ok++;
+    } catch (e) {
+      console.log('repair monto', p.id, e);
+    }
+  }
+  save();
+  updateMontoRepairBanner();
+  renderPendientes();
+  renderRevision();
+  alert(`Listo: ${ok} de ${fixes.length} montos corregidos en Sheet.`);
 }
 function esc(s) { return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); }
 function parseJsonSafe(s) {
@@ -1307,8 +1454,8 @@ function renderPendientes() {
         <div class="gmail-item-title">${esc(p.comercio)}</div>
         <div class="gmail-item-sub">${esc(p.fecha)} · ${esc(p.tarjeta)} · ${esc(p.banco)}</div>
       </div>
-      <div class="gmail-item-amount">${fmt(p.monto)}</div>
-      <button type="button" class="btn btn-sm" onclick="editarMontoPropuesta('${p.id}')" title="Corregir monto si llegó en $0 por error">Monto</button>
+      <div class="gmail-item-amount" style="${p.montoSospechoso ? 'color:var(--ambar);text-decoration:underline dotted' : ''}" title="${p.montoSospechoso ? 'Monto probablemente incorrecto (cupo/deuda). Usa Monto.' : ''}">${fmt(p.monto)}${p.montoSospechoso ? ' ⚠' : ''}</div>
+      <button type="button" class="btn btn-sm" onclick="editarMontoPropuesta('${p.id}')" title="Corregir monto si llegó mal desde el banco">Monto</button>
       <button class="btn btn-sm btn-green" onclick="abrirCat('${p.id}')">Categorizar</button>
       <button class="del-btn" onclick="descartarPend('${p.id}')"></button>
     </div>`).join('');
@@ -1319,6 +1466,7 @@ function abrirCat(id) {
   S.pendIdx=id;
   const p=S.propuestas.find(x=>x.id===id);
   if(!p) return;
+  refreshPersonasDatalist();
   document.getElementById('pend-title').textContent=p.comercio;
   document.getElementById('pend-meta').textContent=`${p.fecha} | ${fmt(p.monto)} | ${p.tarjeta || ''}`;
   fillCat('pend-cat');
@@ -1572,8 +1720,10 @@ async function editarMontoPropuesta(id) {
     return;
   }
   p.monto = Math.round(n);
+  p.montoSospechoso = false;
   save();
   updateBadge();
+  updateMontoRepairBanner();
   renderPendientes();
   renderDashboard();
   try {
@@ -1681,7 +1831,7 @@ function renderCompPersonas() {
   const m=document.getElementById('c-method').value;
   document.getElementById('comp-personas').innerHTML=compPersonas.map((p,i)=>`
     <div class="split-row">
-      <input class="fi" value="${p.nombre}" placeholder="Nombre" oninput="compPersonas[${i}].nombre=this.value">
+      <input class="fi" list="personas-list" value="${p.nombre}" placeholder="Nombre" oninput="compPersonas[${i}].nombre=this.value">
       ${m==='pct'?`<input class="fi" type="number" inputmode="numeric" value="${p.pct}" oninput="compPersonas[${i}].pct=+this.value;recalcComp()">`:
         m==='monto'?`<input class="fi" type="number" inputmode="numeric" value="${Math.round(p.monto)}" oninput="compPersonas[${i}].monto=+this.value;recalcComp()">`:
         `<input class="fi" value="${fmt(p.monto)}" readonly style="background:var(--gris-m)">`}
@@ -2410,6 +2560,7 @@ async function loadFromSheets() {
     renderRevision();
     refreshInstrumentDatalist();
     updateBadge();
+    updateMontoRepairBanner();
     if (document.getElementById('p-config')?.classList.contains('active')) renderConfig();
     setSyncStatus(true, 'Sincronizado OK');
   } catch (e) {
@@ -3336,6 +3487,8 @@ function renderConfig() {
   document.getElementById('app-passcode').value = S.appPasscode || '';
   document.getElementById('cats-display').innerHTML = S.cats.map(c => `<span class="chip badge b-${c.color}">${c.nombre} <span style="opacity:.5;cursor:pointer;margin-left:2px" onclick="deleteCat('${c.id}')"></span></span>`).join('');
   document.getElementById('tags-display').innerHTML = S.tags.map((t, i) => `<span class="chip badge b-azul">${t} <span style="opacity:.5;cursor:pointer;margin-left:2px" onclick="deleteTag(${i})"></span></span>`).join('');
+  refreshPersonasDatalist();
+  updateMontoRepairBanner();
   renderPresupuestosRows();
   const nowMonth = new Date().toISOString().slice(0,7);
   const inFecha = document.getElementById('in-fecha');
