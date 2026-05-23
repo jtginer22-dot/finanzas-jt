@@ -190,12 +190,29 @@ exports.handler = async (event) => {
       return explicit;
     }
     if (explicit > 0) return explicit;
-    return parseMoneyFromNotificationText(JSON.stringify(b));
+    // Wallet / transacción: buscar montos solo en claves conocidas (no stringify del dict entero).
+    const walletAmountKeys = [
+      'WFCurrencyAmount', 'transactionAmount', 'Transaction Amount', 'Importe', 'importe',
+    ];
+    const walletAmounts = [];
+    for (const k of walletAmountKeys) {
+      if (!Object.prototype.hasOwnProperty.call(b, k)) continue;
+      const p = parseMoney(b[k]);
+      if (p > 0) walletAmounts.push(p);
+    }
+    if (walletAmounts.length) return pickTransactionMonto(walletAmounts);
+    for (const k of Object.keys(b)) {
+      if (typeof b[k] !== 'string') continue;
+      if (!/\$|compra|cargo|consumo/i.test(b[k])) continue;
+      const p = parseMoneyFromNotificationText(b[k]);
+      if (p > 0) return p;
+    }
+    return 0;
   }
 
-  const uid = body.uid || Date.now().toString(36);
-  const fecha = body.fecha || new Date().toISOString().split('T')[0];
-  const comercio = body.comercio || 'Compra';
+  const uid = body.uid || body.transactionIdentifier || body['Transaction Identifier'] || Date.now().toString(36);
+  const fecha = body.fecha || body.date || new Date().toISOString().split('T')[0];
+  const comercio = body.comercio || body.Merchant || body.merchant || body.name || body.Name || 'Compra';
   const monto = extractMoneyFromBody(body);
   const tarjeta = body.tarjeta || 'TC';
   const banco = body.banco || 'Santander';
