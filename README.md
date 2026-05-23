@@ -6,6 +6,7 @@
 - `netlify.toml` + `netlify/functions/sheets.js` → Proxy seguro hacia Google Sheets (API key solo en Netlify)
 - `netlify/functions/llm-suggest.js` → contrato base para sugerencias de categorización con LLM (pendiente proveedor)
 - `netlify/functions/ingest-mobile.js` → endpoint seguro para capturas desde Shortcut/Scriptable (sin exponer API key)
+- `docs/ATAJO_IOS_MAYO_2026.md` → guía del Atajo iOS (evitar confundir monto de compra con cupo/deuda)
 
 ---
 
