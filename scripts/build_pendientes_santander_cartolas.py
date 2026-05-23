@@ -176,9 +176,22 @@ def read_corriente(xlsx: Path) -> list[RowOut]:
     return out
 
 
-def parse_clp_amount_token(tok: str) -> float:
-    t = tok.replace(".", "").replace(",", ".")
-    return float(t)
+def parse_clp_amount_token(tok: str) -> float | None:
+    raw = (tok or "").strip()
+    if not raw:
+        return None
+    # Números de cuenta/RUT pegados al final de línea PDF (ej. 0083797630) → millones falsos
+    digits_only = re.sub(r"[^\d]", "", raw)
+    if len(digits_only) >= 7 and "." not in raw and "," not in raw:
+        return None
+    t = raw.replace(".", "").replace(",", ".")
+    try:
+        val = float(t)
+    except ValueError:
+        return None
+    if val < 1 or val > 50_000_000:
+        return None
+    return val
 
 
 def resolve_date_in_range(d: int, m: int, desde: date, hasta: date) -> date | None:
@@ -277,6 +290,8 @@ def parse_vista_movement_line(line: str, last_dm: tuple[int, int] | None) -> tup
         if not mam:
             return "", None, (dday, dmonth)
         amt = parse_clp_amount_token(mam.group(1))
+        if amt is None:
+            return "", None, (dday, dmonth)
         desc = left[: mam.start()].strip()
         return desc, amt, (dday, dmonth)
 
@@ -287,6 +302,8 @@ def parse_vista_movement_line(line: str, last_dm: tuple[int, int] | None) -> tup
     if not mam:
         return "", None, last_dm
     amt = parse_clp_amount_token(mam.group(1))
+    if amt is None:
+        return "", None, last_dm
     desc = line[: mam.start()].strip()
     return desc, amt, last_dm
 

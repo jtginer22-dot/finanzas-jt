@@ -407,9 +407,20 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
             <input class="fi" type="date" id="pend-filter-hasta" title="Hasta" aria-label="Fecha hasta" onchange="renderPendientes()" style="max-width:155px">
             <input class="fi" type="number" inputmode="decimal" id="pend-filter-min" placeholder="Monto mín ($)" style="max-width:128px" oninput="renderPendientes()">
             <input class="fi" type="number" inputmode="decimal" id="pend-filter-max" placeholder="Monto máx ($)" style="max-width:128px" oninput="renderPendientes()">
-            <button type="button" class="btn btn-sm" onclick="clearPendFilters()">Limpiar filtros</button>
+            <select class="fi" id="pend-sort-key" title="Ordenar por" onchange="renderPendientes()" style="max-width:118px">
+              <option value="fecha">Fecha</option>
+              <option value="monto">Monto</option>
+              <option value="comercio">Comercio</option>
+            </select>
+            <select class="fi" id="pend-sort-dir" title="Dirección" onchange="renderPendientes()" style="max-width:132px">
+              <option value="desc">↓ Mayor primero</option>
+              <option value="asc">↑ Menor primero</option>
+            </select>
+            <button type="button" class="btn btn-sm" onclick="filterPendSospechosos()">Sospechosos</button>
+            <button type="button" class="btn btn-sm" onclick="filterPendSoloTcCargo()">TC cargos</button>
+            <button type="button" class="btn btn-sm" onclick="clearPendFilters()">Limpiar</button>
           </div>
-          <div class="chart-note" style="margin-top:8px;margin-bottom:0">Aplica a la lista de Gmail y a la tabla de revisión. “Confirmar / Rechazar todas” sólo opera sobre pendientes que pasan el filtro.</div>
+          <div class="chart-note" style="margin-top:8px;margin-bottom:0">Filtros y orden aplican a la lista y a la tabla de revisión. “Confirmar / Rechazar todas” sólo opera sobre pendientes visibles.</div>
         </div>
         <div id="pendientes-list"></div>
         <div class="card" style="margin-top:12px">
@@ -566,7 +577,8 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
             <strong>Montos sospechosos en pendientes</strong>
             <p id="monto-repair-desc" style="margin:8px 0 0"></p>
             <button type="button" class="btn btn-sm" style="margin-top:8px" onclick="irRevisarMontosSospechosos()">Ver en Pendientes</button>
-            <button type="button" class="btn btn-sm" style="margin-top:8px;margin-left:6px" onclick="repararMontosDesdeComercioEnSheet()">Reparar desde texto en comercio</button>
+            <button type="button" class="btn btn-sm" style="margin-top:8px;margin-left:6px" onclick="repararMontosDesdeComercioEnSheet()">Reparar desde $ en comercio</button>
+            <button type="button" class="btn btn-sm" style="margin-top:8px;margin-left:6px" onclick="rechazarCartolaImportMasivo()">Rechazar cartola mal parseada</button>
           </div>
           <div class="info-box" style="margin-top:12px;font-size:12px">Desarrollo local: usa <code style="font-size:11px">netlify dev</code> para que <code>/.netlify/functions/sheets</code> exista en el mismo origen.</div>
         </div>
@@ -1050,6 +1062,7 @@ function mergePropuestasFromSheetRows(noProcesados, prev) {
       estado: 'pendiente',
     };
   });
+  fromSheet.forEach(marcarMontoSospechosoSiAplica);
   marcarMontosSospechososPendientes(fromSheet);
   const sheetIds = new Set(fromSheet.map(p => String(p.id || '').trim()).filter(Boolean));
   const sheetEmails = new Set(fromSheet.map(p => String(p.emailId || '').trim()).filter(Boolean));
@@ -1177,6 +1190,28 @@ function irRevisarMontosSospechosos() {
     el.value = '500000';
     renderPendientes();
   }
+}
+
+async function rechazarCartolaImportMasivo() {
+  const candidatos = S.propuestas.filter(p => {
+    if (p.estado !== 'pendiente') return false;
+    if (!esComercioImportCartola(p.comercio)) return false;
+    const m = Number(p.monto) || 0;
+    return p.montoSospechoso || m >= 1_000_000;
+  });
+  if (!candidatos.length) {
+    alert('No hay pendientes de cartola importada ([Vista]/[CC]/[TC]) con monto sospechoso.');
+    return;
+  }
+  const msg = `¿Rechazar ${candidatos.length} filas de importación cartola con monto probablemente mal parseado?\n\nNo borra el Sheet; solo las saca de pendientes. Puedes recuperarlas desde revisión si reabres.\n\nTip: los cargos reales de TC suelen tener [TC CARGO] y montos bajo $500.000.`;
+  if (!confirm(msg)) return;
+  candidatos.forEach(p => { p.estado = 'rechazado'; });
+  save();
+  updateMontoRepairBanner();
+  renderPendientes();
+  renderRevision();
+  updateBadge();
+  alert(`Rechazados ${candidatos.length} pendientes. Corrige en Sheet columna D solo los que sí quieras categorizar.`);
 }
 
 async function repararMontosDesdeComercioEnSheet() {
@@ -1398,7 +1433,67 @@ function clearPendFilters() {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
+  const sk = document.getElementById('pend-sort-key');
+  const sd = document.getElementById('pend-sort-dir');
+  if (sk) sk.value = 'fecha';
+  if (sd) sd.value = 'desc';
   renderPendientes();
+}
+
+function sortPendientesList(list) {
+  const key = document.getElementById('pend-sort-key')?.value || 'fecha';
+  const dir = document.getElementById('pend-sort-dir')?.value || 'desc';
+  const mul = dir === 'asc' ? 1 : -1;
+  return [...list].sort((a, b) => {
+    if (key === 'monto') {
+      const ma = Number(a.monto) || 0;
+      const mb = Number(b.monto) || 0;
+      if (ma !== mb) return mul * (ma - mb);
+      return String(a.fecha || '').localeCompare(String(b.fecha || ''));
+    }
+    if (key === 'comercio') {
+      const c = String(a.comercio || '').localeCompare(String(b.comercio || ''), 'es', { sensitivity: 'base' });
+      if (c !== 0) return mul * c;
+      return (Number(b.monto) || 0) - (Number(a.monto) || 0);
+    }
+    const fa = String(a.fecha || '');
+    const fb = String(b.fecha || '');
+    if (fa !== fb) return mul * fa.localeCompare(fb);
+    return (Number(b.monto) || 0) - (Number(a.monto) || 0);
+  });
+}
+
+function filterPendSospechosos() {
+  const el = document.getElementById('pend-filter-min');
+  if (el) el.value = '500000';
+  const sk = document.getElementById('pend-sort-key');
+  const sd = document.getElementById('pend-sort-dir');
+  if (sk) sk.value = 'monto';
+  if (sd) sd.value = 'desc';
+  renderPendientes();
+}
+
+function filterPendSoloTcCargo() {
+  const q = document.getElementById('pend-filter-q');
+  if (q) q.value = '[TC CARGO]';
+  const sk = document.getElementById('pend-sort-key');
+  if (sk) sk.value = 'fecha';
+  renderPendientes();
+}
+
+/** Cartola Vista/CC: a veces el PDF pega número de cuenta como monto (millones falsos). */
+function esComercioImportCartola(comercio) {
+  return /^\[(Vista|CC |TC )/i.test(String(comercio || ''));
+}
+
+function marcarMontoSospechosoSiAplica(p) {
+  const m = Math.round(Number(p.monto) || 0);
+  const c = String(p.comercio || '');
+  if (m <= 0) return;
+  if (p.montoSospechoso) return;
+  if (m >= 2_000_000 && !/\$\s*[\d]/.test(c)) p.montoSospechoso = true;
+  if (esComercioImportCartola(c) && m >= 1_000_000) p.montoSospechoso = true;
+  if (/^\[Vista\]/i.test(c) && m >= 500_000 && /\d{7,}/.test(c)) p.montoSospechoso = true;
 }
 function getPendFilter() {
   return {
@@ -1436,7 +1531,7 @@ function renderPendientes() {
   const el=document.getElementById('pendientes-list');
   const f = getPendFilter();
   const totalPend = S.propuestas.filter(p => p.estado === 'pendiente');
-  const pend = totalPend.filter(p => passesPendFilter(p, f));
+  const pend = sortPendientesList(totalPend.filter(p => passesPendFilter(p, f)));
   if (!totalPend.length) {
     el.innerHTML = `<div class="empty"><div class="empty-icon"></div>Sin gastos pendientes de categorizar</div>`;
     renderRevision();
@@ -3441,7 +3536,7 @@ function renderRevision() {
   const el = document.getElementById('revision-body');
   if(!el) return;
   const f = getPendFilter();
-  const list = [...S.propuestas].filter(p => passesPendFilter(p, f)).sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha)));
+  const list = sortPendientesList(S.propuestas.filter(p => passesPendFilter(p, f)));
   if(!list.length) {
     el.innerHTML = `<tr><td colspan="6" class="empty" style="padding:24px">Sin movimientos con este filtro (o ninguno en Gmail)</td></tr>`;
     return;

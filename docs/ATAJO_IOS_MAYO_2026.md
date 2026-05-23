@@ -9,6 +9,16 @@ Si el atajo mandaba el número más grande, todas las filas en Pendientes quedab
 
 Desde el deploy `6b70d6c`, el servidor prioriza el monto de **compra** en el texto.
 
+## Qué movimientos cubre
+
+| Origen | Qué captura |
+|--------|------------|
+| **Atajo + `texto`** | Notificaciones Wallet o banco (Disney+, Uber, Falabella, etc.) |
+| **Gmail (Apps Script)** | Compras TC Banco de Chile y Santander por email (incl. suscripciones si el banco notifica) |
+| **Import cartola** | Histórico PDF/Excel; cuidado con filas `[Vista]` / `[CC]` (montos pueden venir mal) |
+
+**Cursor u otros cargos automáticos sin Wallet:** si Santander envía email de cargo TC, los tomará Gmail tras actualizar el script en el Sheet. Si no hay email, aparecerán en la cartola TC → import o registro manual.
+
 ## Endpoint
 
 ```

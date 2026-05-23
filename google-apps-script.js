@@ -120,6 +120,37 @@ function parseMontoDesdeCorreoBancoDeChile_(cuerpo) {
   return null;
 }
 
+/** Monto de compra TC Santander (evita cupo/deuda; varios formatos de correo). */
+function parseMontoDesdeCorreoSantanderTC_(cuerpo) {
+  if (!cuerpo) return null;
+  var amounts = [];
+  var patterns = [
+    /compra\s+por\s*\$?\s*([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]+)?)/gi,
+    /cargo\s+por\s*\$?\s*([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]+)?)/gi,
+    /monto\s*(?:de\s*)?(?:la\s*)?(?:compra\s*)?[:\s]*\$?\s*([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]+)?)/gi,
+    /por\s*\$?\s*([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]+)?)\s+en\s/gi,
+  ];
+  for (var pi = 0; pi < patterns.length; pi++) {
+    var re = patterns[pi];
+    var m;
+    while ((m = re.exec(cuerpo)) !== null) {
+      if (m[1]) {
+        var n = parseFloat(String(m[1]).replace(/\./g, '').replace(',', '.'));
+        if (n > 0 && n < 50000000) amounts.push(n);
+      }
+    }
+  }
+  if (!amounts.length) return null;
+  amounts.sort(function (a, b) { return a - b; });
+  while (amounts.length > 1) {
+    var max = amounts[amounts.length - 1];
+    var med = amounts[Math.floor(amounts.length / 2)];
+    if (max > Math.max(med * 8, 800000) && max > 1000000) amounts.pop();
+    else break;
+  }
+  return amounts[0];
+}
+
 function scanearGmail() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const pendSheet = ss.getSheetByName(SHEETS.PENDIENTES);
@@ -179,8 +210,9 @@ function scanearGmail() {
     const msgs = hilo.getMessages();
     msgs.forEach(msg => {
       const msgId = msg.getId();
-      if (procesados.has(msgId)) return;
-      
+      if (seenMsg.has(msgId) || procesados.has(msgId)) return;
+      seenMsg.add(msgId);
+
       const cuerpo = msg.getPlainBody() || msg.getBody();
       const fecha = Utilities.formatDate(msg.getDate(), CONFIG.TIMEZONE, 'yyyy-MM-dd');
       
@@ -201,11 +233,44 @@ function scanearGmail() {
     });
   });
   
-  // ---- SANTANDER — Compras TC (cuando estén activas) ----
-  // Activar cuando llegue el primer email de notificación TC Santander
-  // const hilosSantTC = GmailApp.search('from:mensajeria@santander.cl subject:"Compra" newer_than:7d', 0, 20);
-  // Agregar parser aquí una vez que tengamos el formato del email
-  
+  // ---- SANTANDER — Compras TC (notificación email; suscripciones, comercio físico, etc.) ----
+  var queriesSantTC = [
+    'from:mensajeria@santander.cl (compra OR cargo OR consumo) (tarjeta OR crédito OR credito) newer_than:7d',
+    'from:mensajeria@santander.cl subject:(Compra OR Cargo OR "Tarjeta de Crédito") newer_than:7d',
+  ];
+  queriesSantTC.forEach(function (q) {
+    var hilosSantTC = GmailApp.search(q, 0, 20);
+    hilosSantTC.forEach(function (hilo) {
+      var msgs = hilo.getMessages();
+      msgs.forEach(function (msg) {
+        var msgId = msg.getId();
+        if (seenMsg.has(msgId) || procesados.has(msgId)) return;
+        seenMsg.add(msgId);
+
+        var cuerpo = msg.getPlainBody() || msg.getBody();
+        var monto = parseMontoDesdeCorreoSantanderTC_(cuerpo);
+        if (monto === null || monto <= 0) return;
+
+        var fecha = Utilities.formatDate(msg.getDate(), CONFIG.TIMEZONE, 'yyyy-MM-dd');
+        var comercio = msg.getSubject();
+        var comMatch = cuerpo.match(/en\s+([A-ZÁÉÍÓÚÑ0-9][A-ZÁÉÍÓÚÑ0-9\s\.\-\*]+?)\s+el\s+\d/i);
+        if (comMatch) comercio = comMatch[1].trim();
+        else {
+          var subM = msg.getSubject().match(/compra\s+en\s+(.+)/i);
+          if (subM) comercio = subM[1].trim();
+        }
+
+        var tarjetaMatch = cuerpo.match(/\*{4}(\d{4})/);
+        var tarjeta = tarjetaMatch ? ('TC Santander ****' + tarjetaMatch[1]) : 'TC Santander';
+
+        var uidTc = Utilities.getUuid().slice(0, 8);
+        pendSheet.appendRow([uidTc, fecha, comercio, monto, tarjeta, 'Santander', msgId, 'NO']);
+        nuevos++;
+        Logger.log('Santander TC (correo): ' + comercio + ' $' + monto);
+      });
+    });
+  });
+
   Logger.log(`Scanner completo: ${nuevos} nuevos gastos detectados`);
   
   // Si hay nuevos, enviar notificación inmediata

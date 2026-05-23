@@ -245,7 +245,7 @@ exports.handler = async (event) => {
     if (monto === 0) {
       responseBody.warn = 'monto_parseado_cero';
       responseBody.receivedKeys = Object.keys(body || {});
-    } else if (monto >= 2_000_000) {
+    } else if (Math.abs(monto) >= 2_000_000) {
       responseBody.warn = 'monto_muy_alto_revisar';
     }
     return {
