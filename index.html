@@ -2827,7 +2827,7 @@ function renderDashboard() {
     return d.getMonth() === per.month && d.getFullYear() === per.year;
   });
 
-  const totalConfirmed = gm.reduce((a, g) => a + g.monto, 0);
+  const totalConfirmed = gm.reduce((a, g) => a + montoEfectivo(g), 0);
 
   const allPend = (S.propuestas || []).filter(p => p.estado === 'pendiente');
   const pendMes = per.mode === 'month'
@@ -2883,8 +2883,8 @@ function renderDashboard() {
   const compEl = document.getElementById('m-comprometido');
   const compSub = document.getElementById('m-comprometido-s');
   if (per.mode === 'month') {
-    let sumCuotasMes = gm.filter(esRegistroCuotaDashboard).reduce((a, g) => a + g.monto, 0);
-    let sumCred = gm.filter(g => !esRegistroCuotaDashboard(g) && String(g.cat) === 'Crédito consumo').reduce((a, g) => a + g.monto, 0);
+    let sumCuotasMes = gm.filter(esRegistroCuotaDashboard).reduce((a, g) => a + montoEfectivo(g), 0);
+    let sumCred = gm.filter(g => !esRegistroCuotaDashboard(g) && String(g.cat) === 'Crédito consumo').reduce((a, g) => a + montoEfectivo(g), 0);
     const sumRec = S.gastos
       .filter(g => aplicaRecurrenteEnMes(g, monthKeyDashStr) && !esRegistroCuotaDashboard(g))
       .reduce((a, g) => a + montoRecurrenteProyectado(g), 0);
@@ -2905,7 +2905,7 @@ function renderDashboard() {
 
     const acumMesHastaHoy = gm
       .filter(g => String(g.fecha || '') <= HOY)
-      .reduce((a, g) => a + g.monto, 0);
+      .reduce((a, g) => a + montoEfectivo(g), 0);
 
     if (mismoMesCal) {
       const diaActual = Math.max(1, now.getDate());
@@ -2956,7 +2956,7 @@ function renderBudgetInsights(gm) {
   if (!tbody) return;
   const P = S.presupuestos || {};
   const spentByCat = {};
-  gm.forEach(g => { spentByCat[g.cat] = (spentByCat[g.cat] || 0) + g.monto; });
+  gm.forEach(g => { spentByCat[g.cat] = (spentByCat[g.cat] || 0) + montoEfectivo(g); });
   const rows = [];
   let totalCap = 0;
   let totalSpent = 0;
@@ -3013,7 +3013,7 @@ function renderBudgetInsights(gm) {
 }
 
 function renderCatChart(gm) {
-  const cats={}; gm.forEach(g=>cats[g.cat]=(cats[g.cat]||0)+g.monto);
+  const cats={}; gm.forEach(g=>cats[g.cat]=(cats[g.cat]||0)+montoEfectivo(g));
   const labels=Object.keys(cats); const data=Object.values(cats);
   const bgs=labels.map(l=>COLORS[catByNombre(l).color]||'#6B7280');
   document.getElementById('legend-cat').innerHTML=labels.map((l,i)=>`<div class="legend-item"><div class="legend-dot" style="background:${bgs[i]}"></div>${l} <strong style="font-family:var(--mono)">${fmt(data[i])}</strong></div>`).join('');
@@ -3023,7 +3023,7 @@ function renderCatChart(gm) {
 }
 
 function renderTendChart(gm,mes,anio) {
-  const sem=[0,0,0,0]; gm.forEach(g=>{const d=new Date(g.fecha+'T12:00');const w=Math.min(3,Math.floor((d.getDate()-1)/7));sem[w]+=g.monto;});
+  const sem=[0,0,0,0]; gm.forEach(g=>{const d=new Date(g.fecha+'T12:00');const w=Math.min(3,Math.floor((d.getDate()-1)/7));sem[w]+=montoEfectivo(g);});
   if(S.charts.tend) S.charts.tend.destroy();
   S.charts.tend=new Chart(document.getElementById('chart-tend'),{type:'bar',data:{labels:['Semana 1','Semana 2','Semana 3','Semana 4'],datasets:[{label:'Gastos',data:sem,backgroundColor:'#10B981',borderRadius:6,borderSkipped:false}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:v=>fmt(v)},grid:{color:'rgba(0,0,0,0.04)'}},x:{ticks:{autoSkip:false,font:{size:11}},grid:{display:false}}}}});
 }

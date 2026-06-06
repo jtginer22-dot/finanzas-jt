@@ -19,7 +19,7 @@
 // ============================================================
 const CONFIG = {
   EMAIL_DESTINO: 'jtginer22@gmail.com',
-  APP_URL: 'https://TU-APP.netlify.app',  // Actualizar con tu URL de Netlify
+  APP_URL: 'https://finanzas-jt.netlify.app',  // URL de Netlify — actualizar si cambia
   TIMEZONE: 'America/Santiago',
 };
 
@@ -273,6 +273,9 @@ function scanearGmail() {
 
   // ---- SCREENSHOTS enviados por el usuario a sí mismo ----
   nuevos += scanearScreenshotsEmail_(pendSheet, procesados, seenMsg);
+
+  // ---- ESTADO DE CUENTA MENSUAL SANTANDER (PDF adjunto) ----
+  nuevos += scanearEstadoCuentaSantander_(pendSheet, procesados, seenMsg);
 
   Logger.log(`Scanner completo: ${nuevos} nuevos gastos detectados`);
   
@@ -559,6 +562,139 @@ function marcarProcesado(emailId) {
       break;
     }
   }
+}
+
+// ============================================================
+// CONFIGURAR ACTIVADORES — ejecutar UNA sola vez
+// ============================================================
+
+/**
+ * Configura el trigger de scanearGmail cada 10 minutos.
+ * Ejecutar desde el editor de Apps Script: seleccionar esta función → ▶ Ejecutar.
+ * Solo hace falta correrla una vez; elimina duplicados automáticamente.
+ */
+function configurarActivadores() {
+  // Eliminar activadores previos de scanearGmail para evitar duplicados
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    if (t.getHandlerFunction() === 'scanearGmail' ||
+        t.getHandlerFunction() === 'enviarResumenDiario') {
+      ScriptApp.deleteTrigger(t);
+    }
+  });
+  // scanearGmail cada 10 minutos
+  ScriptApp.newTrigger('scanearGmail')
+    .timeBased()
+    .everyMinutes(10)
+    .create();
+  // Resumen diario a las 8 AM
+  ScriptApp.newTrigger('enviarResumenDiario')
+    .timeBased()
+    .atHour(8)
+    .everyDays(1)
+    .create();
+  Logger.log('✅ Activadores configurados: scanearGmail cada 10 min + resumen 8 AM');
+  SpreadsheetApp.getUi().alert('✅ Listo:\n• scanearGmail: cada 10 minutos\n• Resumen diario: 8:00 AM\n\nYa puedes cerrar el editor.');
+}
+
+// ============================================================
+// PARSER CARTOLAS Y ESTADOS DE CUENTA SANTANDER
+// ============================================================
+
+/**
+ * Parsea el estado de cuenta mensual TC Santander (email con PDF adjunto).
+ * Usa el mismo OCR de Drive que los screenshots.
+ * El email llega de mensajeria@santander.cl con asunto "Estado de Cuenta".
+ */
+function scanearEstadoCuentaSantander_(pendSheet, procesados, seenMsg) {
+  var nuevos = 0;
+  var queries = [
+    'from:mensajeria@santander.cl (subject:"estado de cuenta" OR subject:"cartola" OR subject:"resumen de cuenta") newer_than:35d',
+    'from:notificaciones@santander.cl (subject:"estado de cuenta" OR subject:"cartola") newer_than:35d',
+  ];
+  queries.forEach(function(q) {
+    try {
+      var hilos = GmailApp.search(q, 0, 5);
+      hilos.forEach(function(hilo) {
+        hilo.getMessages().forEach(function(msg) {
+          var msgId = msg.getId();
+          if (seenMsg.has(msgId) || procesados.has(msgId)) return;
+          seenMsg.add(msgId);
+
+          // Intentar extraer transacciones del cuerpo HTML primero
+          var cuerpo = msg.getPlainBody() || '';
+          var transacciones = parsearTransaccionesDeCuerpo_(cuerpo, 'Santander');
+
+          // Si el cuerpo no tiene datos, intentar con PDF adjunto via OCR
+          if (!transacciones.length) {
+            var attachments = msg.getAttachments();
+            attachments.forEach(function(att) {
+              var tipo = att.getContentType();
+              if (tipo !== 'application/pdf' && !tipo.startsWith('image/')) return;
+              try {
+                var blob = att.copyBlob();
+                var file = Drive.Files.insert(
+                  { title: 'ocr_cartola_temp', mimeType: blob.getContentType() },
+                  blob,
+                  { ocr: true, ocrLanguage: 'es' }
+                );
+                var doc = DocumentApp.openById(file.id);
+                var texto = doc.getBody().getText();
+                DriveApp.getFileById(file.id).setTrashed(true);
+                if (texto) transacciones = transacciones.concat(parsearTransaccionesDeCuerpo_(texto, 'Santander'));
+              } catch (e) {
+                Logger.log('OCR cartola error: ' + e.message);
+              }
+            });
+          }
+
+          transacciones.forEach(function(t) {
+            var uid = Utilities.getUuid().slice(0, 8);
+            pendSheet.appendRow([uid, t.fecha, t.comercio, t.monto, 'TC Santander', 'Santander', msgId + '_' + uid, 'NO']);
+            nuevos++;
+            Logger.log('Cartola Santander: ' + t.comercio + ' $' + t.monto + ' ' + t.fecha);
+          });
+          if (transacciones.length) procesados.add(msgId);
+        });
+      });
+    } catch (e) {
+      Logger.log('scanearEstadoCuenta error: ' + e.message);
+    }
+  });
+  return nuevos;
+}
+
+/**
+ * Extrae transacciones individuales de un texto de cartola/estado de cuenta.
+ * Formato Santander TC típico: COMERCIO    DD/MM/AAAA    $XX.XXX
+ */
+function parsearTransaccionesDeCuerpo_(texto, banco) {
+  var transacciones = [];
+  if (!texto) return transacciones;
+  // Patrón: texto con fecha DD/MM/YYYY y monto $X.XXX o X.XXX
+  // Líneas tipo: "JUMBO VITACURA        05/06/2026      45.990"
+  var lineas = texto.split(/[\n\r]+/);
+  var montoRe = /\$?\s*(\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d{4,})/;
+  var fechaRe = /\b(\d{2})[\/\-](\d{2})[\/\-](\d{4})\b/;
+  lineas.forEach(function(linea) {
+    linea = linea.trim();
+    if (linea.length < 10) return;
+    // Ignorar líneas de totales o headers
+    if (/total|saldo|disponible|l.mite|cupo|pago m.nimo|fecha\s+descripci/i.test(linea)) return;
+    var fechaM = linea.match(fechaRe);
+    var montoM = linea.match(montoRe);
+    if (!fechaM || !montoM) return;
+    var monto = parseFloat(String(montoM[1]).replace(/\./g, '').replace(',', '.'));
+    if (!monto || monto < 100 || monto > 50000000) return;
+    // Fecha en formato YYYY-MM-DD
+    var fecha = fechaM[3] + '-' + fechaM[2] + '-' + fechaM[1];
+    // Comercio: texto antes de la fecha
+    var comercio = linea.slice(0, linea.indexOf(fechaM[0])).trim().replace(/\s{2,}/g, ' ');
+    if (!comercio || comercio.length < 2) comercio = banco + ' (cartola)';
+    // Ignorar abonos (números negativos o líneas con "abono"/"pago")
+    if (/abono|pago\s+cuenta|pago\s+tc/i.test(linea)) return;
+    transacciones.push({ fecha: fecha, comercio: comercio.slice(0, 60), monto: Math.round(monto) });
+  });
+  return transacciones;
 }
 
 // Test manual — ejecutar para verificar que el script funciona
