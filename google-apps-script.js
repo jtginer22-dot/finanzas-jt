@@ -271,12 +271,84 @@ function scanearGmail() {
     });
   });
 
+  // ---- SCREENSHOTS enviados por el usuario a sí mismo ----
+  nuevos += scanearScreenshotsEmail_(pendSheet, procesados, seenMsg);
+
   Logger.log(`Scanner completo: ${nuevos} nuevos gastos detectados`);
   
   // Si hay nuevos, enviar notificación inmediata
   if (nuevos > 0) {
     enviarNotificacionNuevos(nuevos);
   }
+}
+
+// ============================================================
+// SCANNER SCREENSHOTS — el usuario manda captura por email a sí mismo
+// ============================================================
+
+/**
+ * Detecta emails del propio usuario con asunto que incluya "gasto", "💳" o "santander",
+ * extrae el texto de la imagen adjunta usando OCR de Google Drive, parsea el monto
+ * y lo agrega a Pendientes.
+ *
+ * PREREQUISITO EN APPS SCRIPT: habilitar "Drive API" en Servicios (ícono +) → Drive API.
+ * INSTRUCCIÓN DE USO: saca captura de la notif Santander → comparte → Mail → asunto "💳"
+ */
+function scanearScreenshotsEmail_(pendSheet, procesados, seenMsg) {
+  const q = `from:${CONFIG.EMAIL_DESTINO} (subject:gasto OR subject:💳 OR subject:santander) has:attachment newer_than:3d`;
+  var nuevos = 0;
+  try {
+    var hilos = GmailApp.search(q, 0, 10);
+    hilos.forEach(function(hilo) {
+      hilo.getMessages().forEach(function(msg) {
+        var msgId = msg.getId();
+        if (seenMsg.has(msgId) || procesados.has(msgId)) return;
+        seenMsg.add(msgId);
+
+        var attachments = msg.getAttachments();
+        attachments.forEach(function(att) {
+          var tipo = att.getContentType();
+          if (!tipo.startsWith('image/')) return;
+
+          try {
+            // OCR nativo vía Drive API (requiere servicio Drive habilitado)
+            var blob = att.copyBlob();
+            var file = Drive.Files.insert(
+              { title: 'ocr_finanzas_temp', mimeType: blob.getContentType() },
+              blob,
+              { ocr: true, ocrLanguage: 'es' }
+            );
+            var doc = DocumentApp.openById(file.id);
+            var texto = doc.getBody().getText();
+            DriveApp.getFileById(file.id).setTrashed(true);
+
+            if (!texto || texto.length < 5) return;
+
+            var monto = parseMontoDesdeCorreoSantanderTC_(texto) ||
+                        parseMontoDesdeCorreoBancoDeChile_(texto);
+            if (!monto || monto <= 0) {
+              Logger.log('Screenshot OCR: no se encontró monto en texto: ' + texto.slice(0, 200));
+              return;
+            }
+
+            var comercioMatch = texto.match(/en\s+([A-ZÁÉÍÓÚÑ0-9][^\n\r]{2,40}?)(?:\s+el\s+\d|\s+\$|\s*$)/im);
+            var comercio = comercioMatch ? comercioMatch[1].trim() : 'Santander (captura)';
+            var fecha = Utilities.formatDate(msg.getDate(), CONFIG.TIMEZONE, 'yyyy-MM-dd');
+            var uid = Utilities.getUuid().slice(0, 8);
+
+            pendSheet.appendRow([uid, fecha, comercio, monto, 'TC Santander', 'Santander', msgId, 'NO']);
+            nuevos++;
+            Logger.log('Screenshot OCR registrado: ' + comercio + ' $' + monto);
+          } catch (ocrErr) {
+            Logger.log('Error OCR screenshot: ' + ocrErr.message);
+          }
+        });
+      });
+    });
+  } catch (e) {
+    Logger.log('scanearScreenshotsEmail error: ' + e.message);
+  }
+  return nuevos;
 }
 
 // ============================================================
