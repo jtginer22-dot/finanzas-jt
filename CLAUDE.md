@@ -17,7 +17,8 @@ Sin esperar instruccion, actualizar Handoff en Notion con:
 Recordar al usuario: git add -A && git commit -m "..." && git push origin main
 
 ## Reglas permanentes
-- NUNCA hacer push a GitHub ni deploy a Netlify — el usuario lo hace manualmente
+- Hacer push a GitHub (`git push origin main`) después de cada cambio relevante — el deploy en Netlify se dispara automáticamente
+- NUNCA hacer deploy manual arrastrando carpeta en Netlify — solo vía git push
 - Cambios minimos — no tocar lo que funciona
 - Leer el archivo completo antes de modificarlo
 - Nunca hardcodear secrets — siempre process.env.*
