@@ -262,6 +262,15 @@ exports.handler = async (event) => {
     if (monto === 0) {
       responseBody.warn = 'monto_parseado_cero';
       responseBody.receivedKeys = Object.keys(body || {});
+      // Devolver valores recibidos para diagnosticar qué envió el atajo de iOS
+      const safeBody = {};
+      for (const k of Object.keys(body || {})) {
+        const v = body[k];
+        if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') safeBody[k] = v;
+        else if (v && typeof v === 'object') safeBody[k] = JSON.stringify(v);
+        else safeBody[k] = String(v ?? '');
+      }
+      responseBody.receivedValues = safeBody;
     } else if (Math.abs(monto) >= 2_000_000) {
       responseBody.warn = 'monto_muy_alto_revisar';
     }

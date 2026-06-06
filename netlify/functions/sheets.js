@@ -170,7 +170,23 @@ exports.handler = async (event) => {
         return { statusCode: r.status, headers, body: text };
       }
 
-      return { statusCode: 400, headers, body: JSON.stringify({ error: 'operation debe ser append o put' }) };
+      if (operation === 'batchUpdate') {
+        // Permite operaciones de estructura: crear hojas, etc.
+        const requests = body.requests;
+        if (!requests || !Array.isArray(requests)) {
+          return { statusCode: 400, headers, body: JSON.stringify({ error: 'Falta requests[] para batchUpdate' }) };
+        }
+        const url = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}:batchUpdate`;
+        const r = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeaders },
+          body: JSON.stringify({ requests }),
+        });
+        const text = await r.text();
+        return { statusCode: r.status, headers, body: text };
+      }
+
+      return { statusCode: 400, headers, body: JSON.stringify({ error: 'operation debe ser append, put o batchUpdate' }) };
     }
 
     return { statusCode: 405, headers, body: JSON.stringify({ error: 'Método no permitido' }) };

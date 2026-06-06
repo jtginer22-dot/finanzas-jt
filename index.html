@@ -2326,6 +2326,45 @@ async function sheetsFnPost(body) {
   return parseSheetsFnResponse(text, r);
 }
 
+// Headers por defecto para auto-recrear pestañas si se borran accidentalmente (P0)
+const SHEET_HEADERS = {
+  'Gastos':              ['ID','Fecha','Descripción','Categoría','Etiqueta','Monto','Tarjeta','Tipo','Fuente','Banco','Notas','Monto_Total','Recurrente','Recurrente_Hasta','Recurrente_Frecuencia'],
+  'Pendientes':          ['ID','Fecha','Comercio','Monto','Tarjeta','Banco','Email_ID','Procesado'],
+  'Categorias':          ['ID','Nombre','Color','Tipo','Activa'],
+  'Cuentas_Por_Cobrar':  ['ID','Tipo','Persona','Monto','Fecha_Creacion','Fecha_Limite','Estado','Descripción'],
+  'Presupuestos':        ['Categoria','Monto_Mensual'],
+  'Ingresos':            ['ID','Fecha','Fuente','Monto','Notas'],
+  'Inversiones':         ['ID','Fecha','Instrumento','Monto_Invertido','Valor_Actual','Notas','Cantidad','Ticker'],
+  'Conciliacion_Mensual':['ID','Mes','Banco','Total_Cartola','Total_App','Diferencia','Notas'],
+  'Compartidos':         ['ID','Fecha','Descripcion','Total','Categoria','Metodo','Personas_JSON','Gasto_ID'],
+};
+
+/**
+ * Verifica que una pestaña exista; si no, la crea con sus headers correctos.
+ * Evita fallos silenciosos cuando alguien borra accidentalmente una pestaña (P0).
+ */
+async function ensureSheetExists(sheetName) {
+  try {
+    await sheetsFnGet(`${sheetName}!A1:A1`);
+  } catch (e) {
+    const errMsg = String(e.message || e);
+    // "Unable to parse range" = la pestaña no existe
+    if (!/parse range|not found|does not exist/i.test(errMsg)) return; // otro error, no crear
+    try {
+      // 1. Crear la pestaña
+      await sheetsFnPost({ operation: 'batchUpdate', requests: [{ addSheet: { properties: { title: sheetName } } }] });
+      // 2. Escribir headers
+      const headers = SHEET_HEADERS[sheetName];
+      if (headers) {
+        await sheetsFnPost({ operation: 'put', range: `${sheetName}!A1:${String.fromCharCode(64 + headers.length)}1`, values: [headers] });
+      }
+      console.log(`[ensureSheet] Recreada pestaña: ${sheetName}`);
+    } catch (createErr) {
+      console.warn(`[ensureSheet] No se pudo recrear "${sheetName}":`, createErr);
+    }
+  }
+}
+
 async function pushPresupuestosToSheets() {
   const rows = Object.entries(S.presupuestos || {})
     .filter(([, m]) => m > 0)
@@ -2529,6 +2568,9 @@ async function syncSheets() {
 
 async function loadFromSheets() {
   if (!S.gsId) return;
+  // P0: asegurar que las pestañas críticas existan antes de leer
+  const sheetsCriticas = ['Gastos', 'Pendientes', 'Categorias', 'Cuentas_Por_Cobrar', 'Presupuestos', 'Ingresos', 'Inversiones', 'Conciliacion_Mensual', 'Compartidos'];
+  await Promise.allSettled(sheetsCriticas.map(s => ensureSheetExists(s)));
   try {
     const dG = await sheetsFnGet(`${SHEET_NAME_GASTOS}!A2:O5000`);
     if (dG.values) {
