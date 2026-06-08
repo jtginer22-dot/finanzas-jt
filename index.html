@@ -405,8 +405,8 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
             <input class="fi" id="pend-filter-q" placeholder="Concepto · banco · tarjeta" style="flex:1;min-width:170px" oninput="renderPendientes()">
             <input class="fi" type="date" id="pend-filter-desde" title="Desde" aria-label="Fecha desde" onchange="renderPendientes()" style="max-width:155px">
             <input class="fi" type="date" id="pend-filter-hasta" title="Hasta" aria-label="Fecha hasta" onchange="renderPendientes()" style="max-width:155px">
-            <input class="fi" type="number" inputmode="decimal" id="pend-filter-min" placeholder="Monto mín ($)" style="max-width:128px" oninput="renderPendientes()">
-            <input class="fi" type="number" inputmode="decimal" id="pend-filter-max" placeholder="Monto máx ($)" style="max-width:128px" oninput="renderPendientes()">
+            <input class="fi" type="text" inputmode="numeric" id="pend-filter-min" placeholder="Monto mín ($)" style="max-width:128px" oninput="fmtFilterMonto(this);renderPendientes()">
+            <input class="fi" type="text" inputmode="numeric" id="pend-filter-max" placeholder="Monto máx ($)" style="max-width:128px" oninput="fmtFilterMonto(this);renderPendientes()">
             <select class="fi" id="pend-sort-key" title="Ordenar por" onchange="renderPendientes()" style="max-width:118px">
               <option value="fecha">Fecha</option>
               <option value="monto">Monto</option>
@@ -476,10 +476,15 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
 
       <!-- HISTORIAL -->
       <div class="page" id="p-historial">
-        <div class="filter-bar">
-          <input class="fi" style="flex:1;min-width:150px" placeholder=" Buscar..." id="hist-q" oninput="renderHistorial()">
-          <select class="fi" style="width:auto;flex:1;min-width:110px" id="hist-mes" onchange="renderHistorial()"><option value="">Todos los meses</option></select>
-          <select class="fi" style="width:auto;flex:1;min-width:120px" id="hist-cat" onchange="renderHistorial()"><option value="">Todas las categor&#237;as</option></select>
+        <div class="filter-bar" style="flex-wrap:wrap;gap:8px;margin-bottom:8px">
+          <input class="fi" style="flex:2;min-width:150px" placeholder="Buscar descripción..." id="hist-q" oninput="renderHistorial()">
+          <select class="fi" style="flex:1;min-width:120px" id="hist-cat" onchange="renderHistorial()"><option value="">Todas las categorías</option></select>
+          <select class="fi" style="flex:1;min-width:110px" id="hist-mes" onchange="onHistMesChange()"><option value="">Todos los meses</option></select>
+          <input class="fi" type="date" id="hist-desde" title="Desde" onchange="renderHistorial()" style="max-width:150px">
+          <input class="fi" type="date" id="hist-hasta" title="Hasta" onchange="renderHistorial()" style="max-width:150px">
+          <input class="fi" type="text" inputmode="numeric" id="hist-min" placeholder="Monto mín ($)" style="max-width:120px" oninput="fmtFilterMonto(this);renderHistorial()">
+          <input class="fi" type="text" inputmode="numeric" id="hist-max" placeholder="Monto máx ($)" style="max-width:120px" oninput="fmtFilterMonto(this);renderHistorial()">
+          <button class="btn btn-sm" onclick="clearHistFiltros()">Limpiar</button>
         </div>
         <div class="card"><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Fecha</th><th>Descripci&#243;n</th><th>Categor&#237;a</th><th>Etiquetas</th><th>Monto</th><th>Fuente</th></tr></thead><tbody id="hist-body"></tbody></table></div></div>
       </div>
@@ -1535,13 +1540,27 @@ function marcarMontoSospechosoSiAplica(p) {
   if (esComercioImportCartola(c) && m >= 1_000_000) p.montoSospechoso = true;
   if (/^\[Vista\]/i.test(c) && m >= 500_000 && /\d{7,}/.test(c)) p.montoSospechoso = true;
 }
+/** Formatea campo de filtro monto al estilo CLP: 10000 → $10.000 */
+function fmtFilterMonto(el) {
+  const raw = String(el.value).replace(/[^\d]/g, '');
+  if (!raw) { el.value = ''; return; }
+  const n = parseInt(raw, 10);
+  el.value = '$' + n.toLocaleString('es-CL');
+}
+/** Lee un campo de filtro monto formateado y devuelve el número */
+function readFilterMonto(id) {
+  const v = (document.getElementById(id)?.value || '').trim();
+  if (!v) return '';
+  const n = parseFloat(String(v).replace(/\./g, '').replace(/[^0-9,-]/g, '').replace(',', '.'));
+  return Number.isFinite(n) ? String(n) : '';
+}
 function getPendFilter() {
   return {
     q: (document.getElementById('pend-filter-q')?.value || '').trim().toLowerCase(),
     desde: (document.getElementById('pend-filter-desde')?.value || '').trim(),
     hasta: (document.getElementById('pend-filter-hasta')?.value || '').trim(),
-    minStr: (document.getElementById('pend-filter-min')?.value || '').trim(),
-    maxStr: (document.getElementById('pend-filter-max')?.value || '').trim(),
+    minStr: readFilterMonto('pend-filter-min'),
+    maxStr: readFilterMonto('pend-filter-max'),
   };
 }
 function passesPendFilter(p, f) {
@@ -3105,28 +3124,60 @@ function renderCuentas() {
   renderList(cobrar,'cobrar-list'); renderList(pagar,'pagar-list');
 }
 
+function onHistMesChange() {
+  // Al elegir mes en el selector, limpiar filtros desde/hasta para no confundir
+  const mes = document.getElementById('hist-mes')?.value || '';
+  if (mes) {
+    const desde = document.getElementById('hist-desde');
+    const hasta = document.getElementById('hist-hasta');
+    if (desde) desde.value = '';
+    if (hasta) hasta.value = '';
+  }
+  renderHistorial();
+}
+function clearHistFiltros() {
+  ['hist-q','hist-desde','hist-hasta','hist-min','hist-max'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.value='';
+  });
+  const mes=document.getElementById('hist-mes'); if(mes) mes.value='';
+  const cat=document.getElementById('hist-cat'); if(cat) cat.value='';
+  renderHistorial();
+}
 function renderHistorial() {
   const q=(document.getElementById('hist-q')?.value||'').toLowerCase();
   const cat=document.getElementById('hist-cat')?.value||'';
   const mes=document.getElementById('hist-mes')?.value||'';
+  const desde=(document.getElementById('hist-desde')?.value||'').trim();
+  const hasta=(document.getElementById('hist-hasta')?.value||'').trim();
+  const minStr=readFilterMonto('hist-min');
+  const maxStr=readFilterMonto('hist-max');
   const histCat=document.getElementById('hist-cat');
   const histMes=document.getElementById('hist-mes');
   if (!histCat || !histMes) return;
-  histCat.innerHTML='<option value="">Todas las categor&#237;as</option>'+S.cats.map(c=>`<option value="${c.nombre}"${cat===c.nombre?' selected':''}>${c.nombre}</option>`).join('');
+  const curCat=histCat.value;
+  histCat.innerHTML='<option value="">Todas las categorías</option>'+S.cats.map(c=>`<option value="${c.nombre}"${curCat===c.nombre?' selected':''}>${c.nombre}</option>`).join('');
   const meses=[...new Set(S.gastos.map(g=>g.fecha.slice(0,7)))].sort().reverse();
   const curMes=histMes.value;
   histMes.innerHTML='<option value="">Todos los meses</option>'+meses.map(m=>`<option value="${m}"${curMes===m?' selected':''}>${m}</option>`).join('');
   const list=S.gastos.filter(g=>{
     if (mes && !g.fecha.startsWith(mes)) return false;
-    if(q&&!g.desc.toLowerCase().includes(q)&&!g.cat.toLowerCase().includes(q))return false;
-    if(cat&&g.cat!==cat)return false;
+    if (desde && g.fecha < desde) return false;
+    if (hasta && g.fecha > hasta) return false;
+    if (q && !g.desc.toLowerCase().includes(q) && !g.cat.toLowerCase().includes(q)) return false;
+    if (cat && g.cat !== cat) return false;
+    const m = Number(g.monto);
+    if (minStr !== '') { const lo=parseFloat(minStr); if(Number.isFinite(lo)&&m<lo) return false; }
+    if (maxStr !== '') { const hi=parseFloat(maxStr); if(Number.isFinite(hi)&&m>hi) return false; }
     return true;
   }).sort((a,b)=>b.fecha.localeCompare(a.fecha));
+  const total = list.reduce((a,g)=>a+montoEfectivo(g),0);
   document.getElementById('hist-body').innerHTML=list.length?list.map(g=>`<tr>
     <td style="font-family:var(--mono);font-size:11px">${g.fecha}</td>
-    <td>${g.desc}</td><td>${catBadge(g.cat)}</td><td>${tagBadgesHtml(g.tag)}</td>
-    <td style="font-family:var(--mono);font-weight:600">${fmt(g.monto)}</td>
-    <td><span class="badge ${g.fuente==='gmail'?'b-azul':'b-gris'}" style="font-size:10px">${g.fuente==='gmail'?' Gmail':' Manual'}</span></td></tr>`).join(''):
+    <td>${esc(g.desc)}${g.reembolsoMonto>0?` <span style="font-size:9px;background:${g.reembolsoEstado==='recibido'?'#D1FAE5':'#FEF3C7'};color:${g.reembolsoEstado==='recibido'?'#065F46':'#92400E'};padding:1px 4px;border-radius:4px">↩${g.reembolsoEstado==='recibido'?' OK':' pendiente'}</span>`:''}</td>
+    <td>${catBadge(g.cat)}</td><td>${tagBadgesHtml(g.tag)}</td>
+    <td style="font-family:var(--mono);font-weight:600">${g.reembolsoEstado==='recibido'?`<span style="text-decoration:line-through;color:var(--text3);font-size:10px">${fmt(g.monto)}</span> <span style="color:var(--verde-d)">${fmt(montoEfectivo(g))}</span>`:fmt(g.monto)}</td>
+    <td><span class="badge ${g.fuente==='gmail'?'b-azul':'b-gris'}" style="font-size:10px">${g.fuente==='gmail'?' Gmail':' Manual'}</span></td></tr>`).join('')+
+    `<tr style="background:var(--gris-m)"><td colspan="4" style="padding:8px 12px;font-weight:600;font-size:12px">Total filtrado: ${list.length} movimientos</td><td style="font-family:var(--mono);font-weight:700;padding:8px 12px">${fmt(total)}</td><td></td></tr>`:
     `<tr><td colspan="6" class="empty" style="padding:24px">Sin registros</td></tr>`;
 }
 
