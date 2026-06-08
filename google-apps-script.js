@@ -593,7 +593,13 @@ function configurarActivadores() {
     .everyDays(1)
     .create();
   Logger.log('✅ Activadores configurados: scanearGmail cada 10 min + resumen 8 AM');
-  SpreadsheetApp.getUi().alert('✅ Listo:\n• scanearGmail: cada 10 minutos\n• Resumen diario: 8:00 AM\n\nYa puedes cerrar el editor.');
+  // Nota: SpreadsheetApp.getUi() solo funciona si el script fue abierto DESDE el Sheet.
+  // Si lo ejecutas desde el editor directo, el log es suficiente — no necesitas la alerta.
+  try {
+    SpreadsheetApp.getUi().alert('✅ Listo:\n• scanearGmail: cada 10 minutos\n• Resumen diario: 8:00 AM');
+  } catch (e) {
+    Logger.log('(Sin UI disponible — el activador igual quedó configurado correctamente)');
+  }
 }
 
 // ============================================================
