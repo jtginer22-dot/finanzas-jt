@@ -1090,9 +1090,8 @@ function mergePropuestasFromSheetRows(noProcesados, prev) {
 function parseMontoFromSheetCell(cell) {
   if (cell == null || cell === '') return 0;
   if (typeof cell === 'number' && Number.isFinite(cell)) {
-    const n = Number(cell);
-    if (n > 40_000 && n < 60_000) return 0;
-    return Math.round(n);
+    // Nota: se eliminó el filtro 40k-60k que bloqueaba montos CLP legítimos (ej: $45.990)
+    return Math.round(cell);
   }
   const raw = String(cell).replace(/\u00A0/g, ' ').trim();
   if (!raw) return 0;
