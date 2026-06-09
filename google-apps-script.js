@@ -120,15 +120,18 @@ function parseMontoDesdeCorreoBancoDeChile_(cuerpo) {
   return null;
 }
 
-/** Monto de compra TC Santander (evita cupo/deuda; varios formatos de correo). */
+/** Monto de compra TC Santander (evita cupo/deuda; varios formatos de correo y notif push). */
 function parseMontoDesdeCorreoSantanderTC_(cuerpo) {
   if (!cuerpo) return null;
   var amounts = [];
   var patterns = [
     /compra\s+por\s*\$?\s*([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]+)?)/gi,
     /cargo\s+por\s*\$?\s*([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]+)?)/gi,
+    /consumo\s+de\s*\$?\s*([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]+)?)/gi,
     /monto\s*(?:de\s*)?(?:la\s*)?(?:compra\s*)?[:\s]*\$?\s*([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]+)?)/gi,
     /por\s*\$?\s*([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]+)?)\s+en\s/gi,
+    // Captura directa de monto "$XX.XXX" o "$ XX.XXX" — notificaciones push Santander
+    /\$\s*([0-9]{1,3}(?:\.[0-9]{3})+)/g,
   ];
   for (var pi = 0; pi < patterns.length; pi++) {
     var re = patterns[pi];
@@ -334,14 +337,41 @@ function scanearScreenshotsEmail_(pendSheet, procesados, seenMsg) {
               return;
             }
 
-            var comercioMatch = texto.match(/en\s+([A-ZÁÉÍÓÚÑ0-9][^\n\r]{2,40}?)(?:\s+el\s+\d|\s+\$|\s*$)/im);
-            var comercio = comercioMatch ? comercioMatch[1].trim() : 'Santander (captura)';
+            // Extraer comercio desde texto OCR.
+            // Prueba varios patrones en orden de especificidad.
+            var comercio = 'Santander (captura)';
+            var cmPatterns = [
+              // "en COMERCIO el DD" — correos
+              /en\s+([A-ZÁÉÍÓÚÑ0-9][^\n\r]{2,40}?)(?:\s+el\s+\d|\s+\$)/im,
+              // "en COMERCIO\n" — notif push, el comercio va en línea propia después de "en"
+              /en\s+([A-ZÁÉÍÓÚÑ0-9][^\n\r]{2,40})/im,
+              // "Compra en COMERCIO" / "Cargo en COMERCIO"
+              /(?:compra|cargo|consumo)\s+en\s+([A-ZÁÉÍÓÚÑ0-9][^\n\r]{2,40})/im,
+              // Primera línea en mayúsculas tras "Santander" — asume que es el comercio
+              /santander[^\n]*\n([A-ZÁÉÍÓÚÑ][^\n]{3,40})/im,
+            ];
+            for (var pi = 0; pi < cmPatterns.length; pi++) {
+              var cm = texto.match(cmPatterns[pi]);
+              if (cm && cm[1] && cm[1].trim().length >= 3) {
+                comercio = cm[1].trim().slice(0, 60);
+                break;
+              }
+            }
             var fecha = Utilities.formatDate(msg.getDate(), CONFIG.TIMEZONE, 'yyyy-MM-dd');
-            var uid = Utilities.getUuid().slice(0, 8);
 
-            pendSheet.appendRow([uid, fecha, comercio, monto, 'TC Santander', 'Santander', msgId, 'NO']);
+            // ---- SMART MERCHANT MATCHING ----
+            // Si hay un Pendiente de Santander con monto=0 reciente que coincide
+            // con este comercio, actualizamos su monto en lugar de crear duplicado.
+            var matchRow = buscarPendienteCeroSantander_(pendSheet, comercio, fecha);
+            if (matchRow > 0) {
+              pendSheet.getRange(matchRow, 4).setValue(monto);
+              Logger.log('✅ Smart match: fila ' + matchRow + ' actualizada → ' + comercio + ' $' + monto);
+            } else {
+              var uid = Utilities.getUuid().slice(0, 8);
+              pendSheet.appendRow([uid, fecha, comercio, monto, 'TC Santander', 'Santander', msgId, 'NO']);
+              Logger.log('Screenshot OCR registrado: ' + comercio + ' $' + monto);
+            }
             nuevos++;
-            Logger.log('Screenshot OCR registrado: ' + comercio + ' $' + monto);
           } catch (ocrErr) {
             Logger.log('Error OCR screenshot: ' + ocrErr.message);
           }
@@ -549,6 +579,63 @@ function enviarResumenDiario() {
 // ============================================================
 function formatMonto(n) {
   return '$' + Math.round(Number(n)||0).toLocaleString('es-CL');
+}
+
+/**
+ * Busca en Pendientes una fila de Santander con monto=0 dentro de ±48h
+ * de la fecha dada y cuyo comercio haga fuzzy-match con el texto OCR.
+ * Devuelve el número de fila (base 1, incluyendo header) o 0 si no hay match.
+ */
+function buscarPendienteCeroSantander_(pendSheet, comercioOcr, fechaOcr) {
+  var lastRow = pendSheet.getLastRow();
+  if (lastRow < 2) return 0;
+  var numRows = lastRow - 1;
+  var data = pendSheet.getRange(2, 1, numRows, 8).getValues();
+  var fechaRef = new Date(fechaOcr);
+  var ventana = 48 * 60 * 60 * 1000; // 48 horas en ms
+  for (var i = 0; i < data.length; i++) {
+    var row = data[i];
+    var monto = parseFloat(row[3] || 0);
+    var banco = String(row[5] || '').toLowerCase();
+    var procesado = String(row[7] || '').toUpperCase();
+    // Solo filas Santander, con monto=0, no procesadas
+    if (monto !== 0) continue;
+    if (banco.indexOf('santander') === -1) continue;
+    if (procesado === 'SI') continue;
+    // Fecha dentro de ±48h
+    var fechaFila = new Date(String(row[1] || ''));
+    if (isNaN(fechaFila.getTime())) continue;
+    var diff = Math.abs(fechaFila.getTime() - fechaRef.getTime());
+    if (diff > ventana) continue;
+    // Fuzzy match del comercio
+    if (fuzzyMatchComercio_(comercioOcr, String(row[2] || ''))) {
+      return i + 2; // +1 header, +1 base-1
+    }
+  }
+  return 0;
+}
+
+/**
+ * Coincidencia difusa de nombres de comercio.
+ * Normaliza acentos y caracteres especiales, luego verifica
+ * si al menos 1 palabra significativa (≥3 chars) es común a ambos nombres.
+ */
+function fuzzyMatchComercio_(a, b) {
+  if (!a || !b) return false;
+  var norm = function(s) {
+    return s.toUpperCase()
+      .replace(/[ÁÀÂÄ]/g, 'A').replace(/[ÉÈÊË]/g, 'E')
+      .replace(/[ÍÌÎÏ]/g, 'I').replace(/[ÓÒÔÖ]/g, 'O')
+      .replace(/[ÚÙÛÜ]/g, 'U').replace(/Ñ/g, 'N')
+      .replace(/[^A-Z0-9\s]/g, ' ')
+      .replace(/\s+/g, ' ').trim();
+  };
+  var wordsA = norm(a).split(' ').filter(function(w) { return w.length >= 3; });
+  var wordsB = norm(b).split(' ').filter(function(w) { return w.length >= 3; });
+  if (!wordsA.length || !wordsB.length) return false;
+  var setB = {};
+  wordsB.forEach(function(w) { setB[w] = true; });
+  return wordsA.some(function(w) { return setB[w]; });
 }
 
 // Para marcar un pendiente como procesado (llamar desde la app)
