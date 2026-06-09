@@ -210,20 +210,43 @@ exports.handler = async (event) => {
     return 0;
   }
 
-  const uid = body.uid || body.transactionIdentifier || body['Transaction Identifier'] || Date.now().toString(36);
   const fecha = body.fecha || body.date || new Date().toISOString().split('T')[0];
-  const comercio = body.comercio || body.Merchant || body.merchant || body.name || body.Name || 'Compra';
   const monto = extractMoneyFromBody(body);
   const tarjeta = body.tarjeta || 'TC';
   const banco = body.banco || 'Santander';
   const emailId = body.emailId || '';
-  const procesado = 'NO';
 
-  const values = [[uid, fecha, comercio, monto, tarjeta, banco, emailId, procesado]];
   const range = 'Pendientes!A:H';
   const apiBase = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values`;
-  const payload = { range, majorDimension: 'ROWS', values };
-  const dedupeRange = 'Pendientes!A2:A5000';
+
+  // ---- Helpers de smart matching (también usados abajo) ----
+  function normComercio(s) {
+    return String(s || '').toUpperCase()
+      .replace(/[ÁÀÂÄ]/g, 'A').replace(/[ÉÈÊË]/g, 'E')
+      .replace(/[ÍÌÎÏ]/g, 'I').replace(/[ÓÒÔÖ]/g, 'O')
+      .replace(/[ÚÙÛÜ]/g, 'U').replace(/Ñ/g, 'N')
+      .replace(/[^A-Z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  function fuzzyMatchComercio(a, b) {
+    const wA = normComercio(a).split(' ').filter(w => w.length >= 3);
+    const wB = normComercio(b).split(' ').filter(w => w.length >= 3);
+    if (!wA.length || !wB.length) return false;
+    const setB = new Set(wB);
+    return wA.some(w => setB.has(w));
+  }
+  function extraerComercioDeTexto(texto) {
+    if (!texto) return null;
+    const pats = [
+      /en\s+([A-ZÁÉÍÓÚÑ0-9][^\n\r$]{2,50}?)(?:\s+(?:por|by)\s+\$|\s*\n)/im,
+      /(?:compra|cargo|consumo)\s+en\s+([A-ZÁÉÍÓÚÑ0-9][^\n\r]{2,50})/im,
+      /en\s+([A-ZÁÉÍÓÚÑ0-9][^\n\r]{2,50})/im,
+    ];
+    for (const re of pats) {
+      const m = texto.match(re);
+      if (m && m[1] && m[1].trim().length >= 3) return m[1].trim().slice(0, 60);
+    }
+    return null;
+  }
 
   try {
     const useServiceAccount = Boolean(serviceAccountEmail && serviceAccountPrivateKey);
@@ -231,6 +254,90 @@ exports.handler = async (event) => {
       ? { Authorization: `Bearer ${await getGoogleAccessTokenFromServiceAccount(serviceAccountEmail, serviceAccountPrivateKey)}` }
       : {};
     const keyQuery = useServiceAccount ? '' : `?key=${encodeURIComponent(key)}`;
+
+    // ====================================================================
+    // FLUJO ESPECIAL: payload de screenshot/OCR (esCaptura = true)
+    // El atajo de iOS hace OCR de la notificación Santander y manda el texto.
+    // Intentamos actualizar el Pendiente $0 existente en lugar de crear uno nuevo.
+    // ====================================================================
+    if (body.esCaptura === true || body.origen === 'screenshot' || body.origen === 'captura') {
+      const textoOcr = body.texto || body.text || body.notification || body.clipboard || '';
+      const montoCaptura = extractMoneyFromBody(body);
+      if (montoCaptura <= 0) {
+        return {
+          statusCode: 200,
+          headers,
+          body: JSON.stringify({ ok: true, warn: 'ocr_monto_cero', receivedKeys: Object.keys(body), textoOcr: textoOcr.slice(0, 300) }),
+        };
+      }
+      const comercioCaptura = extraerComercioDeTexto(textoOcr) || body.comercio || body.Merchant || 'Santander (captura)';
+
+      // Leer Pendientes para encontrar fila $0 que haga match
+      const allUrl = `${apiBase}/${encodeURIComponent('Pendientes!A2:H5000')}${keyQuery}`;
+      let matchRowNum = 0;
+      try {
+        const allResp = await fetch(allUrl, { headers: authHeaders });
+        if (allResp.ok) {
+          const allData = await allResp.json();
+          const rows = allData.values || [];
+          const fechaRef = new Date(fecha);
+          const ventana48h = 48 * 60 * 60 * 1000;
+          for (let i = 0; i < rows.length; i++) {
+            const row = rows[i];
+            const rowMonto = parseFloat(row[3] || 0);
+            const rowBanco = String(row[5] || '').toLowerCase();
+            const rowProcesado = String(row[7] || '').toUpperCase();
+            const rowFecha = new Date(String(row[1] || ''));
+            if (rowMonto !== 0) continue;
+            if (!rowBanco.includes('santander')) continue;
+            if (rowProcesado === 'SI') continue;
+            if (isNaN(rowFecha.getTime())) continue;
+            if (Math.abs(rowFecha.getTime() - fechaRef.getTime()) > ventana48h) continue;
+            if (fuzzyMatchComercio(comercioCaptura, String(row[2] || ''))) {
+              matchRowNum = i + 2; // +1 header, +1 base-1
+              break;
+            }
+          }
+        }
+      } catch (_e) { /* si falla la lectura, caer al append */ }
+
+      if (matchRowNum > 0) {
+        // Actualizar monto en fila existente (col D = 4)
+        const updateRange = `Pendientes!D${matchRowNum}`;
+        const updateUrl = `${apiBase}/${encodeURIComponent(updateRange)}?valueInputOption=RAW${keyQuery ? `&key=${encodeURIComponent(key)}` : ''}`;
+        const updResp = await fetch(updateUrl, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', ...authHeaders },
+          body: JSON.stringify({ range: updateRange, majorDimension: 'ROWS', values: [[montoCaptura]] }),
+        });
+        const updText = await updResp.text();
+        if (!updResp.ok) return { statusCode: updResp.status, headers, body: updText };
+        return { statusCode: 200, headers, body: JSON.stringify({ ok: true, message: 'OK', matched: true, monto: montoCaptura, comercio: comercioCaptura, rowUpdated: matchRowNum }) };
+      }
+
+      // Sin match: crear nueva fila
+      const uidCaptura = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+      const appendUrl2 = `${apiBase}/${encodeURIComponent(range)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS${useServiceAccount ? '' : `&key=${encodeURIComponent(key)}`}`;
+      const capturaRow = [[uidCaptura, fecha, comercioCaptura, montoCaptura, tarjeta || 'TC Santander', banco || 'Santander', '', 'NO']];
+      const r2 = await fetch(appendUrl2, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        body: JSON.stringify({ range, majorDimension: 'ROWS', values: capturaRow }),
+      });
+      const t2 = await r2.text();
+      if (!r2.ok) return { statusCode: r2.status, headers, body: t2 };
+      return { statusCode: 200, headers, body: JSON.stringify({ ok: true, message: 'OK', matched: false, uid: uidCaptura, monto: montoCaptura, comercio: comercioCaptura }) };
+    }
+
+    // ====================================================================
+    // FLUJO NORMAL: transacción de Wallet shortcut (existing)
+    // ====================================================================
+    const uid = body.uid || body.transactionIdentifier || body['Transaction Identifier'] || Date.now().toString(36);
+    const comercio = body.comercio || body.Merchant || body.merchant || body.name || body.Name || 'Compra';
+    const procesado = 'NO';
+    const values = [[uid, fecha, comercio, monto, tarjeta, banco, emailId, procesado]];
+    const payload = { range, majorDimension: 'ROWS', values };
+    const dedupeRange = 'Pendientes!A2:A5000';
     const dedupeUrl = `${apiBase}/${encodeURIComponent(dedupeRange)}${keyQuery}`;
     const appendUrl = `${apiBase}/${encodeURIComponent(range)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS${useServiceAccount ? '' : `&key=${encodeURIComponent(key)}`}`;
 
