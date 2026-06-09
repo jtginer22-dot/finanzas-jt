@@ -154,10 +154,25 @@ function parseMontoDesdeCorreoSantanderTC_(cuerpo) {
   return amounts[0];
 }
 
-function scanearGmail() {
+/**
+ * ventanaHoras: ventana de búsqueda en Gmail.
+ * - Trigger automático (cada 10 min) llama sin parámetros → usa 1 hora.
+ * - testManual() llama con ventanaHoras=168 para escanear 7 días.
+ * Limitar la ventana evita el timeout de 6 min en Apps Script.
+ */
+function scanearGmail(ventanaHoras) {
+  ventanaHoras = ventanaHoras || 1;
+  // Convertir horas a token Gmail newer_than
+  var ventana;
+  if (ventanaHoras <= 6)        ventana = '6h';
+  else if (ventanaHoras <= 24)  ventana = '1d';
+  else if (ventanaHoras <= 48)  ventana = '2d';
+  else if (ventanaHoras <= 96)  ventana = '4d';
+  else                          ventana = '7d';
+
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const pendSheet = ss.getSheetByName(SHEETS.PENDIENTES);
-  
+
   // IDs ya procesados
   const procesados = new Set();
   if (pendSheet.getLastRow() > 1) {
@@ -165,14 +180,14 @@ function scanearGmail() {
     const ids = pendSheet.getRange(2, 7, numRows, 1).getValues().flat();
     ids.forEach(id => procesados.add(id));
   }
-  
+
   let nuevos = 0;
-  
+
   // ---- BANCO DE CHILE (TC + Apple Pay y variantes de texto) ----
   const queriesBancoDeChile = [
-    'from:enviodigital@bancochile.cl subject:"Compra con Tarjeta de Crédito" newer_than:7d',
-    'from:enviodigital@bancochile.cl ("Apple Pay" OR "APPLE PAY") newer_than:7d',
-    'from:enviodigital@bancochile.cl (compra OR cargo) (tarjeta OR crédito) newer_than:7d',
+    'from:enviodigital@bancochile.cl subject:"Compra con Tarjeta de Crédito" newer_than:' + ventana,
+    'from:enviodigital@bancochile.cl ("Apple Pay" OR "APPLE PAY") newer_than:' + ventana,
+    'from:enviodigital@bancochile.cl (compra OR cargo) (tarjeta OR crédito) newer_than:' + ventana,
   ];
   const seenMsg = new Set();
   queriesBancoDeChile.forEach(function (q) {
@@ -206,9 +221,9 @@ function scanearGmail() {
       });
     });
   });
-  
+
   // ---- SANTANDER — Transferencias ----
-  const hilosSant = GmailApp.search('from:mensajeria@santander.cl subject:"Comprobante Transferencia" newer_than:7d', 0, 20);
+  const hilosSant = GmailApp.search('from:mensajeria@santander.cl subject:"Comprobante Transferencia" newer_than:' + ventana, 0, 20);
   hilosSant.forEach(hilo => {
     const msgs = hilo.getMessages();
     msgs.forEach(msg => {
@@ -218,28 +233,28 @@ function scanearGmail() {
 
       const cuerpo = msg.getPlainBody() || msg.getBody();
       const fecha = Utilities.formatDate(msg.getDate(), CONFIG.TIMEZONE, 'yyyy-MM-dd');
-      
+
       // Parser Santander transferencia
       const montoMatch = cuerpo.match(/Monto transferido\s*\$\s*([\d.,]+)/i);
       const destMatch = cuerpo.match(/Nombre\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñA-Z\s]+)\s+RUT/);
-      
+
       if (!montoMatch) return;
-      
+
       const monto = parseFloat(montoMatch[1].replace(/\./g,'').replace(',','.'));
       const dest = destMatch ? destMatch[1].trim() : 'Destinatario';
       const comercio = `Transferencia a ${dest}`;
-      
+
       const uid = Utilities.getUuid().slice(0,8);
       pendSheet.appendRow([uid, fecha, comercio, monto, 'Transferencia Santander', 'Santander', msgId, 'NO']);
       nuevos++;
       Logger.log(`Santander detectado: ${comercio} $${monto}`);
     });
   });
-  
+
   // ---- SANTANDER — Compras TC (notificación email; suscripciones, comercio físico, etc.) ----
   var queriesSantTC = [
-    'from:mensajeria@santander.cl (compra OR cargo OR consumo) (tarjeta OR crédito OR credito) newer_than:7d',
-    'from:mensajeria@santander.cl subject:(Compra OR Cargo OR "Tarjeta de Crédito") newer_than:7d',
+    'from:mensajeria@santander.cl (compra OR cargo OR consumo) (tarjeta OR crédito OR credito) newer_than:' + ventana,
+    'from:mensajeria@santander.cl subject:(Compra OR Cargo OR "Tarjeta de Crédito") newer_than:' + ventana,
   ];
   queriesSantTC.forEach(function (q) {
     var hilosSantTC = GmailApp.search(q, 0, 20);
@@ -275,9 +290,10 @@ function scanearGmail() {
   });
 
   // ---- SCREENSHOTS enviados por el usuario a sí mismo ----
-  nuevos += scanearScreenshotsEmail_(pendSheet, procesados, seenMsg);
+  nuevos += scanearScreenshotsEmail_(pendSheet, procesados, seenMsg, ventana);
 
   // ---- ESTADO DE CUENTA MENSUAL SANTANDER (PDF adjunto) ----
+  // Solo correr si hay tiempo suficiente; cartola es mensual, no necesita ventana corta.
   nuevos += scanearEstadoCuentaSantander_(pendSheet, procesados, seenMsg);
 
   Logger.log(`Scanner completo: ${nuevos} nuevos gastos detectados`);
@@ -300,8 +316,11 @@ function scanearGmail() {
  * PREREQUISITO EN APPS SCRIPT: habilitar "Drive API" en Servicios (ícono +) → Drive API.
  * INSTRUCCIÓN DE USO: saca captura de la notif Santander → comparte → Mail → asunto "💳"
  */
-function scanearScreenshotsEmail_(pendSheet, procesados, seenMsg) {
-  const q = `from:${CONFIG.EMAIL_DESTINO} (subject:gasto OR subject:💳 OR subject:santander) has:attachment newer_than:3d`;
+function scanearScreenshotsEmail_(pendSheet, procesados, seenMsg, ventana) {
+  ventana = ventana || '3d';
+  // Sin "has:attachment": captura tanto adjuntos como imágenes inline del body del email.
+  // Sujeto específico evita falsos positivos.
+  const q = 'from:' + CONFIG.EMAIL_DESTINO + ' (subject:gasto OR subject:💳 OR subject:santander OR subject:captura OR subject:compra) newer_than:' + ventana;
   var nuevos = 0;
   try {
     var hilos = GmailApp.search(q, 0, 10);
@@ -791,11 +810,20 @@ function parsearTransaccionesDeCuerpo_(texto, banco) {
 }
 
 // Test manual — ejecutar para verificar que el script funciona
+// Usa ventana de 7 días para encontrar correos antiguos durante pruebas.
+// El trigger automático usa 1 hora (para no hacer timeout).
 function testManual() {
-  Logger.log('=== TEST MANUAL ===');
+  Logger.log('=== TEST MANUAL (ventana 7 días) ===');
   Logger.log('Sheet ID: ' + SpreadsheetApp.getActiveSpreadsheet().getId());
   Logger.log('Email destino: ' + CONFIG.EMAIL_DESTINO);
   Logger.log('App URL: ' + CONFIG.APP_URL);
-  scanearGmail();
+  scanearGmail(168); // 168 horas = 7 días
   Logger.log('=== FIN TEST ===');
+}
+
+// Test rápido — solo última hora (mismo que el trigger automático)
+function testRapido() {
+  Logger.log('=== TEST RÁPIDO (ventana 1 hora) ===');
+  scanearGmail(1);
+  Logger.log('=== FIN TEST RÁPIDO ===');
 }
