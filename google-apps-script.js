@@ -809,6 +809,92 @@ function parsearTransaccionesDeCuerpo_(texto, banco) {
   return transacciones;
 }
 
+// ============================================================
+// DEBUG EMAILS — Diagnosticar por qué no se capturan los screenshots
+// ============================================================
+
+/**
+ * Ejecuta esto para ver exactamente qué encuentra el scanner de screenshots.
+ * Revisa el log después de ejecutar (Ver → Registros).
+ */
+function debugScreenshotEmail() {
+  Logger.log('=== DEBUG SCREENSHOT EMAIL ===');
+
+  // Paso 1: ¿Encuentra los emails?
+  var q = 'from:' + CONFIG.EMAIL_DESTINO + ' (subject:gasto OR subject:💳 OR subject:santander OR subject:captura OR subject:compra) newer_than:7d';
+  Logger.log('Query usada: ' + q);
+  var hilos = GmailApp.search(q, 0, 10);
+  Logger.log('Hilos encontrados con ese query: ' + hilos.length);
+
+  if (!hilos.length) {
+    Logger.log('⚠️  PROBLEMA: no se encontraron emails. Verifica el asunto del correo que mandaste.');
+    Logger.log('   El asunto debe contener: gasto, 💳, santander, captura, o compra');
+    // Intentar buscar cualquier email reciente tuyo para confirmar que el email llega
+    var cualquiera = GmailApp.search('from:' + CONFIG.EMAIL_DESTINO + ' newer_than:1d', 0, 5);
+    Logger.log('Emails recientes tuyos (cualquier asunto): ' + cualquiera.length);
+    cualquiera.forEach(function(h) {
+      h.getMessages().forEach(function(m) {
+        Logger.log('  Asunto: "' + m.getSubject() + '"');
+      });
+    });
+    return;
+  }
+
+  // Paso 2: Para cada email, ¿tiene adjuntos o imágenes?
+  hilos.forEach(function(hilo, hi) {
+    hilo.getMessages().forEach(function(msg, mi) {
+      Logger.log('--- Email [' + hi + '.' + mi + ']: "' + msg.getSubject() + '"');
+
+      // Adjuntos con imágenes inline también
+      var attsAll = msg.getAttachments({ includeInlineImages: true, includeAttachments: true });
+      var attsNormal = msg.getAttachments({ includeInlineImages: false, includeAttachments: true });
+      Logger.log('  Adjuntos (solo archivos): ' + attsNormal.length);
+      Logger.log('  Adjuntos (incluyendo imágenes inline): ' + attsAll.length);
+
+      if (!attsAll.length) {
+        Logger.log('  ⚠️  Sin adjuntos. La imagen puede estar solo en el cuerpo HTML — no es extraíble por OCR.');
+        return;
+      }
+
+      attsAll.forEach(function(att, ai) {
+        Logger.log('  Adjunto [' + ai + ']: tipo=' + att.getContentType() + ' | nombre=' + att.getName() + ' | bytes=' + att.getSize());
+
+        if (!att.getContentType().startsWith('image/')) {
+          Logger.log('    → No es imagen, se salta');
+          return;
+        }
+
+        // Paso 3: ¿Funciona el OCR?
+        try {
+          var blob = att.copyBlob();
+          Logger.log('    → Intentando OCR...');
+          var file = Drive.Files.insert(
+            { title: 'debug_ocr', mimeType: blob.getContentType() },
+            blob,
+            { ocr: true, ocrLanguage: 'es' }
+          );
+          var doc = DocumentApp.openById(file.id);
+          var texto = doc.getBody().getText();
+          DriveApp.getFileById(file.id).setTrashed(true);
+
+          if (!texto || texto.length < 5) {
+            Logger.log('    ⚠️  OCR no extrajo texto (imagen ilegible o muy pequeña)');
+            return;
+          }
+          Logger.log('    ✅ OCR texto extraído (' + texto.length + ' chars): "' + texto.slice(0, 400) + '"');
+
+          // Paso 4: ¿Parsea el monto?
+          var monto = parseMontoDesdeCorreoSantanderTC_(texto) || parseMontoDesdeCorreoBancoDeChile_(texto);
+          Logger.log('    Monto parseado: ' + (monto || '⚠️  NO ENCONTRADO'));
+        } catch (e) {
+          Logger.log('    ❌ Error OCR: ' + e.message);
+        }
+      });
+    });
+  });
+  Logger.log('=== FIN DEBUG ===');
+}
+
 // Test manual — ejecutar para verificar que el script funciona
 // Usa ventana de 7 días para encontrar correos antiguos durante pruebas.
 // El trigger automático usa 1 hora (para no hacer timeout).
