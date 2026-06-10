@@ -318,9 +318,9 @@ function scanearGmail(ventanaHoras) {
  */
 function scanearScreenshotsEmail_(pendSheet, procesados, seenMsg, ventana) {
   ventana = ventana || '3d';
-  // Sin "has:attachment": captura tanto adjuntos como imágenes inline del body del email.
-  // Sujeto específico evita falsos positivos.
-  const q = 'from:' + CONFIG.EMAIL_DESTINO + ' (subject:gasto OR subject:💳 OR subject:santander OR subject:captura OR subject:compra) newer_than:' + ventana;
+  // Excluye nuestros propios correos de notificación (que también son from:email y contienen "gasto").
+  // El "-subject:nuevo" los descarta. Sin has:attachment para capturar también imágenes inline.
+  const q = 'from:' + CONFIG.EMAIL_DESTINO + ' (subject:gasto OR subject:💳 OR subject:santander OR subject:captura OR subject:compra) -subject:nuevo newer_than:' + ventana;
   var nuevos = 0;
   try {
     var hilos = GmailApp.search(q, 0, 10);
@@ -817,6 +817,34 @@ function parsearTransaccionesDeCuerpo_(texto, banco) {
  * Ejecuta esto para ver exactamente qué encuentra el scanner de screenshots.
  * Revisa el log después de ejecutar (Ver → Registros).
  */
+/**
+ * Busca TODOS los emails recientes tuyos (con y sin adjunto) para
+ * encontrar cuál enviaste con el screenshot. Úsala para identificar el asunto exacto.
+ */
+function debugBuscarEmailConImagen() {
+  Logger.log('=== BUSCAR EMAIL CON IMAGEN (últimos 7 días) ===');
+
+  // Buscar cualquier email DE ti, con attachment
+  var queries = [
+    'from:' + CONFIG.EMAIL_DESTINO + ' has:attachment newer_than:7d',
+    'from:' + CONFIG.EMAIL_DESTINO + ' newer_than:2d', // cualquier email tuyo reciente
+  ];
+
+  queries.forEach(function(q) {
+    Logger.log('--- Query: ' + q);
+    var hilos = GmailApp.search(q, 0, 20);
+    Logger.log('  Hilos: ' + hilos.length);
+    hilos.forEach(function(h) {
+      h.getMessages().forEach(function(m) {
+        var atts = m.getAttachments({ includeInlineImages: true });
+        var tipos = atts.map(function(a) { return a.getContentType(); }).join(', ');
+        Logger.log('  • Asunto: "' + m.getSubject() + '" | Adjuntos: ' + atts.length + (tipos ? ' (' + tipos + ')' : ''));
+      });
+    });
+  });
+  Logger.log('=== FIN ===');
+}
+
 function debugScreenshotEmail() {
   Logger.log('=== DEBUG SCREENSHOT EMAIL ===');
 
