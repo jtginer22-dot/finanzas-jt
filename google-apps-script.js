@@ -324,19 +324,31 @@ function scanearScreenshotsEmail_(pendSheet, procesados, seenMsg, ventana) {
   var nuevos = 0;
   try {
     var hilos = GmailApp.search(q, 0, 10);
+    Logger.log('scanearScreenshots: hilos encontrados=' + hilos.length + ' (query ventana=' + ventana + ')');
     hilos.forEach(function(hilo) {
       hilo.getMessages().forEach(function(msg) {
         var msgId = msg.getId();
-        if (seenMsg.has(msgId) || procesados.has(msgId)) return;
+        var asunto = msg.getSubject();
+        Logger.log('  Email: "' + asunto + '" | ID=' + msgId);
+        if (seenMsg.has(msgId)) { Logger.log('    → ya procesado en esta sesión'); return; }
+        if (procesados.has(msgId)) { Logger.log('    → ya en Pendientes'); return; }
         seenMsg.add(msgId);
 
-        var attachments = msg.getAttachments();
-        attachments.forEach(function(att) {
+        // IMPORTANTE: includeInlineImages:true captura imágenes pegadas en el cuerpo
+        // (como las capturas de pantalla que iOS envía al compartir la notif).
+        var attachments = msg.getAttachments({ includeInlineImages: true, includeAttachments: true });
+        Logger.log('    Adjuntos (incluyendo inline): ' + attachments.length);
+
+        attachments.forEach(function(att, ai) {
           var tipo = att.getContentType();
-          if (!tipo.startsWith('image/')) return;
+          Logger.log('    [' + ai + '] tipo=' + tipo + ' nombre=' + att.getName());
+          if (!tipo.startsWith('image/')) {
+            Logger.log('      → no es imagen, se salta');
+            return;
+          }
 
           try {
-            // OCR nativo vía Drive API (requiere servicio Drive habilitado)
+            // OCR nativo vía Drive API v2 (requiere servicio Drive habilitado, versión v2)
             var blob = att.copyBlob();
             var file = Drive.Files.insert(
               { title: 'ocr_finanzas_temp', mimeType: blob.getContentType() },
@@ -347,26 +359,29 @@ function scanearScreenshotsEmail_(pendSheet, procesados, seenMsg, ventana) {
             var texto = doc.getBody().getText();
             DriveApp.getFileById(file.id).setTrashed(true);
 
-            if (!texto || texto.length < 5) return;
+            // Pausa para evitar rate limit "User rate limit exceeded for OCR"
+            Utilities.sleep(2000);
+
+            if (!texto || texto.length < 5) {
+              Logger.log('      ⚠️ OCR no extrajo texto');
+              return;
+            }
+            Logger.log('      OCR OK (' + texto.length + ' chars): "' + texto.slice(0, 150) + '"');
 
             var monto = parseMontoDesdeCorreoSantanderTC_(texto) ||
                         parseMontoDesdeCorreoBancoDeChile_(texto);
             if (!monto || monto <= 0) {
-              Logger.log('Screenshot OCR: no se encontró monto en texto: ' + texto.slice(0, 200));
+              Logger.log('      ⚠️ Monto no encontrado en texto OCR');
               return;
             }
+            Logger.log('      Monto: $' + monto);
 
             // Extraer comercio desde texto OCR.
-            // Prueba varios patrones en orden de especificidad.
             var comercio = 'Santander (captura)';
             var cmPatterns = [
-              // "en COMERCIO el DD" — correos
-              /en\s+([A-ZÁÉÍÓÚÑ0-9][^\n\r]{2,40}?)(?:\s+el\s+\d|\s+\$)/im,
-              // "en COMERCIO\n" — notif push, el comercio va en línea propia después de "en"
-              /en\s+([A-ZÁÉÍÓÚÑ0-9][^\n\r]{2,40})/im,
-              // "Compra en COMERCIO" / "Cargo en COMERCIO"
               /(?:compra|cargo|consumo)\s+en\s+([A-ZÁÉÍÓÚÑ0-9][^\n\r]{2,40})/im,
-              // Primera línea en mayúsculas tras "Santander" — asume que es el comercio
+              /en\s+([A-ZÁÉÍÓÚÑ0-9][^\n\r]{2,40}?)(?:\s+el\s+\d|\s+\$|\s*\n)/im,
+              /en\s+([A-ZÁÉÍÓÚÑ0-9][^\n\r]{2,40})/im,
               /santander[^\n]*\n([A-ZÁÉÍÓÚÑ][^\n]{3,40})/im,
             ];
             for (var pi = 0; pi < cmPatterns.length; pi++) {
@@ -379,20 +394,18 @@ function scanearScreenshotsEmail_(pendSheet, procesados, seenMsg, ventana) {
             var fecha = Utilities.formatDate(msg.getDate(), CONFIG.TIMEZONE, 'yyyy-MM-dd');
 
             // ---- SMART MERCHANT MATCHING ----
-            // Si hay un Pendiente de Santander con monto=0 reciente que coincide
-            // con este comercio, actualizamos su monto en lugar de crear duplicado.
             var matchRow = buscarPendienteCeroSantander_(pendSheet, comercio, fecha);
             if (matchRow > 0) {
               pendSheet.getRange(matchRow, 4).setValue(monto);
-              Logger.log('✅ Smart match: fila ' + matchRow + ' actualizada → ' + comercio + ' $' + monto);
+              Logger.log('      ✅ Smart match fila ' + matchRow + ': ' + comercio + ' $' + monto);
             } else {
               var uid = Utilities.getUuid().slice(0, 8);
               pendSheet.appendRow([uid, fecha, comercio, monto, 'TC Santander', 'Santander', msgId, 'NO']);
-              Logger.log('Screenshot OCR registrado: ' + comercio + ' $' + monto);
+              Logger.log('      ✅ Screenshot OCR registrado: ' + comercio + ' $' + monto);
             }
             nuevos++;
           } catch (ocrErr) {
-            Logger.log('Error OCR screenshot: ' + ocrErr.message);
+            Logger.log('      ❌ Error OCR: ' + ocrErr.message);
           }
         });
       });
@@ -400,6 +413,7 @@ function scanearScreenshotsEmail_(pendSheet, procesados, seenMsg, ventana) {
   } catch (e) {
     Logger.log('scanearScreenshotsEmail error: ' + e.message);
   }
+  Logger.log('scanearScreenshots: nuevos=' + nuevos);
   return nuevos;
 }
 
@@ -752,9 +766,20 @@ function scanearEstadoCuentaSantander_(pendSheet, procesados, seenMsg) {
                 var doc = DocumentApp.openById(file.id);
                 var texto = doc.getBody().getText();
                 DriveApp.getFileById(file.id).setTrashed(true);
+                // Pausa anti-rate-limit
+                Utilities.sleep(3000);
                 if (texto) transacciones = transacciones.concat(parsearTransaccionesDeCuerpo_(texto, 'Santander'));
               } catch (e) {
-                Logger.log('OCR cartola error: ' + e.message);
+                var errMsg = e.message || '';
+                if (errMsg.indexOf('Bad Request') !== -1) {
+                  // PDF probablemente con contraseña (Santander usa RUT como clave) — no se puede OCR
+                  Logger.log('OCR cartola: PDF protegido con contraseña — se omite (desbloquear manualmente con RUT)');
+                } else if (errMsg.indexOf('rate limit') !== -1 || errMsg.indexOf('Rate Limit') !== -1) {
+                  Logger.log('OCR cartola: rate limit alcanzado — reintentando en 10s');
+                  Utilities.sleep(10000);
+                } else {
+                  Logger.log('OCR cartola error: ' + errMsg);
+                }
               }
             });
           }
@@ -940,4 +965,24 @@ function testRapido() {
   Logger.log('=== TEST RÁPIDO (ventana 1 hora) ===');
   scanearGmail(1);
   Logger.log('=== FIN TEST RÁPIDO ===');
+}
+
+/**
+ * Prueba SOLO el scanner de screenshots (sin cartola ni bancos).
+ * Útil para diagnosticar si los emails con imágenes se capturan correctamente.
+ * Ejecutar desde el editor → Ver → Registros para ver el detalle.
+ */
+function testSoloScreenshots() {
+  Logger.log('=== TEST SOLO SCREENSHOTS (ventana 7 días) ===');
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var pendSheet = ss.getSheetByName(SHEETS.PENDIENTES);
+  // Construir set de IDs ya procesados
+  var procesados = new Set();
+  if (pendSheet.getLastRow() > 1) {
+    var ids = pendSheet.getRange(2, 7, pendSheet.getLastRow() - 1, 1).getValues().flat();
+    ids.forEach(function(id) { if (id) procesados.add(id); });
+  }
+  var seenMsg = new Set();
+  var n = scanearScreenshotsEmail_(pendSheet, procesados, seenMsg, '7d');
+  Logger.log('=== FIN: ' + n + ' nuevos registrados ===');
 }
