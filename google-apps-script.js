@@ -784,6 +784,88 @@ function marcarProcesado(emailId) {
 }
 
 // ============================================================
+// HISTÓRICO — ejecutar UNA sola vez para importar meses anteriores
+// ============================================================
+
+/**
+ * Procesa TODAS las cartolas y estados de cuenta Santander del último año.
+ * Ejecutar una sola vez para importar meses anteriores al sistema.
+ * Puede tardar 2-5 minutos dependiendo de cuántos PDFs haya.
+ * Anti-duplicados activo: no crea filas que ya existan.
+ */
+function reconciliarHistorico() {
+  Logger.log('=== HISTÓRICO: importando cartolas del último año ===');
+  var rut = PropertiesService.getScriptProperties().getProperty('RUT_SANTANDER') || '';
+  if (!rut) {
+    Logger.log('❌ RUT no configurado — ejecuta setRutSantander() primero');
+    return;
+  }
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var pendSheet = ss.getSheetByName(SHEETS.PENDIENTES);
+  var procesados = new Set();
+  var seenMsg = new Set();
+  var nuevos = 0;
+
+  var queries = [
+    'from:mensajeria@santander.cl (subject:"estado de cuenta" OR subject:"cartola" OR subject:"resumen de cuenta") newer_than:365d',
+    'from:notificaciones@santander.cl (subject:"estado de cuenta" OR subject:"cartola") newer_than:365d',
+  ];
+
+  queries.forEach(function(q) {
+    var hilos = GmailApp.search(q, 0, 50); // hasta 50 emails
+    Logger.log('Query: ' + q + ' → ' + hilos.length + ' hilos');
+    hilos.forEach(function(hilo) {
+      hilo.getMessages().forEach(function(msg) {
+        var msgId = msg.getId();
+        if (seenMsg.has(msgId)) return;
+        seenMsg.add(msgId);
+        Logger.log('Email: "' + msg.getSubject() + '" ' + msg.getDate());
+
+        var atts = msg.getAttachments();
+        atts.forEach(function(att) {
+          if (att.getContentType() !== 'application/pdf') return;
+          try {
+            var pdfBase64 = Utilities.base64Encode(att.getBytes());
+            var resp = UrlFetchApp.fetch(CONFIG.APP_URL + '/.netlify/functions/extract-pdf', {
+              method: 'POST',
+              contentType: 'application/json',
+              payload: JSON.stringify({ pdfBase64: pdfBase64, password: rut }),
+              muteHttpExceptions: true,
+            });
+            var result = JSON.parse(resp.getContentText());
+            if (resp.getResponseCode() !== 200) {
+              Logger.log('  ❌ ' + (result.error || resp.getResponseCode()));
+              return;
+            }
+            var texto = result.text || '';
+            var fecha = Utilities.formatDate(msg.getDate(), CONFIG.TIMEZONE, 'yyyy-MM-dd');
+            var t1 = parsearTransaccionesDeCuerpo_(texto, 'Santander');
+            var txs = t1.length ? t1 : extraerTransaccionesDeTextoOCR_(texto);
+            Logger.log('  ' + txs.length + ' transacciones en ' + result.pages + ' páginas');
+            txs.forEach(function(t) {
+              var fechaTx = t.fecha || fecha;
+              var matchRow = buscarPendienteCeroSantander_(pendSheet, t.comercio, fechaTx);
+              if (matchRow > 0) {
+                pendSheet.getRange(matchRow, 4).setValue(t.monto);
+                nuevos++;
+                return;
+              }
+              if (existeTransaccionDuplicada_(pendSheet, t.comercio, t.monto, fechaTx)) return;
+              var uid = Utilities.getUuid().slice(0, 8);
+              pendSheet.appendRow([uid, fechaTx, t.comercio, t.monto, 'TC Santander', 'Santander', msgId + '_' + uid, 'NO']);
+              nuevos++;
+            });
+          } catch (e) {
+            Logger.log('  ❌ Error: ' + e.message);
+          }
+        });
+      });
+    });
+  });
+  Logger.log('=== FIN HISTÓRICO: ' + nuevos + ' transacciones procesadas ===');
+}
+
+// ============================================================
 // CONFIGURAR ACTIVADORES — ejecutar UNA sola vez
 // ============================================================
 
