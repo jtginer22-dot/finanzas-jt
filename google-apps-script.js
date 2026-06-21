@@ -900,7 +900,10 @@ function reconciliarHistorico() {
             if (resp.getResponseCode() !== 200) { Logger.log('  ❌ ' + (result.error || resp.getResponseCode())); return; }
             var texto = result.text || '';
             var fecha = Utilities.formatDate(msg.getDate(), CONFIG.TIMEZONE, 'yyyy-MM-dd');
-            var txs = parsearTransaccionesSantander_(texto, fecha);
+            // Solo procesar Estado de Cuenta TC; cartolas de CTA CTE son transferencias, no gastos
+            var esTC = /estado de cuenta/i.test(msg.getSubject());
+            if (!esTC) { Logger.log('  ⏭ Cartola CTA CTE — omitida'); return; }
+            var txs = parsearTransaccionesEstadoCuentaTC_(texto);
             Logger.log('  ' + txs.length + ' transacciones (' + result.pages + ' págs)');
 
             // Set local para evitar duplicados DENTRO del mismo PDF
@@ -939,59 +942,61 @@ function reconciliarHistorico() {
 }
 
 /**
- * Parser de transacciones para cartolas y estados de cuenta Santander.
- * Busca líneas que tengan fecha DD/MM/YY o DD/MM/YYYY + monto en CLP.
- * Ignora abonos, pagos y líneas de totales.
+ * Parser para Estado de Cuenta Tarjeta de Crédito Santander.
+ *
+ * Formato real del PDF (extraído con pdfjs-dist):
+ *   LUGAR\nDD/MM/YYYY\nNOMBRE COMERCIO\n[PAIS\nMONTO_EXT,00\n]$ MONTO_CLP[SIGUIENTE_LUGAR]
+ *
+ * La fecha aparece sola en su línea. El comercio va después de la fecha.
+ * El monto CLP empieza con "$ " y usa puntos como separadores de miles (sin coma).
+ * Los montos en moneda extranjera tienen coma decimal (ej: 18.476,00) → se ignoran.
+ * Las líneas de pago ("MONTO CANCELADO") se excluyen.
  */
-function parsearTransaccionesSantander_(texto, fechaFallback) {
+function parsearTransaccionesEstadoCuentaTC_(texto) {
   var txs = [];
   if (!texto) return txs;
+  var lineas = texto.split(/[\n\r]+/).map(function(l){ return l.trim(); }).filter(Boolean);
 
-  var lineas = texto.split(/[\n\r]+/);
-  var fechaRe = /\b(\d{2})[\/\-](\d{2})[\/\-](\d{2,4})\b/;
-  // Monto CLP: número con punto de miles, ej: 2.026 o 18.980 o 1.234.567
-  var montoRe = /\b(\d{1,3}(?:\.\d{3})+)\s*$/;
-  // Ignorar estas líneas
-  var ignorar = /total|saldo|disponible|l[íi]mite|cupo|pago\s+m[íi]n|fecha\s+desc|abono|pago\s+cuenta|pago\s+tc|interés|comisi[óo]n|impuesto|cobro\s+anual/i;
+  var fechaRe = /^(\d{2})\/(\d{2})\/(\d{4})$/;
+  var ignorar = /monto cancelado|saldo adeudado|monto facturado|monto pagado|total operaciones|movimientos tarjeta|cuota comercio|valor cuota|compras p\.a\.t\.|pago autom|cobro anu|periodo anterior|periodo actual|detalle|desde|hasta/i;
 
-  lineas.forEach(function(linea) {
-    linea = linea.trim();
-    if (linea.length < 8) return;
-    if (ignorar.test(linea)) return;
+  for (var i = 0; i < lineas.length; i++) {
+    var dateM = lineas[i].match(fechaRe);
+    if (!dateM) continue;
 
-    var fechaM = linea.match(fechaRe);
-    var montoM = linea.match(montoRe);
-    if (!fechaM || !montoM) return;
+    var fecha = dateM[3] + '-' + dateM[2] + '-' + dateM[1];
 
-    var monto = parseFloat(montoM[1].replace(/\./g, ''));
-    if (!monto || monto < 200 || monto > 50000000) return;
-
-    // Año: si viene YY, asumir 20YY
-    var anio = fechaM[3].length === 2 ? '20' + fechaM[3] : fechaM[3];
-    var fecha = anio + '-' + fechaM[2] + '-' + fechaM[1];
-
-    // Comercio: texto ANTES de la fecha, limpiando espacios múltiples
-    var posDate = linea.indexOf(fechaM[0]);
-    var comercio = linea.slice(0, posDate).trim().replace(/\s{2,}/g, ' ');
-
-    // Limpiar prefijos de número de cuota o código numérico al inicio
-    comercio = comercio.replace(/^\d+\s+/, '').trim();
-
-    // Si quedó vacío o muy corto, usar el texto después de la fecha como nombre
-    if (comercio.length < 3) {
-      var resto = linea.slice(posDate + fechaM[0].length).trim();
-      // Quitar el monto del final
-      resto = resto.replace(montoM[0], '').trim();
-      if (resto.length >= 3) comercio = resto;
-      else comercio = 'Santander';
+    // Comercio: primera línea no-genérica después de la fecha
+    var comercio = null;
+    for (var j = i + 1; j < Math.min(i + 4, lineas.length); j++) {
+      var c = lineas[j];
+      if (fechaRe.test(c)) break;               // otra fecha → stop
+      if (/^\$/.test(c)) break;                 // ya llegamos al monto → stop
+      if (/^[A-Z]{2}$/.test(c)) continue;       // código de país (AR, US, CL) → skip
+      if (ignorar.test(c)) break;               // línea ignorable → stop
+      if (c.length < 2) continue;
+      comercio = c;
+      break;
     }
+    if (!comercio) continue;
+    if (ignorar.test(comercio)) continue;
 
-    // Excluir si el comercio parece un monto en USD o algo genérico
-    if (/^-?\$?\d|^USD/i.test(comercio)) return;
+    // Monto CLP: primera línea que empiece con "$ " y NO tenga coma (los de moneda ext tienen coma)
+    var monto = null;
+    for (var k = i + 1; k < Math.min(i + 8, lineas.length); k++) {
+      var kl = lineas[k];
+      if (fechaRe.test(kl)) break;                        // otra fecha → stop
+      if (/^\d[\d.]+,\d+$/.test(kl)) continue;           // monto extranjero (18.476,00) → skip
+      var mM = kl.match(/^\$\s*([\d.]+)/);               // $ X.XXX o $ X.XXX.XXX
+      if (mM) {
+        var n = parseFloat(mM[1].replace(/\./g, ''));
+        if (n >= 100 && n <= 50000000) { monto = n; break; }
+      }
+    }
+    if (!monto) continue;
 
     txs.push({ fecha: fecha, comercio: comercio.slice(0, 60), monto: Math.round(monto) });
-  });
-
+  }
   return txs;
 }
 
@@ -1098,9 +1103,10 @@ function scanearEstadoCuentaSantander_(pendSheet, procesados, seenMsg) {
               }
               var texto = result.text || '';
               Logger.log('  Texto: ' + texto.length + ' chars, ' + result.pages + ' páginas');
-              var t1 = parsearTransaccionesDeCuerpo_(texto, 'Santander');
-              var t2 = t1.length ? [] : extraerTransaccionesDeTextoOCR_(texto);
-              transacciones = transacciones.concat(t1).concat(t2);
+              // Solo Estado de Cuenta TC tiene compras; cartolas de CTA CTE son transferencias
+              var esTC = /estado de cuenta/i.test(msg.getSubject());
+              if (!esTC) { Logger.log('  ⏭ Cartola CTA CTE — omitida'); return; }
+              transacciones = transacciones.concat(parsearTransaccionesEstadoCuentaTC_(texto));
             } catch (e) {
               Logger.log('  Error extract-pdf: ' + e.message);
             }
