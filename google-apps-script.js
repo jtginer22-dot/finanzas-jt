@@ -292,10 +292,10 @@ function scanearGmail(ventanaHoras) {
   // ---- SCREENSHOTS enviados por el usuario a sí mismo ----
   nuevos += scanearScreenshotsEmail_(pendSheet, procesados, seenMsg, ventana);
 
-  // NOTA: scanearEstadoCuentaSantander_ fue removido del loop automático.
-  // El PDF de Santander llega encriptado con contraseña (RUT) — Google Drive API
-  // no puede hacer OCR sobre él. Para reconciliar a fin de mes, ejecutar manualmente:
-  //   reconciliarCartola() → descarga PDF, lo desbloquea en Preview/Mac, lo reenvía por email.
+  // ---- ESTADO DE CUENTA / CARTOLA SANTANDER (PDF encriptado) ----
+  // Se desencripta automáticamente via Netlify extract-pdf usando el RUT
+  // guardado en Script Properties. Solo hace trabajo cuando llega un email nuevo.
+  nuevos += scanearEstadoCuentaSantander_(pendSheet, procesados, seenMsg);
 
   Logger.log(`Scanner completo: ${nuevos} nuevos gastos detectados`);
   
@@ -791,121 +791,40 @@ function configurarActivadores() {
 }
 
 // ============================================================
-// RECONCILIACIÓN FIN DE MES — ejecutar manualmente una vez al mes
+// RECONCILIACIÓN FIN DE MES — se ejecuta automáticamente y también manualmente
 // ============================================================
 
 /**
- * Reconciliación mensual contra cartola/estado de cuenta Santander.
- *
- * FLUJO DE USO (una vez al mes):
- * 1. Abre el email "Estado de Cuenta TC" o "Cartola Mensual" de mensajeria@santander.cl
- * 2. Descarga el PDF adjunto
- * 3. Ábrelo en Preview (Mac) → escribe tu RUT como contraseña
- * 4. Archivo → Exportar como PDF → guarda sin contraseña
- * 5. Reenvíate ese PDF por email con asunto "cartola desbloqueada" o "estado desbloqueado"
- * 6. Ejecuta esta función desde Apps Script
- *
- * La función busca ese email tuyo, extrae transacciones por OCR y hace smart match
- * contra Pendientes existentes para actualizar montos o agregar filas nuevas.
+ * Wrapper manual: fuerza re-escaneo de los últimos 35 días de cartolas.
+ * Útil si algo falló en el proceso automático.
  */
 function reconciliarCartola() {
-  Logger.log('=== RECONCILIACIÓN FIN DE MES ===');
-  var rut = PropertiesService.getScriptProperties().getProperty('RUT_SANTANDER') || '';
-  if (rut) {
-    Logger.log('RUT para abrir PDF: ' + rut + ' (úsalo como contraseña en Preview/Adobe)');
-  } else {
-    Logger.log('⚠️ RUT no configurado. Ejecuta setRutSantander() una vez para guardarlo.');
-  }
-  Logger.log('PASOS: 1) Abre el PDF con ese RUT en Preview → 2) Archivo→Exportar como PDF → 3) Reenvíate ese PDF con asunto "cartola desbloqueada" → 4) Ejecuta esta función de nuevo');
+  Logger.log('=== RECONCILIACIÓN MANUAL ===');
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var pendSheet = ss.getSheetByName(SHEETS.PENDIENTES);
-  // IDs ya procesados
-  var procesados = new Set();
-  if (pendSheet.getLastRow() > 1) {
-    var ids = pendSheet.getRange(2, 7, pendSheet.getLastRow() - 1, 1).getValues().flat();
-    ids.forEach(function(id) { if (id) procesados.add(id); });
-  }
-  // Buscar el email que el propio usuario se envió con el PDF desbloqueado
-  var q = 'from:' + CONFIG.EMAIL_DESTINO + ' (subject:cartola OR subject:"estado de cuenta" OR subject:desbloqueado) newer_than:7d';
-  Logger.log('Buscando: ' + q);
-  var hilos = GmailApp.search(q, 0, 5);
-  Logger.log('Hilos encontrados: ' + hilos.length);
-
-  var nuevos = 0;
-  var seenMsg = new Set();
-  hilos.forEach(function(hilo) {
-    hilo.getMessages().forEach(function(msg) {
-      var msgId = msg.getId();
-      if (seenMsg.has(msgId) || procesados.has(msgId)) return;
-      seenMsg.add(msgId);
-      Logger.log('Email: "' + msg.getSubject() + '"');
-
-      var atts = msg.getAttachments({ includeInlineImages: true, includeAttachments: true });
-      Logger.log('  Adjuntos: ' + atts.length);
-      atts.forEach(function(att) {
-        var tipo = att.getContentType();
-        if (tipo !== 'application/pdf' && !tipo.startsWith('image/')) return;
-        Logger.log('  Procesando: ' + att.getName() + ' (' + tipo + ')');
-        try {
-          var blob = att.copyBlob();
-          var file = Drive.Files.insert(
-            { title: 'ocr_cartola_reconciliacion', mimeType: blob.getContentType() },
-            blob,
-            { ocr: true, ocrLanguage: 'es' }
-          );
-          var doc = DocumentApp.openById(file.id);
-          var texto = doc.getBody().getText();
-          DriveApp.getFileById(file.id).setTrashed(true);
-          Utilities.sleep(3000);
-
-          if (!texto || texto.length < 20) {
-            Logger.log('  ⚠️ OCR no extrajo texto');
-            return;
-          }
-          Logger.log('  OCR: ' + texto.length + ' chars');
-
-          // Intentar con el parser específico de cartola (líneas con fecha+monto+comercio)
-          // y también con el parser genérico de OCR para cubrir más formatos.
-          var transacciones = parsearTransaccionesDeCuerpo_(texto, 'Santander');
-          if (!transacciones.length) transacciones = extraerTransaccionesDeTextoOCR_(texto);
-          Logger.log('  Transacciones encontradas: ' + transacciones.length);
-          var fecha = Utilities.formatDate(msg.getDate(), CONFIG.TIMEZONE, 'yyyy-MM-dd');
-          transacciones.forEach(function(t) {
-            var matchRow = buscarPendienteCeroSantander_(pendSheet, t.comercio, t.fecha || fecha);
-            if (matchRow > 0) {
-              pendSheet.getRange(matchRow, 4).setValue(t.monto);
-              Logger.log('  ✅ Smart match: ' + t.comercio + ' $' + t.monto);
-            } else {
-              var uid = Utilities.getUuid().slice(0, 8);
-              pendSheet.appendRow([uid, t.fecha || fecha, t.comercio, t.monto, 'TC Santander', 'Santander', msgId + '_' + uid, 'NO']);
-              Logger.log('  ➕ Nueva fila: ' + t.comercio + ' $' + t.monto);
-            }
-            nuevos++;
-          });
-        } catch (e) {
-          var msg_ = e.message || '';
-          if (msg_.indexOf('Bad Request') !== -1) {
-            Logger.log('  ❌ PDF aún tiene contraseña — desbloquéalo en Preview y reenvíalo');
-          } else {
-            Logger.log('  ❌ Error OCR: ' + msg_);
-          }
-        }
-      });
-    });
-  });
-  Logger.log('=== FIN: ' + nuevos + ' transacciones procesadas ===');
+  // procesados vacío → permite re-procesar emails ya vistos
+  var n = scanearEstadoCuentaSantander_(pendSheet, new Set(), new Set());
+  Logger.log('=== FIN: ' + n + ' transacciones procesadas ===');
 }
 
 // ============================================================
-// PARSER CARTOLAS Y ESTADOS DE CUENTA SANTANDER (solo para reconciliarCartola)
+// PARSER CARTOLAS Y ESTADOS DE CUENTA SANTANDER
 // ============================================================
 
 /**
- * (Interna) Busca y procesa el estado de cuenta desde mensajeria@santander.cl.
- * NO se llama automáticamente porque el PDF llega con contraseña (RUT).
- * Se mantiene por si Santander algún día deja de encriptar los PDFs.
+ * Detecta emails de Santander con PDF de estado de cuenta/cartola y los
+ * desencripta automáticamente via Netlify extract-pdf usando el RUT guardado
+ * en Script Properties. No requiere ninguna acción manual del usuario.
+ *
+ * CONFIGURACIÓN ÚNICA: ejecutar setRutSantander() una sola vez.
  */
 function scanearEstadoCuentaSantander_(pendSheet, procesados, seenMsg) {
+  var rut = PropertiesService.getScriptProperties().getProperty('RUT_SANTANDER') || '';
+  if (!rut) {
+    Logger.log('scanearEstadoCuenta: RUT no configurado — ejecuta setRutSantander() una vez');
+    return 0;
+  }
+
   var nuevos = 0;
   var queries = [
     'from:mensajeria@santander.cl (subject:"estado de cuenta" OR subject:"cartola" OR subject:"resumen de cuenta") newer_than:35d',
@@ -920,49 +839,50 @@ function scanearEstadoCuentaSantander_(pendSheet, procesados, seenMsg) {
           if (seenMsg.has(msgId) || procesados.has(msgId)) return;
           seenMsg.add(msgId);
 
-          // Intentar extraer transacciones del cuerpo HTML primero
-          var cuerpo = msg.getPlainBody() || '';
-          var transacciones = parsearTransaccionesDeCuerpo_(cuerpo, 'Santander');
+          var fecha = Utilities.formatDate(msg.getDate(), CONFIG.TIMEZONE, 'yyyy-MM-dd');
+          var transacciones = [];
 
-          // Si el cuerpo no tiene datos, intentar con PDF adjunto via OCR
-          if (!transacciones.length) {
-            var attachments = msg.getAttachments();
-            attachments.forEach(function(att) {
-              var tipo = att.getContentType();
-              if (tipo !== 'application/pdf' && !tipo.startsWith('image/')) return;
-              try {
-                var blob = att.copyBlob();
-                var file = Drive.Files.insert(
-                  { title: 'ocr_cartola_temp', mimeType: blob.getContentType() },
-                  blob,
-                  { ocr: true, ocrLanguage: 'es' }
-                );
-                var doc = DocumentApp.openById(file.id);
-                var texto = doc.getBody().getText();
-                DriveApp.getFileById(file.id).setTrashed(true);
-                // Pausa anti-rate-limit
-                Utilities.sleep(3000);
-                if (texto) transacciones = transacciones.concat(parsearTransaccionesDeCuerpo_(texto, 'Santander'));
-              } catch (e) {
-                var errMsg = e.message || '';
-                if (errMsg.indexOf('Bad Request') !== -1) {
-                  // PDF probablemente con contraseña (Santander usa RUT como clave) — no se puede OCR
-                  Logger.log('OCR cartola: PDF protegido con contraseña — se omite (desbloquear manualmente con RUT)');
-                } else if (errMsg.indexOf('rate limit') !== -1 || errMsg.indexOf('Rate Limit') !== -1) {
-                  Logger.log('OCR cartola: rate limit alcanzado — reintentando en 10s');
-                  Utilities.sleep(10000);
-                } else {
-                  Logger.log('OCR cartola error: ' + errMsg);
-                }
+          // Desencriptar PDF via Netlify extract-pdf (usa RUT como contraseña)
+          var attachments = msg.getAttachments();
+          attachments.forEach(function(att) {
+            if (att.getContentType() !== 'application/pdf') return;
+            Logger.log('Cartola PDF: ' + att.getName());
+            try {
+              var pdfBase64 = Utilities.base64Encode(att.getBytes());
+              var resp = UrlFetchApp.fetch(CONFIG.APP_URL + '/.netlify/functions/extract-pdf', {
+                method: 'POST',
+                contentType: 'application/json',
+                payload: JSON.stringify({ pdfBase64: pdfBase64, password: rut }),
+                muteHttpExceptions: true,
+              });
+              var status = resp.getResponseCode();
+              var result = JSON.parse(resp.getContentText());
+              if (status !== 200) {
+                Logger.log('  extract-pdf error ' + status + ': ' + (result.error || ''));
+                return;
               }
-            });
-          }
+              var texto = result.text || '';
+              Logger.log('  Texto: ' + texto.length + ' chars, ' + result.pages + ' páginas');
+              var t1 = parsearTransaccionesDeCuerpo_(texto, 'Santander');
+              var t2 = t1.length ? [] : extraerTransaccionesDeTextoOCR_(texto);
+              transacciones = transacciones.concat(t1).concat(t2);
+            } catch (e) {
+              Logger.log('  Error extract-pdf: ' + e.message);
+            }
+          });
 
+          Logger.log('Cartola transacciones: ' + transacciones.length);
           transacciones.forEach(function(t) {
-            var uid = Utilities.getUuid().slice(0, 8);
-            pendSheet.appendRow([uid, t.fecha, t.comercio, t.monto, 'TC Santander', 'Santander', msgId + '_' + uid, 'NO']);
+            var matchRow = buscarPendienteCeroSantander_(pendSheet, t.comercio, t.fecha || fecha);
+            if (matchRow > 0) {
+              pendSheet.getRange(matchRow, 4).setValue(t.monto);
+              Logger.log('  ✅ Match: ' + t.comercio + ' $' + t.monto);
+            } else {
+              var uid = Utilities.getUuid().slice(0, 8);
+              pendSheet.appendRow([uid, t.fecha || fecha, t.comercio, t.monto, 'TC Santander', 'Santander', msgId + '_' + uid, 'NO']);
+              Logger.log('  ➕ Nueva: ' + t.comercio + ' $' + t.monto);
+            }
             nuevos++;
-            Logger.log('Cartola Santander: ' + t.comercio + ' $' + t.monto + ' ' + t.fecha);
           });
           if (transacciones.length) procesados.add(msgId);
         });

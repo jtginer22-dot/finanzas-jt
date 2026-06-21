@@ -4,6 +4,9 @@
   "scripts": {
     "dev": "netlify dev"
   },
+  "dependencies": {
+    "pdfjs-dist": "3.11.174"
+  },
   "devDependencies": {
     "netlify-cli": "^20.0.0"
   }
