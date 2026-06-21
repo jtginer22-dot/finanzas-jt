@@ -829,27 +829,39 @@ function limpiarFilasCartolaMalas() {
 function debugTextoPDF() {
   var rut = PropertiesService.getScriptProperties().getProperty('RUT_SANTANDER') || '';
   if (!rut) { Logger.log('❌ Configura RUT primero'); return; }
-  var q = 'from:mensajeria@santander.cl (subject:"estado de cuenta" OR subject:"cartola") newer_than:60d';
-  var hilos = GmailApp.search(q, 0, 1);
-  if (!hilos.length) { Logger.log('No se encontraron emails'); return; }
-  var msg = hilos[0].getMessages()[0];
-  Logger.log('Email: ' + msg.getSubject() + ' — ' + msg.getDate());
-  var atts = msg.getAttachments();
-  var pdf = null;
-  for (var i = 0; i < atts.length; i++) {
-    if (atts[i].getContentType() === 'application/pdf') { pdf = atts[i]; break; }
-  }
-  if (!pdf) { Logger.log('Sin PDF'); return; }
-  var resp = UrlFetchApp.fetch(CONFIG.APP_URL + '/.netlify/functions/extract-pdf', {
-    method: 'POST', contentType: 'application/json',
-    payload: JSON.stringify({ pdfBase64: Utilities.base64Encode(pdf.getBytes()), password: rut }),
-    muteHttpExceptions: true,
+
+  // Buscar específicamente el Estado de Cuenta TC (tiene las compras con tarjeta)
+  var queries = [
+    'from:mensajeria@santander.cl subject:"estado de cuenta" newer_than:90d',
+    'from:mensajeria@santander.cl subject:"cartola" newer_than:90d',
+  ];
+
+  queries.forEach(function(q) {
+    var hilos = GmailApp.search(q, 0, 3);
+    hilos.forEach(function(hilo) {
+      hilo.getMessages().forEach(function(msg) {
+        Logger.log('=== EMAIL: "' + msg.getSubject() + '" — ' + msg.getDate() + ' ===');
+        var atts = msg.getAttachments();
+        atts.forEach(function(att) {
+          if (att.getContentType() !== 'application/pdf') return;
+          var resp = UrlFetchApp.fetch(CONFIG.APP_URL + '/.netlify/functions/extract-pdf', {
+            method: 'POST', contentType: 'application/json',
+            payload: JSON.stringify({ pdfBase64: Utilities.base64Encode(att.getBytes()), password: rut }),
+            muteHttpExceptions: true,
+          });
+          var result = JSON.parse(resp.getContentText());
+          Logger.log('Páginas: ' + result.pages + ' | Chars: ' + (result.text || '').length);
+          // Mostrar desde donde empieza "DETALLE" para saltar el encabezado
+          var texto = result.text || '';
+          var posDetalle = texto.search(/detalle|movimiento|transacci/i);
+          var inicio = posDetalle > 0 ? posDetalle : 0;
+          Logger.log('--- TEXTO desde "DETALLE" ---');
+          Logger.log(texto.slice(inicio, inicio + 4000));
+          Logger.log('--- FIN ---');
+        });
+      });
+    });
   });
-  var result = JSON.parse(resp.getContentText());
-  Logger.log('Páginas: ' + result.pages + ' | Chars: ' + (result.text || '').length);
-  Logger.log('=== TEXTO (primeros 3000 chars) ===');
-  Logger.log((result.text || '').slice(0, 3000));
-  Logger.log('=== FIN ===');
 }
 
 function reconciliarHistorico() {
