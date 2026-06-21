@@ -793,16 +793,71 @@ function marcarProcesado(emailId) {
  * Puede tardar 2-5 minutos dependiendo de cuántos PDFs haya.
  * Anti-duplicados activo: no crea filas que ya existan.
  */
+/**
+ * Limpia filas con nombres claramente erróneos generados por el parser anterior.
+ * Ejecutar ANTES de reconciliarHistorico() si ya corriste una versión con errores.
+ */
+function limpiarFilasCartolaMalas() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(SHEETS.PENDIENTES);
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) { Logger.log('Nada que limpiar'); return; }
+  var data = sheet.getRange(2, 1, lastRow - 1, 8).getValues();
+  var eliminadas = 0;
+  // Recorrer de abajo hacia arriba para no desplazar índices
+  for (var i = data.length - 1; i >= 0; i--) {
+    var comercio = String(data[i][2] || '');
+    var procesado = String(data[i][7] || '').toUpperCase();
+    if (procesado === 'SI') continue; // no tocar lo ya categorizado
+    var esMalo = /^santander\s*\(cartola\)$/i.test(comercio) ||
+                 /^-?\$/.test(comercio) ||
+                 /^-?USD/i.test(comercio) ||
+                 /^-?[\d.,]+$/.test(comercio.trim());
+    if (esMalo) {
+      sheet.deleteRow(i + 2); // +2 por header + base-1
+      eliminadas++;
+    }
+  }
+  SpreadsheetApp.flush();
+  Logger.log('✅ Eliminadas ' + eliminadas + ' filas con nombres incorrectos');
+}
+
+/**
+ * Muestra los primeros 3000 caracteres del texto extraído del PDF de cartola
+ * más reciente. Ejecutar para diagnosticar el formato real del PDF.
+ */
+function debugTextoPDF() {
+  var rut = PropertiesService.getScriptProperties().getProperty('RUT_SANTANDER') || '';
+  if (!rut) { Logger.log('❌ Configura RUT primero'); return; }
+  var q = 'from:mensajeria@santander.cl (subject:"estado de cuenta" OR subject:"cartola") newer_than:60d';
+  var hilos = GmailApp.search(q, 0, 1);
+  if (!hilos.length) { Logger.log('No se encontraron emails'); return; }
+  var msg = hilos[0].getMessages()[0];
+  Logger.log('Email: ' + msg.getSubject() + ' — ' + msg.getDate());
+  var atts = msg.getAttachments();
+  var pdf = null;
+  for (var i = 0; i < atts.length; i++) {
+    if (atts[i].getContentType() === 'application/pdf') { pdf = atts[i]; break; }
+  }
+  if (!pdf) { Logger.log('Sin PDF'); return; }
+  var resp = UrlFetchApp.fetch(CONFIG.APP_URL + '/.netlify/functions/extract-pdf', {
+    method: 'POST', contentType: 'application/json',
+    payload: JSON.stringify({ pdfBase64: Utilities.base64Encode(pdf.getBytes()), password: rut }),
+    muteHttpExceptions: true,
+  });
+  var result = JSON.parse(resp.getContentText());
+  Logger.log('Páginas: ' + result.pages + ' | Chars: ' + (result.text || '').length);
+  Logger.log('=== TEXTO (primeros 3000 chars) ===');
+  Logger.log((result.text || '').slice(0, 3000));
+  Logger.log('=== FIN ===');
+}
+
 function reconciliarHistorico() {
   Logger.log('=== HISTÓRICO: importando cartolas del último año ===');
   var rut = PropertiesService.getScriptProperties().getProperty('RUT_SANTANDER') || '';
-  if (!rut) {
-    Logger.log('❌ RUT no configurado — ejecuta setRutSantander() primero');
-    return;
-  }
+  if (!rut) { Logger.log('❌ RUT no configurado'); return; }
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var pendSheet = ss.getSheetByName(SHEETS.PENDIENTES);
-  var procesados = new Set();
   var seenMsg = new Set();
   var nuevos = 0;
 
@@ -812,7 +867,7 @@ function reconciliarHistorico() {
   ];
 
   queries.forEach(function(q) {
-    var hilos = GmailApp.search(q, 0, 50); // hasta 50 emails
+    var hilos = GmailApp.search(q, 0, 50);
     Logger.log('Query: ' + q + ' → ' + hilos.length + ' hilos');
     hilos.forEach(function(hilo) {
       hilo.getMessages().forEach(function(msg) {
@@ -820,49 +875,112 @@ function reconciliarHistorico() {
         if (seenMsg.has(msgId)) return;
         seenMsg.add(msgId);
         Logger.log('Email: "' + msg.getSubject() + '" ' + msg.getDate());
-
         var atts = msg.getAttachments();
         atts.forEach(function(att) {
           if (att.getContentType() !== 'application/pdf') return;
           try {
-            var pdfBase64 = Utilities.base64Encode(att.getBytes());
             var resp = UrlFetchApp.fetch(CONFIG.APP_URL + '/.netlify/functions/extract-pdf', {
-              method: 'POST',
-              contentType: 'application/json',
-              payload: JSON.stringify({ pdfBase64: pdfBase64, password: rut }),
+              method: 'POST', contentType: 'application/json',
+              payload: JSON.stringify({ pdfBase64: Utilities.base64Encode(att.getBytes()), password: rut }),
               muteHttpExceptions: true,
             });
             var result = JSON.parse(resp.getContentText());
-            if (resp.getResponseCode() !== 200) {
-              Logger.log('  ❌ ' + (result.error || resp.getResponseCode()));
-              return;
-            }
+            if (resp.getResponseCode() !== 200) { Logger.log('  ❌ ' + (result.error || resp.getResponseCode())); return; }
             var texto = result.text || '';
             var fecha = Utilities.formatDate(msg.getDate(), CONFIG.TIMEZONE, 'yyyy-MM-dd');
-            var t1 = parsearTransaccionesDeCuerpo_(texto, 'Santander');
-            var txs = t1.length ? t1 : extraerTransaccionesDeTextoOCR_(texto);
-            Logger.log('  ' + txs.length + ' transacciones en ' + result.pages + ' páginas');
+            var txs = parsearTransaccionesSantander_(texto, fecha);
+            Logger.log('  ' + txs.length + ' transacciones (' + result.pages + ' págs)');
+
+            // Set local para evitar duplicados DENTRO del mismo PDF
+            var localSeen = {};
             txs.forEach(function(t) {
-              var fechaTx = t.fecha || fecha;
-              var matchRow = buscarPendienteCeroSantander_(pendSheet, t.comercio, fechaTx);
+              var localKey = t.fecha + '|' + t.monto + '|' + t.comercio.slice(0, 10).toUpperCase();
+              if (localSeen[localKey]) return;
+              localSeen[localKey] = true;
+
+              var matchRow = buscarPendienteCeroSantander_(pendSheet, t.comercio, t.fecha);
               if (matchRow > 0) {
                 pendSheet.getRange(matchRow, 4).setValue(t.monto);
+                SpreadsheetApp.flush();
+                Logger.log('  ✅ Rellenado: ' + t.comercio + ' $' + t.monto);
                 nuevos++;
                 return;
               }
-              if (existeTransaccionDuplicada_(pendSheet, t.comercio, t.monto, fechaTx)) return;
+              if (existeTransaccionDuplicada_(pendSheet, t.comercio, t.monto, t.fecha)) {
+                Logger.log('  ⏭ Ya existe: ' + t.comercio + ' $' + t.monto);
+                return;
+              }
               var uid = Utilities.getUuid().slice(0, 8);
-              pendSheet.appendRow([uid, fechaTx, t.comercio, t.monto, 'TC Santander', 'Santander', msgId + '_' + uid, 'NO']);
+              pendSheet.appendRow([uid, t.fecha, t.comercio, t.monto, 'TC Santander', 'Santander', msgId + '_' + uid, 'NO']);
+              SpreadsheetApp.flush(); // flush inmediato para que existeTransaccionDuplicada_ lo vea
+              Logger.log('  ➕ Nueva: ' + t.comercio + ' $' + t.monto);
               nuevos++;
             });
           } catch (e) {
-            Logger.log('  ❌ Error: ' + e.message);
+            Logger.log('  ❌ ' + e.message);
           }
         });
       });
     });
   });
-  Logger.log('=== FIN HISTÓRICO: ' + nuevos + ' transacciones procesadas ===');
+  Logger.log('=== FIN: ' + nuevos + ' transacciones ===');
+}
+
+/**
+ * Parser de transacciones para cartolas y estados de cuenta Santander.
+ * Busca líneas que tengan fecha DD/MM/YY o DD/MM/YYYY + monto en CLP.
+ * Ignora abonos, pagos y líneas de totales.
+ */
+function parsearTransaccionesSantander_(texto, fechaFallback) {
+  var txs = [];
+  if (!texto) return txs;
+
+  var lineas = texto.split(/[\n\r]+/);
+  var fechaRe = /\b(\d{2})[\/\-](\d{2})[\/\-](\d{2,4})\b/;
+  // Monto CLP: número con punto de miles, ej: 2.026 o 18.980 o 1.234.567
+  var montoRe = /\b(\d{1,3}(?:\.\d{3})+)\s*$/;
+  // Ignorar estas líneas
+  var ignorar = /total|saldo|disponible|l[íi]mite|cupo|pago\s+m[íi]n|fecha\s+desc|abono|pago\s+cuenta|pago\s+tc|interés|comisi[óo]n|impuesto|cobro\s+anual/i;
+
+  lineas.forEach(function(linea) {
+    linea = linea.trim();
+    if (linea.length < 8) return;
+    if (ignorar.test(linea)) return;
+
+    var fechaM = linea.match(fechaRe);
+    var montoM = linea.match(montoRe);
+    if (!fechaM || !montoM) return;
+
+    var monto = parseFloat(montoM[1].replace(/\./g, ''));
+    if (!monto || monto < 200 || monto > 50000000) return;
+
+    // Año: si viene YY, asumir 20YY
+    var anio = fechaM[3].length === 2 ? '20' + fechaM[3] : fechaM[3];
+    var fecha = anio + '-' + fechaM[2] + '-' + fechaM[1];
+
+    // Comercio: texto ANTES de la fecha, limpiando espacios múltiples
+    var posDate = linea.indexOf(fechaM[0]);
+    var comercio = linea.slice(0, posDate).trim().replace(/\s{2,}/g, ' ');
+
+    // Limpiar prefijos de número de cuota o código numérico al inicio
+    comercio = comercio.replace(/^\d+\s+/, '').trim();
+
+    // Si quedó vacío o muy corto, usar el texto después de la fecha como nombre
+    if (comercio.length < 3) {
+      var resto = linea.slice(posDate + fechaM[0].length).trim();
+      // Quitar el monto del final
+      resto = resto.replace(montoM[0], '').trim();
+      if (resto.length >= 3) comercio = resto;
+      else comercio = 'Santander';
+    }
+
+    // Excluir si el comercio parece un monto en USD o algo genérico
+    if (/^-?\$?\d|^USD/i.test(comercio)) return;
+
+    txs.push({ fecha: fecha, comercio: comercio.slice(0, 60), monto: Math.round(monto) });
+  });
+
+  return txs;
 }
 
 // ============================================================
