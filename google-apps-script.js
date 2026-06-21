@@ -359,52 +359,36 @@ function scanearScreenshotsEmail_(pendSheet, procesados, seenMsg, ventana) {
             var doc = DocumentApp.openById(file.id);
             var texto = doc.getBody().getText();
             DriveApp.getFileById(file.id).setTrashed(true);
-
-            // Pausa para evitar rate limit "User rate limit exceeded for OCR"
             Utilities.sleep(2000);
 
             if (!texto || texto.length < 5) {
               Logger.log('      ⚠️ OCR no extrajo texto');
               return;
             }
-            Logger.log('      OCR OK (' + texto.length + ' chars): "' + texto.slice(0, 150) + '"');
+            Logger.log('      OCR OK (' + texto.length + ' chars): "' + texto.slice(0, 200) + '"');
 
-            var monto = parseMontoDesdeCorreoSantanderTC_(texto) ||
-                        parseMontoDesdeCorreoBancoDeChile_(texto);
-            if (!monto || monto <= 0) {
-              Logger.log('      ⚠️ Monto no encontrado en texto OCR');
+            // Extraer TODAS las transacciones del screenshot (puede haber varias)
+            var fecha = Utilities.formatDate(msg.getDate(), CONFIG.TIMEZONE, 'yyyy-MM-dd');
+            var transacciones = extraerTransaccionesDeTextoOCR_(texto);
+            Logger.log('      Transacciones encontradas: ' + transacciones.length);
+
+            if (!transacciones.length) {
+              Logger.log('      ⚠️ No se encontraron montos en el OCR');
               return;
             }
-            Logger.log('      Monto: $' + monto);
 
-            // Extraer comercio desde texto OCR.
-            var comercio = 'Santander (captura)';
-            var cmPatterns = [
-              /(?:compra|cargo|consumo)\s+en\s+([A-ZÁÉÍÓÚÑ0-9][^\n\r]{2,40})/im,
-              /en\s+([A-ZÁÉÍÓÚÑ0-9][^\n\r]{2,40}?)(?:\s+el\s+\d|\s+\$|\s*\n)/im,
-              /en\s+([A-ZÁÉÍÓÚÑ0-9][^\n\r]{2,40})/im,
-              /santander[^\n]*\n([A-ZÁÉÍÓÚÑ][^\n]{3,40})/im,
-            ];
-            for (var pi = 0; pi < cmPatterns.length; pi++) {
-              var cm = texto.match(cmPatterns[pi]);
-              if (cm && cm[1] && cm[1].trim().length >= 3) {
-                comercio = cm[1].trim().slice(0, 60);
-                break;
+            transacciones.forEach(function(t) {
+              var matchRow = buscarPendienteCeroSantander_(pendSheet, t.comercio, fecha);
+              if (matchRow > 0) {
+                pendSheet.getRange(matchRow, 4).setValue(t.monto);
+                Logger.log('      ✅ Smart match fila ' + matchRow + ': ' + t.comercio + ' $' + t.monto);
+              } else {
+                var uid = Utilities.getUuid().slice(0, 8);
+                pendSheet.appendRow([uid, fecha, t.comercio, t.monto, 'TC Santander', 'Santander', msgId + '_' + uid, 'NO']);
+                Logger.log('      ➕ Nueva fila: ' + t.comercio + ' $' + t.monto);
               }
-            }
-            var fecha = Utilities.formatDate(msg.getDate(), CONFIG.TIMEZONE, 'yyyy-MM-dd');
-
-            // ---- SMART MERCHANT MATCHING ----
-            var matchRow = buscarPendienteCeroSantander_(pendSheet, comercio, fecha);
-            if (matchRow > 0) {
-              pendSheet.getRange(matchRow, 4).setValue(monto);
-              Logger.log('      ✅ Smart match fila ' + matchRow + ': ' + comercio + ' $' + monto);
-            } else {
-              var uid = Utilities.getUuid().slice(0, 8);
-              pendSheet.appendRow([uid, fecha, comercio, monto, 'TC Santander', 'Santander', msgId, 'NO']);
-              Logger.log('      ✅ Screenshot OCR registrado: ' + comercio + ' $' + monto);
-            }
-            nuevos++;
+              nuevos++;
+            });
           } catch (ocrErr) {
             Logger.log('      ❌ Error OCR: ' + ocrErr.message);
           }
@@ -611,6 +595,89 @@ function enviarResumenDiario() {
 // ============================================================
 // HELPERS
 // ============================================================
+
+/**
+ * Extrae TODAS las transacciones (comercio + monto) de un texto OCR.
+ * Funciona con screenshots de una o varias notificaciones apiladas,
+ * la app Wallet, la app Santander, o cualquier texto con montos $X.XXX.
+ *
+ * Estrategia: busca cada ocurrencia de $X.XXX en el texto y asocia
+ * el texto más cercano no-genérico como nombre de comercio.
+ */
+function extraerTransaccionesDeTextoOCR_(texto) {
+  if (!texto) return [];
+  var lineas = texto.split(/[\n\r]+/).map(function(l){ return l.trim(); }).filter(Boolean);
+  var resultado = [];
+  var vistosKey = {};
+
+  // Palabras genéricas que NO son nombres de comercio
+  var generico = /^(santander|banco|wallet|apple\s*pay|visa|mastercard|redcompra|hoy|ayer|hace\s+\d|transacci[oó]n|compra|cargo|consumo|notificaci[oó]n|\d{1,2}[\s\/]\w+|\d{2}:\d{2}|jun|jul|ago|sep|oct|nov|dic|ene|feb|mar|abr|may|chile)/i;
+
+  for (var i = 0; i < lineas.length; i++) {
+    var linea = lineas[i];
+
+    // Buscar monto en esta línea: $X.XXX (formato chileno con puntos)
+    var montoM = linea.match(/\$\s*([0-9]{1,3}(?:\.[0-9]{3})+)/);
+    if (!montoM) continue;
+
+    var monto = parseFloat(montoM[1].replace(/\./g, ''));
+    if (!monto || monto <= 0 || monto > 50000000) continue;
+
+    var comercio = null;
+
+    // 1. Mismo línea: "Transacción por $X en COMERCIO" o "en COMERCIO $X"
+    var inline = linea.match(/(?:en\s+)([A-ZÁÉÍÓÚÑ0-9][^\n\r$]{2,50}?)(?:\s*\$|\s+[-—]|\s*$)/i);
+    if (inline && inline[1].trim().length >= 3 && !generico.test(inline[1].trim())) {
+      comercio = inline[1].trim();
+    }
+
+    // 2. Líneas anteriores (hasta 3 atrás): buscar la primera no-genérica
+    if (!comercio) {
+      for (var j = i - 1; j >= Math.max(0, i - 3); j--) {
+        var prev = lineas[j];
+        if (generico.test(prev)) continue;
+        if (/^\$/.test(prev)) continue;       // otra línea de monto
+        if (prev.length < 3) continue;
+        if (/^\d+$/.test(prev)) continue;     // solo números
+        comercio = prev.slice(0, 60);
+        break;
+      }
+    }
+
+    // 3. Línea siguiente (a veces el comercio viene después del monto)
+    if (!comercio && i + 1 < lineas.length) {
+      var next = lineas[i + 1];
+      if (!generico.test(next) && !/^\$/.test(next) && next.length >= 3 && !/^\d+$/.test(next)) {
+        comercio = next.slice(0, 60);
+      }
+    }
+
+    if (!comercio) comercio = 'Santander (captura)';
+    comercio = comercio.replace(/^[-•·]\s*/, '').trim();
+
+    // Deduplicar por (monto, comercio normalizado)
+    var normKey = monto + '|' + comercio.toUpperCase().replace(/\s+/g, '').slice(0, 15);
+    if (vistosKey[normKey]) continue;
+    vistosKey[normKey] = true;
+
+    resultado.push({ monto: monto, comercio: comercio });
+  }
+
+  return resultado;
+}
+
+/**
+ * Guarda el RUT en Script Properties (no en el código fuente).
+ * Ejecutar UNA sola vez desde el editor, cambiando el valor por el RUT real.
+ * El RUT se usa como contraseña en los PDFs de Santander.
+ * Formato: solo números, sin guión, sin dígito verificador. Ej: "12345678"
+ */
+function setRutSantander() {
+  var rut = '12345678'; // ← CAMBIAR por RUT real antes de ejecutar
+  PropertiesService.getScriptProperties().setProperty('RUT_SANTANDER', rut);
+  Logger.log('✅ RUT guardado en Script Properties: ' + rut);
+}
+
 function formatMonto(n) {
   return '$' + Math.round(Number(n)||0).toLocaleString('es-CL');
 }
@@ -743,6 +810,13 @@ function configurarActivadores() {
  */
 function reconciliarCartola() {
   Logger.log('=== RECONCILIACIÓN FIN DE MES ===');
+  var rut = PropertiesService.getScriptProperties().getProperty('RUT_SANTANDER') || '';
+  if (rut) {
+    Logger.log('RUT para abrir PDF: ' + rut + ' (úsalo como contraseña en Preview/Adobe)');
+  } else {
+    Logger.log('⚠️ RUT no configurado. Ejecuta setRutSantander() una vez para guardarlo.');
+  }
+  Logger.log('PASOS: 1) Abre el PDF con ese RUT en Preview → 2) Archivo→Exportar como PDF → 3) Reenvíate ese PDF con asunto "cartola desbloqueada" → 4) Ejecuta esta función de nuevo');
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var pendSheet = ss.getSheetByName(SHEETS.PENDIENTES);
   // IDs ya procesados
@@ -790,7 +864,10 @@ function reconciliarCartola() {
           }
           Logger.log('  OCR: ' + texto.length + ' chars');
 
+          // Intentar con el parser específico de cartola (líneas con fecha+monto+comercio)
+          // y también con el parser genérico de OCR para cubrir más formatos.
           var transacciones = parsearTransaccionesDeCuerpo_(texto, 'Santander');
+          if (!transacciones.length) transacciones = extraerTransaccionesDeTextoOCR_(texto);
           Logger.log('  Transacciones encontradas: ' + transacciones.length);
           var fecha = Utilities.formatDate(msg.getDate(), CONFIG.TIMEZONE, 'yyyy-MM-dd');
           transacciones.forEach(function(t) {
