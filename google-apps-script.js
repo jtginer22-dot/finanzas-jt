@@ -378,15 +378,23 @@ function scanearScreenshotsEmail_(pendSheet, procesados, seenMsg, ventana) {
             }
 
             transacciones.forEach(function(t) {
+              // 1. Pendiente monto=0 → rellenar
               var matchRow = buscarPendienteCeroSantander_(pendSheet, t.comercio, fecha);
               if (matchRow > 0) {
                 pendSheet.getRange(matchRow, 4).setValue(t.monto);
-                Logger.log('      ✅ Smart match fila ' + matchRow + ': ' + t.comercio + ' $' + t.monto);
-              } else {
-                var uid = Utilities.getUuid().slice(0, 8);
-                pendSheet.appendRow([uid, fecha, t.comercio, t.monto, 'TC Santander', 'Santander', msgId + '_' + uid, 'NO']);
-                Logger.log('      ➕ Nueva fila: ' + t.comercio + ' $' + t.monto);
+                Logger.log('      ✅ Monto rellenado fila ' + matchRow + ': ' + t.comercio + ' $' + t.monto);
+                nuevos++;
+                return;
               }
+              // 2. Ya existe con monto → no duplicar
+              if (existeTransaccionDuplicada_(pendSheet, t.comercio, t.monto, fecha)) {
+                Logger.log('      ⏭ Ya existe: ' + t.comercio + ' $' + t.monto);
+                return;
+              }
+              // 3. Nueva transacción
+              var uid = Utilities.getUuid().slice(0, 8);
+              pendSheet.appendRow([uid, fecha, t.comercio, t.monto, 'TC Santander', 'Santander', msgId + '_' + uid, 'NO']);
+              Logger.log('      ➕ Nueva: ' + t.comercio + ' $' + t.monto);
               nuevos++;
             });
           } catch (ocrErr) {
@@ -739,6 +747,29 @@ function fuzzyMatchComercio_(a, b) {
   return wordsA.some(function(w) { return setB[w]; });
 }
 
+/**
+ * Verifica si ya existe en Pendientes una transacción con el mismo comercio
+ * (fuzzy), mismo monto y fecha cercana (±3 días).
+ * Evita duplicados al reconciliar la cartola contra movimientos ya registrados.
+ */
+function existeTransaccionDuplicada_(pendSheet, comercio, monto, fechaStr) {
+  var lastRow = pendSheet.getLastRow();
+  if (lastRow < 2) return false;
+  var data = pendSheet.getRange(2, 1, lastRow - 1, 5).getValues();
+  var fechaRef = new Date(fechaStr);
+  var ventana = 3 * 24 * 60 * 60 * 1000; // ±3 días
+  for (var i = 0; i < data.length; i++) {
+    var rowMonto = parseFloat(data[i][3] || 0);
+    if (rowMonto === 0) continue; // monto=0 ya lo maneja buscarPendienteCeroSantander_
+    if (Math.abs(rowMonto - monto) > Math.max(1, monto * 0.01)) continue;
+    var rowFecha = new Date(String(data[i][1] || ''));
+    if (isNaN(rowFecha.getTime())) continue;
+    if (Math.abs(rowFecha.getTime() - fechaRef.getTime()) > ventana) continue;
+    if (fuzzyMatchComercio_(comercio, String(data[i][2] || ''))) return true;
+  }
+  return false;
+}
+
 // Para marcar un pendiente como procesado (llamar desde la app)
 function marcarProcesado(emailId) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -762,32 +793,24 @@ function marcarProcesado(emailId) {
  * Solo hace falta correrla una vez; elimina duplicados automáticamente.
  */
 function configurarActivadores() {
-  // Eliminar activadores previos de scanearGmail para evitar duplicados
-  ScriptApp.getProjectTriggers().forEach(function(t) {
-    if (t.getHandlerFunction() === 'scanearGmail' ||
-        t.getHandlerFunction() === 'enviarResumenDiario') {
+  // Eliminar activadores previos para evitar duplicados
+  var existentes = ScriptApp.getProjectTriggers();
+  Logger.log('Triggers existentes: ' + existentes.length);
+  existentes.forEach(function(t) {
+    var fn = t.getHandlerFunction();
+    if (fn === 'scanearGmail' || fn === 'enviarResumenDiario') {
       ScriptApp.deleteTrigger(t);
+      Logger.log('  Eliminado: ' + fn);
     }
   });
   // scanearGmail cada 10 minutos
-  ScriptApp.newTrigger('scanearGmail')
-    .timeBased()
-    .everyMinutes(10)
-    .create();
+  ScriptApp.newTrigger('scanearGmail').timeBased().everyMinutes(10).create();
   // Resumen diario a las 8 AM
-  ScriptApp.newTrigger('enviarResumenDiario')
-    .timeBased()
-    .atHour(8)
-    .everyDays(1)
-    .create();
-  Logger.log('✅ Activadores configurados: scanearGmail cada 10 min + resumen 8 AM');
-  // Nota: SpreadsheetApp.getUi() solo funciona si el script fue abierto DESDE el Sheet.
-  // Si lo ejecutas desde el editor directo, el log es suficiente — no necesitas la alerta.
-  try {
-    SpreadsheetApp.getUi().alert('✅ Listo:\n• scanearGmail: cada 10 minutos\n• Resumen diario: 8:00 AM');
-  } catch (e) {
-    Logger.log('(Sin UI disponible — el activador igual quedó configurado correctamente)');
-  }
+  ScriptApp.newTrigger('enviarResumenDiario').timeBased().atHour(8).everyDays(1).create();
+  Logger.log('✅ Activadores creados: scanearGmail cada 10 min + resumen 8 AM');
+  // Verificar que quedaron bien
+  var activos = ScriptApp.getProjectTriggers().map(function(t) { return t.getHandlerFunction(); });
+  Logger.log('Triggers activos ahora: ' + activos.join(', '));
 }
 
 // ============================================================
@@ -873,15 +896,27 @@ function scanearEstadoCuentaSantander_(pendSheet, procesados, seenMsg) {
 
           Logger.log('Cartola transacciones: ' + transacciones.length);
           transacciones.forEach(function(t) {
-            var matchRow = buscarPendienteCeroSantander_(pendSheet, t.comercio, t.fecha || fecha);
+            var fechaTx = t.fecha || fecha;
+
+            // 1. ¿Hay Pendiente monto=0 con mismo comercio/fecha? → rellenar monto
+            var matchRow = buscarPendienteCeroSantander_(pendSheet, t.comercio, fechaTx);
             if (matchRow > 0) {
               pendSheet.getRange(matchRow, 4).setValue(t.monto);
-              Logger.log('  ✅ Match: ' + t.comercio + ' $' + t.monto);
-            } else {
-              var uid = Utilities.getUuid().slice(0, 8);
-              pendSheet.appendRow([uid, t.fecha || fecha, t.comercio, t.monto, 'TC Santander', 'Santander', msgId + '_' + uid, 'NO']);
-              Logger.log('  ➕ Nueva: ' + t.comercio + ' $' + t.monto);
+              Logger.log('  ✅ Monto rellenado fila ' + matchRow + ': ' + t.comercio + ' $' + t.monto);
+              nuevos++;
+              return;
             }
+
+            // 2. ¿Ya existe la transacción con monto correcto? → no duplicar
+            if (existeTransaccionDuplicada_(pendSheet, t.comercio, t.monto, fechaTx)) {
+              Logger.log('  ⏭ Ya existe: ' + t.comercio + ' $' + t.monto + ' (' + fechaTx + ')');
+              return;
+            }
+
+            // 3. Transacción nueva, no capturada antes → agregar
+            var uid = Utilities.getUuid().slice(0, 8);
+            pendSheet.appendRow([uid, fechaTx, t.comercio, t.monto, 'TC Santander', 'Santander', msgId + '_' + uid, 'NO']);
+            Logger.log('  ➕ Nueva: ' + t.comercio + ' $' + t.monto);
             nuevos++;
           });
           if (transacciones.length) procesados.add(msgId);
