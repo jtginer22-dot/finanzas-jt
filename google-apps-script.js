@@ -292,9 +292,10 @@ function scanearGmail(ventanaHoras) {
   // ---- SCREENSHOTS enviados por el usuario a sí mismo ----
   nuevos += scanearScreenshotsEmail_(pendSheet, procesados, seenMsg, ventana);
 
-  // ---- ESTADO DE CUENTA MENSUAL SANTANDER (PDF adjunto) ----
-  // Solo correr si hay tiempo suficiente; cartola es mensual, no necesita ventana corta.
-  nuevos += scanearEstadoCuentaSantander_(pendSheet, procesados, seenMsg);
+  // NOTA: scanearEstadoCuentaSantander_ fue removido del loop automático.
+  // El PDF de Santander llega encriptado con contraseña (RUT) — Google Drive API
+  // no puede hacer OCR sobre él. Para reconciliar a fin de mes, ejecutar manualmente:
+  //   reconciliarCartola() → descarga PDF, lo desbloquea en Preview/Mac, lo reenvía por email.
 
   Logger.log(`Scanner completo: ${nuevos} nuevos gastos detectados`);
   
@@ -723,13 +724,109 @@ function configurarActivadores() {
 }
 
 // ============================================================
-// PARSER CARTOLAS Y ESTADOS DE CUENTA SANTANDER
+// RECONCILIACIÓN FIN DE MES — ejecutar manualmente una vez al mes
 // ============================================================
 
 /**
- * Parsea el estado de cuenta mensual TC Santander (email con PDF adjunto).
- * Usa el mismo OCR de Drive que los screenshots.
- * El email llega de mensajeria@santander.cl con asunto "Estado de Cuenta".
+ * Reconciliación mensual contra cartola/estado de cuenta Santander.
+ *
+ * FLUJO DE USO (una vez al mes):
+ * 1. Abre el email "Estado de Cuenta TC" o "Cartola Mensual" de mensajeria@santander.cl
+ * 2. Descarga el PDF adjunto
+ * 3. Ábrelo en Preview (Mac) → escribe tu RUT como contraseña
+ * 4. Archivo → Exportar como PDF → guarda sin contraseña
+ * 5. Reenvíate ese PDF por email con asunto "cartola desbloqueada" o "estado desbloqueado"
+ * 6. Ejecuta esta función desde Apps Script
+ *
+ * La función busca ese email tuyo, extrae transacciones por OCR y hace smart match
+ * contra Pendientes existentes para actualizar montos o agregar filas nuevas.
+ */
+function reconciliarCartola() {
+  Logger.log('=== RECONCILIACIÓN FIN DE MES ===');
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var pendSheet = ss.getSheetByName(SHEETS.PENDIENTES);
+  // IDs ya procesados
+  var procesados = new Set();
+  if (pendSheet.getLastRow() > 1) {
+    var ids = pendSheet.getRange(2, 7, pendSheet.getLastRow() - 1, 1).getValues().flat();
+    ids.forEach(function(id) { if (id) procesados.add(id); });
+  }
+  // Buscar el email que el propio usuario se envió con el PDF desbloqueado
+  var q = 'from:' + CONFIG.EMAIL_DESTINO + ' (subject:cartola OR subject:"estado de cuenta" OR subject:desbloqueado) newer_than:7d';
+  Logger.log('Buscando: ' + q);
+  var hilos = GmailApp.search(q, 0, 5);
+  Logger.log('Hilos encontrados: ' + hilos.length);
+
+  var nuevos = 0;
+  var seenMsg = new Set();
+  hilos.forEach(function(hilo) {
+    hilo.getMessages().forEach(function(msg) {
+      var msgId = msg.getId();
+      if (seenMsg.has(msgId) || procesados.has(msgId)) return;
+      seenMsg.add(msgId);
+      Logger.log('Email: "' + msg.getSubject() + '"');
+
+      var atts = msg.getAttachments({ includeInlineImages: true, includeAttachments: true });
+      Logger.log('  Adjuntos: ' + atts.length);
+      atts.forEach(function(att) {
+        var tipo = att.getContentType();
+        if (tipo !== 'application/pdf' && !tipo.startsWith('image/')) return;
+        Logger.log('  Procesando: ' + att.getName() + ' (' + tipo + ')');
+        try {
+          var blob = att.copyBlob();
+          var file = Drive.Files.insert(
+            { title: 'ocr_cartola_reconciliacion', mimeType: blob.getContentType() },
+            blob,
+            { ocr: true, ocrLanguage: 'es' }
+          );
+          var doc = DocumentApp.openById(file.id);
+          var texto = doc.getBody().getText();
+          DriveApp.getFileById(file.id).setTrashed(true);
+          Utilities.sleep(3000);
+
+          if (!texto || texto.length < 20) {
+            Logger.log('  ⚠️ OCR no extrajo texto');
+            return;
+          }
+          Logger.log('  OCR: ' + texto.length + ' chars');
+
+          var transacciones = parsearTransaccionesDeCuerpo_(texto, 'Santander');
+          Logger.log('  Transacciones encontradas: ' + transacciones.length);
+          var fecha = Utilities.formatDate(msg.getDate(), CONFIG.TIMEZONE, 'yyyy-MM-dd');
+          transacciones.forEach(function(t) {
+            var matchRow = buscarPendienteCeroSantander_(pendSheet, t.comercio, t.fecha || fecha);
+            if (matchRow > 0) {
+              pendSheet.getRange(matchRow, 4).setValue(t.monto);
+              Logger.log('  ✅ Smart match: ' + t.comercio + ' $' + t.monto);
+            } else {
+              var uid = Utilities.getUuid().slice(0, 8);
+              pendSheet.appendRow([uid, t.fecha || fecha, t.comercio, t.monto, 'TC Santander', 'Santander', msgId + '_' + uid, 'NO']);
+              Logger.log('  ➕ Nueva fila: ' + t.comercio + ' $' + t.monto);
+            }
+            nuevos++;
+          });
+        } catch (e) {
+          var msg_ = e.message || '';
+          if (msg_.indexOf('Bad Request') !== -1) {
+            Logger.log('  ❌ PDF aún tiene contraseña — desbloquéalo en Preview y reenvíalo');
+          } else {
+            Logger.log('  ❌ Error OCR: ' + msg_);
+          }
+        }
+      });
+    });
+  });
+  Logger.log('=== FIN: ' + nuevos + ' transacciones procesadas ===');
+}
+
+// ============================================================
+// PARSER CARTOLAS Y ESTADOS DE CUENTA SANTANDER (solo para reconciliarCartola)
+// ============================================================
+
+/**
+ * (Interna) Busca y procesa el estado de cuenta desde mensajeria@santander.cl.
+ * NO se llama automáticamente porque el PDF llega con contraseña (RUT).
+ * Se mantiene por si Santander algún día deja de encriptar los PDFs.
  */
 function scanearEstadoCuentaSantander_(pendSheet, procesados, seenMsg) {
   var nuevos = 0;
