@@ -170,6 +170,40 @@ exports.handler = async (event) => {
         return { statusCode: r.status, headers, body: text };
       }
 
+      if (operation === 'batchPut') {
+        const data = body.data;
+        if (!data || !Array.isArray(data) || !data.length) {
+          return { statusCode: 400, headers, body: JSON.stringify({ error: 'Falta data[] para batchPut' }) };
+        }
+        const url = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values:batchUpdate?valueInputOption=${encodeURIComponent(valueInputOption)}`;
+        const payload = {
+          valueInputOption,
+          data: data.map((item) => ({
+            range: item.range,
+            majorDimension: item.majorDimension || 'ROWS',
+            values: item.values,
+          })),
+        };
+        const r = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeaders },
+          body: JSON.stringify(payload),
+        });
+        const text = await r.text();
+        return { statusCode: r.status, headers, body: text };
+      }
+
+      if (operation === 'clear') {
+        const url = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}:clear`;
+        const r = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeaders },
+          body: JSON.stringify({}),
+        });
+        const text = await r.text();
+        return { statusCode: r.status, headers, body: text };
+      }
+
       if (operation === 'batchUpdate') {
         // Permite operaciones de estructura: crear hojas, etc.
         const requests = body.requests;
@@ -186,7 +220,7 @@ exports.handler = async (event) => {
         return { statusCode: r.status, headers, body: text };
       }
 
-      return { statusCode: 400, headers, body: JSON.stringify({ error: 'operation debe ser append, put o batchUpdate' }) };
+      return { statusCode: 400, headers, body: JSON.stringify({ error: 'operation debe ser append, put, batchPut o batchUpdate' }) };
     }
 
     return { statusCode: 405, headers, body: JSON.stringify({ error: 'Método no permitido' }) };
