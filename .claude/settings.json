@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__e6359f70-ff03-42e0-b3ad-15451571757d__get_thread",
+      "mcp__2cc76acc-0f15-4674-84e2-06782312afdb__notion-fetch",
+      "Bash(source .env)",
+      "mcp__e6359f70-ff03-42e0-b3ad-15451571757d__search_threads"
+    ]
+  }
+}

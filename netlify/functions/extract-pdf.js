@@ -50,6 +50,7 @@ exports.handler = async (event) => {
     const pdf = await loadingTask.promise;
     const numPages = pdf.numPages;
     let fullText = '';
+    const itemsPorPagina = [];
 
     for (let i = 1; i <= numPages; i++) {
       const page = await pdf.getPage(i);
@@ -59,12 +60,20 @@ exports.handler = async (event) => {
         .join(' ')
         .replace(/\s{3,}/g, '\n');
       fullText += pageText + '\n';
+      // Posición (x,y) de cada fragmento de texto — permite parseo por columnas
+      // en documentos tabulares (cartolas) donde el texto lineal no basta para
+      // distinguir, por ejemplo, columna Cargos vs columna Abonos.
+      itemsPorPagina.push(content.items.map(item => ({
+        str: item.str,
+        x: Math.round(item.transform[4]),
+        y: Math.round(item.transform[5]),
+      })));
     }
 
     return {
       statusCode: 200,
       headers,
-      body: JSON.stringify({ text: fullText, pages: numPages }),
+      body: JSON.stringify({ text: fullText, pages: numPages, items: itemsPorPagina }),
     };
   } catch (err) {
     const msg = err.message || String(err);

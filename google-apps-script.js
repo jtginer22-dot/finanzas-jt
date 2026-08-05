@@ -1001,6 +1001,192 @@ function parsearTransaccionesEstadoCuentaTC_(texto) {
 }
 
 // ============================================================
+// PARSER CARTOLA POR COLUMNAS (Cuenta Vista / Cuenta Corriente Santander)
+// ============================================================
+// El texto lineal de un PDF de cartola no alcanza para distinguir la columna
+// "Cheques y Cargos" de "Depósitos y Abonos" — ambas son solo números en la
+// misma línea. extract-pdf.js también devuelve la posición (x,y) de cada
+// fragmento de texto, así que agrupamos por línea (y) y clasificamos por
+// columna (x). Rangos validados contra una cartola real (cuenta CuentaMatica);
+// se asume el mismo layout para Cuenta Corriente por ser la misma plantilla
+// de Banco Santander — a confirmar en el primer corrido real.
+var COLUMNAS_CARTOLA_SANTANDER = {
+  FECHA: [15, 68],
+  DESC: [150, 362],
+  CARGO: [362, 420],
+  ABONO: [420, 520],
+};
+
+/**
+ * Agrupa items de texto (con x,y, ver extract-pdf.js) en líneas y clasifica
+ * cada valor por columna. Devuelve lista de {fecha, descripcion, cargo, abono}.
+ */
+function agruparLineasPorColumnas_(itemsPorPagina, columnas) {
+  var lineas = [];
+  (itemsPorPagina || []).forEach(function (items) {
+    var porY = {};
+    items.forEach(function (it) {
+      var y = it.y;
+      var key = null;
+      for (var k in porY) {
+        if (Math.abs(Number(k) - y) <= 3) { key = k; break; }
+      }
+      if (key === null) key = y;
+      if (!porY[key]) porY[key] = [];
+      porY[key].push(it);
+    });
+    Object.keys(porY).map(Number).sort(function (a, b) { return b - a; }).forEach(function (y) {
+      var ws = porY[y].sort(function (a, b) { return a.x - b.x; });
+      var fecha = null, descParts = [], cargo = null, abono = null;
+      ws.forEach(function (w) {
+        var x = w.x, txt = (w.str || '').trim();
+        if (!txt) return;
+        if (x >= columnas.FECHA[0] && x < columnas.FECHA[1] && /^\d{2}\/\d{2}$/.test(txt)) {
+          fecha = txt;
+        } else if (x >= columnas.DESC[0] && x < columnas.DESC[1]) {
+          descParts.push(txt);
+        } else if (x >= columnas.CARGO[0] && x < columnas.CARGO[1]) {
+          cargo = txt;
+        } else if (x >= columnas.ABONO[0] && x < columnas.ABONO[1]) {
+          abono = txt;
+        }
+      });
+      lineas.push({ fecha: fecha, descripcion: descParts.join(' ').trim(), cargo: cargo, abono: abono });
+    });
+  });
+  return lineas;
+}
+
+/**
+ * Parser de Cartola Cuenta Vista / Cuenta Corriente Santander.
+ * Solo devuelve CARGOS (salidas de dinero) — los abonos (dinero entrando) no
+ * son gasto. Excluye traspasos internos entre cuentas propias del titular
+ * (pago de TC, traspaso Vista↔Cta.Cte.) para evitar doble conteo con lo que
+ * ya se captura desde el Estado de Cuenta TC.
+ * anioBase: año de referencia (normalmente el año del email) para construir
+ * la fecha ISO a partir de DD/MM, con corrección de fin de año.
+ */
+function parsearCartolaSantanderPorColumnas_(itemsPorPagina, anioBase) {
+  var lineas = agruparLineasPorColumnas_(itemsPorPagina, COLUMNAS_CARTOLA_SANTANDER);
+  var txs = [];
+  var tablaActiva = false;
+  var fechaVigente = null;
+  var montoLimpioRe = /^[\d.]{1,15}$/;
+  var finTabla = /MENSAJES|Resumen de Comisiones|Nota:|Si su direcci|INFORMESE SOBRE|Banco Santander Chile/i;
+  var inicioTabla = /^DESCRIPCION$/i;
+  var trasladoInterno = /traspaso.*(cr[eé]dito|cta\.?\s*cte|cuenta\s*(corriente|vista))/i;
+
+  lineas.forEach(function (l) {
+    var desc = l.descripcion;
+    if (inicioTabla.test(desc)) { tablaActiva = true; return; }
+    if (finTabla.test(desc)) { tablaActiva = false; return; }
+    if (!tablaActiva) return;
+    if (l.fecha) fechaVigente = l.fecha;
+    if (!fechaVigente) return;
+    if (!desc || desc.length < 4) return;
+    if (/^saldo\s*(dia|inicial|final)?$/i.test(desc)) return;
+    if (!l.cargo) return; // solo nos interesan las salidas de dinero
+    if (!montoLimpioRe.test(l.cargo)) return;
+    if (trasladoInterno.test(desc)) return; // traspaso entre cuentas propias, no es gasto
+
+    var monto = parseFloat(l.cargo.replace(/\./g, ''));
+    if (!monto || monto < 100 || monto > 50000000) return;
+
+    var partes = fechaVigente.split('/'); // [DD, MM]
+    var mes = parseInt(partes[1], 10);
+    var anio = anioBase;
+    // Si el email llegó en enero pero la transacción es de diciembre, es del año anterior
+    if (mes === 12 && new Date().getMonth() === 0) anio = anioBase - 1;
+    var fecha = anio + '-' + partes[1] + '-' + partes[0];
+
+    txs.push({ fecha: fecha, comercio: desc.slice(0, 60), monto: Math.round(monto) });
+  });
+  return txs;
+}
+
+/** Contraseña de PDFs Banco de Chile: 4 últimos dígitos del RUT (sin DV), derivados del RUT ya guardado. */
+function getRutBancoChile_() {
+  var rut = PropertiesService.getScriptProperties().getProperty('RUT_SANTANDER') || '';
+  if (rut.length < 4) return '';
+  return rut.slice(-4);
+}
+
+/**
+ * Diagnóstico Banco de Chile: descarga y desencripta el Estado de Cuenta TC
+ * y la Cartola Cuenta Corriente más recientes, y escribe el texto crudo en
+ * la pestaña "_Debug" del Sheet (no en Logger, para poder leerlo vía API sin
+ * abrir el editor de Apps Script). Ejecutar UNA vez para poder construir el
+ * parser real — Banco de Chile no tiene parser de PDF todavía, a diferencia
+ * de Santander.
+ */
+function debugBancoChilePDF_() {
+  var pass = getRutBancoChile_();
+  if (!pass) { Logger.log('❌ Configura RUT primero (setRutSantander)'); return; }
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var debugSheet = ss.getSheetByName('_Debug');
+  if (!debugSheet) {
+    debugSheet = ss.insertSheet('_Debug');
+    debugSheet.getRange(1, 1, 1, 4).setValues([['Tipo', 'Fecha', 'Archivo', 'TextoCrudo']]);
+  }
+
+  var queries = [
+    { tipo: 'BdC Estado de Cuenta TC', q: 'from:enviodigital@bancochile.cl subject:"Estado de Cuenta Tarjeta de Crédito" newer_than:60d' },
+    { tipo: 'BdC Cartola Cuenta Corriente', q: 'from:enviodigital@bancochile.cl subject:"Cartola Cuenta Corriente" newer_than:60d' },
+  ];
+
+  queries.forEach(function (item) {
+    var hilos = GmailApp.search(item.q, 0, 2);
+    hilos.forEach(function (hilo) {
+      hilo.getMessages().forEach(function (msg) {
+        var atts = msg.getAttachments();
+        atts.forEach(function (att) {
+          if (att.getContentType() !== 'application/pdf') return;
+          try {
+            var resp = UrlFetchApp.fetch(CONFIG.APP_URL + '/.netlify/functions/extract-pdf', {
+              method: 'POST', contentType: 'application/json',
+              payload: JSON.stringify({ pdfBase64: Utilities.base64Encode(att.getBytes()), password: pass }),
+              muteHttpExceptions: true,
+            });
+            var result = JSON.parse(resp.getContentText());
+            if (resp.getResponseCode() !== 200) {
+              debugSheet.appendRow([item.tipo, Utilities.formatDate(msg.getDate(), CONFIG.TIMEZONE, 'yyyy-MM-dd'), att.getName(), 'ERROR ' + resp.getResponseCode() + ': ' + (result.error || '')]);
+              return;
+            }
+            var texto = (result.text || '').slice(0, 8000);
+            debugSheet.appendRow([item.tipo, Utilities.formatDate(msg.getDate(), CONFIG.TIMEZONE, 'yyyy-MM-dd'), att.getName(), texto]);
+            Logger.log('✅ ' + item.tipo + ' → ' + att.getName() + ' (' + (result.text || '').length + ' chars)');
+          } catch (e) {
+            debugSheet.appendRow([item.tipo, '', att.getName(), 'EXCEPCION: ' + e.message]);
+          }
+        });
+      });
+    });
+  });
+  Logger.log('✅ Listo — revisa la pestaña _Debug del Sheet');
+}
+
+/**
+ * Backfill de meses cerrados 2026 — ejecutar UNA vez.
+ * Reescanea ~220 días hacia atrás (cubre desde enero 2026) para Santander
+ * (Estado de Cuenta TC + Cartola Cuenta Vista + Cartola Cuenta Corriente,
+ * ya automatizado) y deja un diagnóstico de Banco de Chile en la pestaña
+ * _Debug (su parser de PDF aún no existe — hace falta ver el texto real
+ * primero, ver debugBancoChilePDF_).
+ */
+function importarCerrados2026_() {
+  Logger.log('=== BACKFILL 2026: Santander (TC + Cartola Vista + Cartola Cta Cte) ===');
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var pendSheet = ss.getSheetByName(SHEETS.PENDIENTES);
+  // procesados vacío → permite reprocesar emails ya vistos por otros scanners
+  var n = scanearEstadoCuentaSantander_(pendSheet, new Set(), new Set(), 220);
+  Logger.log('Santander: ' + n + ' transacciones nuevas/rellenadas');
+
+  Logger.log('=== Diagnóstico Banco de Chile (aún sin parser) ===');
+  debugBancoChilePDF_();
+  Logger.log('=== FIN BACKFILL ===');
+}
+
+// ============================================================
 // CONFIGURAR ACTIVADORES — ejecutar UNA sola vez
 // ============================================================
 
@@ -1058,7 +1244,8 @@ function reconciliarCartola() {
  *
  * CONFIGURACIÓN ÚNICA: ejecutar setRutSantander() una sola vez.
  */
-function scanearEstadoCuentaSantander_(pendSheet, procesados, seenMsg) {
+function scanearEstadoCuentaSantander_(pendSheet, procesados, seenMsg, ventanaDias) {
+  ventanaDias = ventanaDias || 35;
   var rut = PropertiesService.getScriptProperties().getProperty('RUT_SANTANDER') || '';
   if (!rut) {
     Logger.log('scanearEstadoCuenta: RUT no configurado — ejecuta setRutSantander() una vez');
@@ -1067,8 +1254,8 @@ function scanearEstadoCuentaSantander_(pendSheet, procesados, seenMsg) {
 
   var nuevos = 0;
   var queries = [
-    'from:mensajeria@santander.cl (subject:"estado de cuenta" OR subject:"cartola" OR subject:"resumen de cuenta") newer_than:35d',
-    'from:notificaciones@santander.cl (subject:"estado de cuenta" OR subject:"cartola") newer_than:35d',
+    'from:mensajeria@santander.cl (subject:"estado de cuenta" OR subject:"cartola" OR subject:"resumen de cuenta") newer_than:' + ventanaDias + 'd',
+    'from:notificaciones@santander.cl (subject:"estado de cuenta" OR subject:"cartola") newer_than:' + ventanaDias + 'd',
   ];
   queries.forEach(function(q) {
     try {
@@ -1080,13 +1267,15 @@ function scanearEstadoCuentaSantander_(pendSheet, procesados, seenMsg) {
           seenMsg.add(msgId);
 
           var fecha = Utilities.formatDate(msg.getDate(), CONFIG.TIMEZONE, 'yyyy-MM-dd');
+          var anioEmail = msg.getDate().getFullYear();
           var transacciones = [];
 
           // Desencriptar PDF via Netlify extract-pdf (usa RUT como contraseña)
           var attachments = msg.getAttachments();
           attachments.forEach(function(att) {
             if (att.getContentType() !== 'application/pdf') return;
-            Logger.log('Cartola PDF: ' + att.getName());
+            var nombreArchivo = att.getName();
+            Logger.log('Cartola PDF: ' + nombreArchivo);
             try {
               var pdfBase64 = Utilities.base64Encode(att.getBytes());
               var resp = UrlFetchApp.fetch(CONFIG.APP_URL + '/.netlify/functions/extract-pdf', {
@@ -1103,10 +1292,26 @@ function scanearEstadoCuentaSantander_(pendSheet, procesados, seenMsg) {
               }
               var texto = result.text || '';
               Logger.log('  Texto: ' + texto.length + ' chars, ' + result.pages + ' páginas');
-              // Solo Estado de Cuenta TC tiene compras; cartolas de CTA CTE son transferencias
+
               var esTC = /estado de cuenta/i.test(msg.getSubject());
-              if (!esTC) { Logger.log('  ⏭ Cartola CTA CTE — omitida'); return; }
-              transacciones = transacciones.concat(parsearTransaccionesEstadoCuentaTC_(texto));
+              if (esTC) {
+                // Estado de Cuenta TC: compras con tarjeta de crédito
+                var txsTC = parsearTransaccionesEstadoCuentaTC_(texto).map(function (t) {
+                  t.tarjeta = 'TC Santander';
+                  return t;
+                });
+                transacciones = transacciones.concat(txsTC);
+              } else {
+                // Cartola Cuenta Vista (_CM) o Cuenta Corriente (_CC) — identificar por nombre de archivo
+                var etiquetaCuenta = 'Santander Cartola';
+                if (/_CM\.pdf$/i.test(nombreArchivo)) etiquetaCuenta = 'Santander Cuenta Vista';
+                else if (/_CC\.pdf$/i.test(nombreArchivo)) etiquetaCuenta = 'Santander Cuenta Corriente';
+                var txsCartola = parsearCartolaSantanderPorColumnas_(result.items || [], anioEmail).map(function (t) {
+                  t.tarjeta = etiquetaCuenta;
+                  return t;
+                });
+                transacciones = transacciones.concat(txsCartola);
+              }
             } catch (e) {
               Logger.log('  Error extract-pdf: ' + e.message);
             }
@@ -1133,8 +1338,8 @@ function scanearEstadoCuentaSantander_(pendSheet, procesados, seenMsg) {
 
             // 3. Transacción nueva, no capturada antes → agregar
             var uid = Utilities.getUuid().slice(0, 8);
-            pendSheet.appendRow([uid, fechaTx, t.comercio, t.monto, 'TC Santander', 'Santander', msgId + '_' + uid, 'NO']);
-            Logger.log('  ➕ Nueva: ' + t.comercio + ' $' + t.monto);
+            pendSheet.appendRow([uid, fechaTx, t.comercio, t.monto, t.tarjeta || 'TC Santander', 'Santander', msgId + '_' + uid, 'NO']);
+            Logger.log('  ➕ Nueva: ' + t.comercio + ' $' + t.monto + ' (' + (t.tarjeta || 'TC Santander') + ')');
             nuevos++;
           });
           if (transacciones.length) procesados.add(msgId);
