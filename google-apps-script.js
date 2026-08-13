@@ -1125,7 +1125,7 @@ function getRutBancoChile_() {
  * parser real — Banco de Chile no tiene parser de PDF todavía, a diferencia
  * de Santander.
  */
-function debugBancoChilePDF_() {
+function debugBancoChilePDF() {
   var pass = getRutBancoChile_();
   if (!pass) { Logger.log('❌ Configura RUT primero (setRutSantander)'); return; }
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -1177,9 +1177,9 @@ function debugBancoChilePDF_() {
  * (Estado de Cuenta TC + Cartola Cuenta Vista + Cartola Cuenta Corriente,
  * ya automatizado) y deja un diagnóstico de Banco de Chile en la pestaña
  * _Debug (su parser de PDF aún no existe — hace falta ver el texto real
- * primero, ver debugBancoChilePDF_).
+ * primero, ver debugBancoChilePDF).
  */
-function importarCerrados2026_() {
+function importarCerrados2026() {
   Logger.log('=== BACKFILL 2026: Santander (TC + Cartola Vista + Cartola Cta Cte) ===');
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var pendSheet = ss.getSheetByName(SHEETS.PENDIENTES);
@@ -1188,7 +1188,7 @@ function importarCerrados2026_() {
   Logger.log('Santander: ' + n + ' transacciones nuevas/rellenadas');
 
   Logger.log('=== Diagnóstico Banco de Chile (aún sin parser) ===');
-  debugBancoChilePDF_();
+  debugBancoChilePDF();
   Logger.log('=== FIN BACKFILL ===');
 }
 
