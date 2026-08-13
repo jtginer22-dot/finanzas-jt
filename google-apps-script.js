@@ -1336,10 +1336,15 @@ function scanearEstadoCuentaSantander_(pendSheet, procesados, seenMsg, ventanaDi
                   return t;
                 });
                 debugSheet_.appendRow([etiquetaCuenta, fecha, nombreArchivo, 'DIAG texto=' + texto.length + 'chars paginas=' + result.pages + ' items_pag0=' + (itemsRecibidos[0] ? itemsRecibidos[0].length : 0) + ' transacciones_parseadas=' + txsCartola.length]);
-                // Volcado del texto completo — para ver por qué el parser no encuentra
-                // transacciones sin tener que adivinar de nuevo (borrar cuando se resuelva).
-                if (txsCartola.length === 0) {
-                  debugSheet_.appendRow([etiquetaCuenta + ' TEXTO CRUDO', fecha, nombreArchivo, texto.slice(0, 4000)]);
+                // Volcado de coordenadas x,y reales de los primeros items — para calibrar
+                // las columnas contra la posición real en vez de seguir adivinando
+                // (solo Cuenta Vista por ahora; Cuenta Corriente/CTA CTE LIFE queda
+                // para una siguiente vuelta, es un layout de columnas distinto).
+                if (txsCartola.length === 0 && etiquetaCuenta === 'Santander Cuenta Vista' && itemsRecibidos[0]) {
+                  var muestraItems = itemsRecibidos[0].slice(0, 130).map(function (it) {
+                    return it.x + ',' + it.y + ':' + it.str;
+                  }).join(' | ');
+                  debugSheet_.appendRow([etiquetaCuenta + ' ITEMS', fecha, nombreArchivo, muestraItems.slice(0, 4500)]);
                 }
                 transacciones = transacciones.concat(txsCartola);
               }
