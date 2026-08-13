@@ -1336,6 +1336,11 @@ function scanearEstadoCuentaSantander_(pendSheet, procesados, seenMsg, ventanaDi
                   return t;
                 });
                 debugSheet_.appendRow([etiquetaCuenta, fecha, nombreArchivo, 'DIAG texto=' + texto.length + 'chars paginas=' + result.pages + ' items_pag0=' + (itemsRecibidos[0] ? itemsRecibidos[0].length : 0) + ' transacciones_parseadas=' + txsCartola.length]);
+                // Volcado del texto completo — para ver por qué el parser no encuentra
+                // transacciones sin tener que adivinar de nuevo (borrar cuando se resuelva).
+                if (txsCartola.length === 0) {
+                  debugSheet_.appendRow([etiquetaCuenta + ' TEXTO CRUDO', fecha, nombreArchivo, texto.slice(0, 4000)]);
+                }
                 transacciones = transacciones.concat(txsCartola);
               }
             } catch (e) {
