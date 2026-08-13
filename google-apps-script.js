@@ -1263,9 +1263,13 @@ function scanearEstadoCuentaSantander_(pendSheet, procesados, seenMsg, ventanaDi
     'from:mensajeria@santander.cl (subject:"estado de cuenta" OR subject:"cartola" OR subject:"resumen de cuenta") newer_than:' + ventanaDias + 'd',
     'from:notificaciones@santander.cl (subject:"estado de cuenta" OR subject:"cartola") newer_than:' + ventanaDias + 'd',
   ];
+  // 5 hilos alcanza para el escaneo normal de 35 días, pero un backfill de
+  // varios meses (ej. 220 días) tiene más hilos que eso — con el límite bajo
+  // se perdían las cartolas de Cuenta Vista/Corriente en importarCerrados2026().
+  var limiteHilos = ventanaDias > 60 ? 60 : 5;
   queries.forEach(function(q) {
     try {
-      var hilos = GmailApp.search(q, 0, 5);
+      var hilos = GmailApp.search(q, 0, limiteHilos);
       hilos.forEach(function(hilo) {
         hilo.getMessages().forEach(function(msg) {
           var msgId = msg.getId();
