@@ -23,7 +23,32 @@ Recordar al usuario: git add -A && git commit -m "..." && git push origin main
 - Leer el archivo completo antes de modificarlo
 - Nunca hardcodear secrets — siempre process.env.*
 - Modelo IA: claude-3-5-haiku-20241022 (nunca "latest")
-- Toda decision tecnica relevante va a Notion de oficio, sin que el usuario lo pida
+- Toda decision tecnica material se detecta como Candidate Decision / Context Delta para su canonicalizacion posterior en Obsidian Second Brain. Si genera acciones ejecutables, esas acciones se registran en Notion. No duplicar la decision completa en Notion.
+
+## Second Brain Protocol
+
+### Canonical sources
+- Obsidian Second Brain = contexto durable, decisiones, arquitectura, estado recuperable y Knowledge.
+- Notion = Tasks, backlog, responsables y estado de acciones.
+- Git = codigo e historial tecnico.
+- El Handoff de Notion y `handoff-finanzas-jt-claude-code.md` pueden seguir utilizandose durante el MVP como contexto operacional/tecnico derivado, pero no deben convertirse en una fuente paralela de verdad para decisiones durables.
+- Claude Code auto-memory es cache auxiliar local, no memoria canonica.
+
+### Context Delta
+Durante una sesion trabaja normalmente. Cuando ocurra un cambio material o al terminar una sesion material, detecta proactivamente un Context Delta sin esperar que Jose lo pida. Clasifica cuando corresponda:
+- Project Update
+- Candidate Decision
+- Candidate Knowledge
+- Tasks
+- No Persistence
+
+Codigo e implementacion quedan documentados por Git. No dupliques Tasks desde Notion hacia Obsidian. En este MVP Claude Code NO debe escribir directamente al vault de Obsidian. Si existe un Context Delta material, presentalo al cierre para que posteriormente Cowork procese el write-back.
+
+No generes Context Delta por conversaciones triviales ni por cada commit.
+
+### Recovery Test
+Antes de finalizar una sesion material aplica el Recovery Test:
+"Si este chat desaparece, ¿puede otro agente continuar sin reconstruir decisiones o estado material?"
 
 ## Este archivo no se modifica durante sesiones
 El contexto vivo del proyecto vive en Notion, no aqui.
