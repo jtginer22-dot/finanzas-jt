@@ -1136,12 +1136,15 @@ function debugBancoChilePDF() {
   }
 
   var queries = [
-    { tipo: 'BdC Estado de Cuenta TC', q: 'from:enviodigital@bancochile.cl subject:"Estado de Cuenta Tarjeta de Crédito" newer_than:60d' },
-    { tipo: 'BdC Cartola Cuenta Corriente', q: 'from:enviodigital@bancochile.cl subject:"Cartola Cuenta Corriente" newer_than:60d' },
+    { tipo: 'BdC Estado de Cuenta TC', q: 'from:enviodigital@bancochile.cl subject:"Estado de Cuenta Tarjeta de Crédito" newer_than:220d' },
+    { tipo: 'BdC Cartola Cuenta Corriente', q: 'from:enviodigital@bancochile.cl subject:"Cartola Cuenta Corriente" newer_than:220d' },
   ];
 
   queries.forEach(function (item) {
-    var hilos = GmailApp.search(item.q, 0, 2);
+    var hilos = GmailApp.search(item.q, 0, 10);
+    if (!hilos.length) {
+      debugSheet.appendRow([item.tipo, '', '', 'SIN_RESULTADOS para query: ' + item.q]);
+    }
     hilos.forEach(function (hilo) {
       hilo.getMessages().forEach(function (msg) {
         var atts = msg.getAttachments();
