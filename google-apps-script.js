@@ -265,6 +265,12 @@ function scanearGmail(ventanaHoras) {
         if (seenMsg.has(msgId) || procesados.has(msgId)) return;
         seenMsg.add(msgId);
 
+        // "Estado de Cuenta"/"Cartola" caen en este query por contener "Tarjeta de
+        // Crédito" en el asunto, pero son el aviso mensual con PDF adjunto, no una
+        // compra — ya los procesa scanearEstadoCuentaSantander_ (parser de PDF).
+        // Si se leen acá, el body es puro texto promocional y genera falsos positivos.
+        if (/estado de cuenta|cartola/i.test(msg.getSubject())) return;
+
         var cuerpo = msg.getPlainBody() || msg.getBody();
         var monto = parseMontoDesdeCorreoSantanderTC_(cuerpo);
         if (monto === null || monto <= 0) return;
