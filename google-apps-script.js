@@ -1142,12 +1142,11 @@ function debugBancoChilePDF() {
 
   queries.forEach(function (item) {
     var hilos = GmailApp.search(item.q, 0, 10);
-    if (!hilos.length) {
-      debugSheet.appendRow([item.tipo, '', '', 'SIN_RESULTADOS para query: ' + item.q]);
-    }
+    debugSheet.appendRow([item.tipo, '', 'DIAG', 'hilos encontrados=' + hilos.length + ' | query=' + item.q]);
     hilos.forEach(function (hilo) {
       hilo.getMessages().forEach(function (msg) {
         var atts = msg.getAttachments();
+        debugSheet.appendRow([item.tipo, Utilities.formatDate(msg.getDate(), CONFIG.TIMEZONE, 'yyyy-MM-dd'), 'DIAG', 'asunto="' + msg.getSubject() + '" adjuntos=' + atts.length + ' tipos=[' + atts.map(function(a){return a.getContentType();}).join(',') + ']']);
         atts.forEach(function (att) {
           if (att.getContentType() !== 'application/pdf') return;
           try {
