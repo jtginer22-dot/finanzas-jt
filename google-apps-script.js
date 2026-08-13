@@ -1261,6 +1261,17 @@ function scanearEstadoCuentaSantander_(pendSheet, procesados, seenMsg, ventanaDi
   }
 
   var nuevos = 0;
+  // Diagnóstico de la cartola (Cuenta Vista/Corriente) en la pestaña _Debug —
+  // esa rama nunca produjo filas pese a que las búsquedas sí encuentran los
+  // correos; hace falta ver en qué paso exacto se pierde (password, texto
+  // vacío, items vacíos, parser sin resultados) en vez de seguir ajustando
+  // a ciegas.
+  var ss_ = SpreadsheetApp.getActiveSpreadsheet();
+  var debugSheet_ = ss_.getSheetByName('_Debug');
+  if (!debugSheet_) {
+    debugSheet_ = ss_.insertSheet('_Debug');
+    debugSheet_.getRange(1, 1, 1, 4).setValues([['Tipo', 'Fecha', 'Archivo', 'TextoCrudo']]);
+  }
   var queries = [
     'from:mensajeria@santander.cl (subject:"estado de cuenta" OR subject:"cartola" OR subject:"resumen de cuenta") newer_than:' + ventanaDias + 'd',
     'from:notificaciones@santander.cl (subject:"estado de cuenta" OR subject:"cartola") newer_than:' + ventanaDias + 'd',
@@ -1300,6 +1311,7 @@ function scanearEstadoCuentaSantander_(pendSheet, procesados, seenMsg, ventanaDi
               var result = JSON.parse(resp.getContentText());
               if (status !== 200) {
                 Logger.log('  extract-pdf error ' + status + ': ' + (result.error || ''));
+                debugSheet_.appendRow(['Santander ' + nombreArchivo, fecha, nombreArchivo, 'ERROR extract-pdf ' + status + ': ' + (result.error || '')]);
                 return;
               }
               var texto = result.text || '';
@@ -1318,14 +1330,17 @@ function scanearEstadoCuentaSantander_(pendSheet, procesados, seenMsg, ventanaDi
                 var etiquetaCuenta = 'Santander Cartola';
                 if (/_CM\.pdf$/i.test(nombreArchivo)) etiquetaCuenta = 'Santander Cuenta Vista';
                 else if (/_CC\.pdf$/i.test(nombreArchivo)) etiquetaCuenta = 'Santander Cuenta Corriente';
-                var txsCartola = parsearCartolaSantanderPorColumnas_(result.items || [], anioEmail).map(function (t) {
+                var itemsRecibidos = result.items || [];
+                var txsCartola = parsearCartolaSantanderPorColumnas_(itemsRecibidos, anioEmail).map(function (t) {
                   t.tarjeta = etiquetaCuenta;
                   return t;
                 });
+                debugSheet_.appendRow([etiquetaCuenta, fecha, nombreArchivo, 'DIAG texto=' + texto.length + 'chars paginas=' + result.pages + ' items_pag0=' + (itemsRecibidos[0] ? itemsRecibidos[0].length : 0) + ' transacciones_parseadas=' + txsCartola.length]);
                 transacciones = transacciones.concat(txsCartola);
               }
             } catch (e) {
               Logger.log('  Error extract-pdf: ' + e.message);
+              debugSheet_.appendRow(['Santander ' + nombreArchivo, '', nombreArchivo, 'EXCEPCION: ' + e.message]);
             }
           });
 

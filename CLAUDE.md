@@ -24,6 +24,8 @@ Recordar al usuario: git add -A && git commit -m "..." && git push origin main
 - Nunca hardcodear secrets — siempre process.env.*
 - Modelo IA: claude-3-5-haiku-20241022 (nunca "latest")
 - Toda decision tecnica material se detecta como Candidate Decision / Context Delta para su canonicalizacion posterior en Obsidian Second Brain. Si genera acciones ejecutables, esas acciones se registran en Notion. No duplicar la decision completa en Notion.
+- Antes de dar por buena una carga masiva de movimientos bancarios (backfill, reconciliacion), verificar que la suma de lo importado coincida con el total que el propio documento declara (ej. "Monto Total Facturado" del Estado de Cuenta) — evidencia objetiva de que no faltan ni sobran movimientos, no solo confianza.
+- Problemas de captura se clasifican antes de actuar: falta de datos (scanner no encontro/proceso algo) se corrige re-corriendo, sin riesgo. Datos incorrectos (se escribio algo mal) se corrige borrando esas filas puntuales. Nunca un vaciado masivo salvo que el usuario lo pida explicitamente.
 
 ## Second Brain Protocol
 
