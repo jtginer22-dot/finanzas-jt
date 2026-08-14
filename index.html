@@ -730,6 +730,11 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
     <div class="form-row"><label class="form-label">Detalle (opcional)</label><input class="fi" id="pend-prestamo-detalle" placeholder="Ej: sin interés, devolución pactada mayo"></div>
     <div style="font-size:11px;color:var(--text3)">Monto del correo: <span id="pend-prestamo-monto-hint"></span>. Queda en historial como préstamo y en Por cobrar.</div>
   </div>
+  <div id="pend-tercero-extra" style="display:none;margin-bottom:8px;background:var(--gris-m);border-radius:var(--radius);padding:10px 12px">
+    <div class="form-row"><label class="form-label">&#191;A qui&#233;n le cobras?</label><input class="fi" id="pend-tercero-persona" list="personas-list" placeholder="Ej: Juan"></div>
+    <div class="form-row"><label class="form-label">Detalle (opcional)</label><input class="fi" id="pend-tercero-detalle" placeholder="Ej: notar&#237;a a nombre de Juan"></div>
+    <div style="font-size:11px;color:var(--text3)">Monto del correo: <span id="pend-tercero-monto-hint"></span>. Queda en historial como tr&#225;mite y en Por cobrar.</div>
+  </div>
   <div class="form-row">
     <label class="form-label">Etiquetas</label>
     <div id="pend-tags-picker" style="display:flex;flex-wrap:wrap;gap:2px;margin-bottom:6px"></div>
@@ -1473,6 +1478,26 @@ function updateBadge() {
   badge.textContent=n; badge.style.display=n?'inline':'none';
 }
 
+const PEND_FILTER_FIELDS = ['pend-filter-q', 'pend-filter-desde', 'pend-filter-hasta', 'pend-filter-min', 'pend-filter-max', 'pend-sort-key', 'pend-sort-dir'];
+/** El filtro de Pendientes vivía solo en el DOM — se perdía al refrescar. Se persiste en localStorage. */
+function savePendFiltersToStorage() {
+  try {
+    const state = {};
+    PEND_FILTER_FIELDS.forEach(id => { state[id] = document.getElementById(id)?.value || ''; });
+    localStorage.setItem('finanzas_jt_pend_filters', JSON.stringify(state));
+  } catch (e) { /* no bloquear el render por esto */ }
+}
+function restorePendFiltersFromStorage() {
+  try {
+    const raw = localStorage.getItem('finanzas_jt_pend_filters');
+    if (!raw) return;
+    const state = JSON.parse(raw);
+    PEND_FILTER_FIELDS.forEach(id => {
+      const el = document.getElementById(id);
+      if (el && state[id]) el.value = state[id];
+    });
+  } catch (e) { /* ignorar filtro corrupto */ }
+}
 function clearPendFilters() {
   ['pend-filter-q', 'pend-filter-desde', 'pend-filter-hasta', 'pend-filter-min', 'pend-filter-max'].forEach(id => {
     const el = document.getElementById(id);
@@ -1482,6 +1507,7 @@ function clearPendFilters() {
   const sd = document.getElementById('pend-sort-dir');
   if (sk) sk.value = 'fecha';
   if (sd) sd.value = 'desc';
+  localStorage.removeItem('finanzas_jt_pend_filters');
   renderPendientes();
 }
 
@@ -1555,6 +1581,7 @@ function readFilterMonto(id) {
   return Number.isFinite(n) ? String(n) : '';
 }
 function getPendFilter() {
+  savePendFiltersToStorage();
   return {
     q: (document.getElementById('pend-filter-q')?.value || '').trim().toLowerCase(),
     desde: (document.getElementById('pend-filter-desde')?.value || '').trim(),
@@ -1639,6 +1666,12 @@ function abrirCat(id) {
   if (det) det.value = '';
   const ph = document.getElementById('pend-prestamo-monto-hint');
   if (ph) ph.textContent = fmt(p.monto);
+  const tp = document.getElementById('pend-tercero-persona');
+  if (tp) tp.value = '';
+  const tdet = document.getElementById('pend-tercero-detalle');
+  if (tdet) tdet.value = '';
+  const tph = document.getElementById('pend-tercero-monto-hint');
+  if (tph) tph.textContent = fmt(p.monto);
   togglePendEspecial();
   if (/transferenc|traspaso/i.test(String(p.comercio || ''))) {
     document.getElementById('pend-cat').value = 'Transferencias propias';
@@ -1653,6 +1686,8 @@ function togglePendEspecial() {
   const v = esp ? esp.value : '';
   const prest = document.getElementById('pend-prestamo-extra');
   if (prest) prest.style.display = v === 'prestamo' ? 'block' : 'none';
+  const terc = document.getElementById('pend-tercero-extra');
+  if (terc) terc.style.display = v === 'tramite_terceros' ? 'block' : 'none';
   const block = !!v;
   const pc = document.getElementById('pend-comp');
   const pq = document.getElementById('pend-cuotas');
@@ -1695,16 +1730,22 @@ function confirmarCat() {
   if(!p) return;
   const especial = document.getElementById('pend-especial')?.value || '';
   if (especial === 'tramite_terceros') {
+    const persona = (document.getElementById('pend-tercero-persona').value || '').trim();
+    if(!persona) { alert('Indica a quién le cobras este trámite (nombre en Por cobrar).'); return; }
+    const extra = (document.getElementById('pend-tercero-detalle')?.value || '').trim();
     const catSel = document.getElementById('pend-cat').value || 'Otros';
     const tag = readTagCheckboxes('pend-tags-picker', 'pend', 'pend-tag-extra');
     mergeTagsIntoGlobal(tag);
+    const notasG = extra ? (`Trámite por tercero (${persona}). ` + extra) : `Trámite por tercero (${persona}) · fuera del gasto mensual`;
+    const descCuenta = extra ? (`Trámite · ${p.comercio} · ` + extra) : (`Trámite · ${p.comercio}`);
     const g={
-      id:uid(),desc:p.comercio,monto:p.monto,montoTotal:p.monto,cat:catSel,tag,fecha:p.fecha,tarjeta:p.tarjeta,tipo:'tramite_terceros',fuente:'gmail',banco:p.banco,notas:'Trámite por tercero · fuera del gasto mensual',cuotas:null
+      id:uid(),desc:p.comercio,monto:p.monto,montoTotal:p.monto,cat:catSel,tag,fecha:p.fecha,tarjeta:p.tarjeta,tipo:'tramite_terceros',fuente:'gmail',banco:p.banco,notas:notasG,cuotas:null
     };
     S.gastos.push(g);
+    S.cuentas.push({id:uid(),tipo:'cobrar',persona,monto:p.monto,fecha:'',desc:descCuenta,pagado:false,dias:0});
     p.estado='confirmado';
     p.propuesta={ cat:catSel, tag:tag||'' };
-    save(); closeModal('m-cat-pend'); updateBadge(); renderPendientes(); renderRevision(); renderDashboard();
+    save(); closeModal('m-cat-pend'); updateBadge(); renderPendientes(); renderRevision(); renderDashboard(); renderCuentas();
     pushGastoToSheets(g);
     void syncCuentasToSheets().catch(() => {});
     marcarPendienteProcesado(p);
@@ -3748,6 +3789,7 @@ function renderConfig() {
 // ============================================================
 async function initApp() {
   load();
+  restorePendFiltersFromStorage();
   renderProfile();
   renderDashboard();
   renderCuentas();
