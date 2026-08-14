@@ -1013,14 +1013,23 @@ function parsearTransaccionesEstadoCuentaTC_(texto) {
 // "Cheques y Cargos" de "Depósitos y Abonos" — ambas son solo números en la
 // misma línea. extract-pdf.js también devuelve la posición (x,y) de cada
 // fragmento de texto, así que agrupamos por línea (y) y clasificamos por
-// columna (x). Rangos validados contra una cartola real (cuenta CuentaMatica);
-// se asume el mismo layout para Cuenta Corriente por ser la misma plantilla
-// de Banco Santander — a confirmar en el primer corrido real.
-var COLUMNAS_CARTOLA_SANTANDER = {
-  FECHA: [15, 68],
-  DESC: [150, 362],
-  CARGO: [362, 420],
-  ABONO: [420, 520],
+// columna (x).
+//
+// IMPORTANTE: Cuenta Vista y Cuenta Corriente ("CTA CTE LIFE") son dos
+// plantillas de PDF distintas de Santander, con columnas en posiciones
+// distintas — no asumir que comparten calibración. Ambas calibradas contra
+// coordenadas x,y reales (no contra texto ni supuestos).
+var COLUMNAS_CUENTA_VISTA = {
+  FECHA: [15, 58],
+  DESC: [58, 300],
+  CARGO: [300, 400],
+  ABONO: [400, 500],
+};
+var COLUMNAS_CUENTA_CORRIENTE = {
+  FECHA: [15, 50],
+  DESC: [50, 395],
+  CARGO: [395, 460],
+  ABONO: [460, 560],
 };
 
 /**
@@ -1067,30 +1076,34 @@ function agruparLineasPorColumnas_(itemsPorPagina, columnas) {
  * Parser de Cartola Cuenta Vista / Cuenta Corriente Santander.
  * Solo devuelve CARGOS (salidas de dinero) — los abonos (dinero entrando) no
  * son gasto. Excluye traspasos internos entre cuentas propias del titular
- * (pago de TC, traspaso Vista↔Cta.Cte.) para evitar doble conteo con lo que
- * ya se captura desde el Estado de Cuenta TC.
+ * (pago de TC, traspaso Vista↔Cta.Cte., traspaso mismo titular) para evitar
+ * doble conteo con lo que ya se captura desde el Estado de Cuenta TC.
+ *
+ * No depende de encontrar un header exacto ("DESCRIPCION" solo en su línea) —
+ * eso resultó frágil porque el layout real varía entre Cuenta Vista y Cuenta
+ * Corriente. En vez de eso, arranca a capturar transacciones en cuanto ve la
+ * primera fecha DD/MM real, y descarta ruido (headers, pies de página, saldos)
+ * por contenido.
+ *
+ * columnas: COLUMNAS_CUENTA_VISTA o COLUMNAS_CUENTA_CORRIENTE — cada
+ * plantilla tiene las columnas en posiciones distintas.
  * anioBase: año de referencia (normalmente el año del email) para construir
  * la fecha ISO a partir de DD/MM, con corrección de fin de año.
  */
-function parsearCartolaSantanderPorColumnas_(itemsPorPagina, anioBase) {
-  var lineas = agruparLineasPorColumnas_(itemsPorPagina, COLUMNAS_CARTOLA_SANTANDER);
+function parsearCartolaSantanderPorColumnas_(itemsPorPagina, anioBase, columnas) {
+  var lineas = agruparLineasPorColumnas_(itemsPorPagina, columnas || COLUMNAS_CUENTA_VISTA);
   var txs = [];
-  var tablaActiva = false;
   var fechaVigente = null;
   var montoLimpioRe = /^[\d.]{1,15}$/;
-  var finTabla = /MENSAJES|Resumen de Comisiones|Nota:|Si su direcci|INFORMESE SOBRE|Banco Santander Chile/i;
-  var inicioTabla = /^DESCRIPCION$/i;
-  var trasladoInterno = /traspaso.*(cr[eé]dito|cta\.?\s*cte|cuenta\s*(corriente|vista))/i;
+  var ruido = /^(FECHA|SUCURSAL|DESCRIPCION|NUMERO|SUC|SALDO|CHEQUES|DEPOSITOS|N°?\s?DCTO|DETALLE DE MOVIMIENTOS|SALDOS DIARIOS|MOVIMIENTO DE SU CUENTA|SALDO DIARIO|MENSAJES|Resumen de Comisiones|SIN COMISIONES|Si su direcci|Banco Santander Chile|Nota: Consideramos|INFORMESE|En caso de extrav|INFORMACION DE LA LINEA|INFORMACION DE CUENTA|CUPO APROBADO|MONTO UTILIZADO|SALDO DISPONIBLE|FECHA VENCIMIENTO|Saldo\s*(Dia|Inicial|Final)|SR\.CLIENTE|CARTOLA SIN MOVIMIENTOS|---)/i;
+  var trasladoInterno = /traspaso.*(cr[eé]dito|cta\.?\s*cte|cuenta\s*(corriente|vista)|mismo\s*titular)/i;
 
   lineas.forEach(function (l) {
     var desc = l.descripcion;
-    if (inicioTabla.test(desc)) { tablaActiva = true; return; }
-    if (finTabla.test(desc)) { tablaActiva = false; return; }
-    if (!tablaActiva) return;
-    if (l.fecha) fechaVigente = l.fecha;
-    if (!fechaVigente) return;
     if (!desc || desc.length < 4) return;
-    if (/^saldo\s*(dia|inicial|final)?$/i.test(desc)) return;
+    if (ruido.test(desc)) return;
+    if (l.fecha) fechaVigente = l.fecha;
+    if (!fechaVigente) return; // todavía no vimos ninguna fecha real — es encabezado
     if (!l.cargo) return; // solo nos interesan las salidas de dinero
     if (!montoLimpioRe.test(l.cargo)) return;
     if (trasladoInterno.test(desc)) return; // traspaso entre cuentas propias, no es gasto
@@ -1148,7 +1161,10 @@ function debugBancoChilePDF() {
         var atts = msg.getAttachments();
         debugSheet.appendRow([item.tipo, Utilities.formatDate(msg.getDate(), CONFIG.TIMEZONE, 'yyyy-MM-dd'), 'DIAG', 'asunto="' + msg.getSubject() + '" adjuntos=' + atts.length + ' tipos=[' + atts.map(function(a){return a.getContentType();}).join(',') + ']']);
         atts.forEach(function (att) {
-          if (att.getContentType() !== 'application/pdf') return;
+          // Banco de Chile manda los adjuntos como application/octet-stream, no
+          // application/pdf (confirmado con datos reales) — filtrar por extensión
+          // de archivo en vez de por mimeType exacto.
+          if (!/\.pdf$/i.test(att.getName())) return;
           try {
             var resp = UrlFetchApp.fetch(CONFIG.APP_URL + '/.netlify/functions/extract-pdf', {
               method: 'POST', contentType: 'application/json',
@@ -1326,12 +1342,19 @@ function scanearEstadoCuentaSantander_(pendSheet, procesados, seenMsg, ventanaDi
                 });
                 transacciones = transacciones.concat(txsTC);
               } else {
-                // Cartola Cuenta Vista (_CM) o Cuenta Corriente (_CC) — identificar por nombre de archivo
+                // Cartola Cuenta Vista (_CM) o Cuenta Corriente (_CC) — identificar por nombre
+                // de archivo. Cada una es una plantilla de columnas distinta, no intercambiable.
                 var etiquetaCuenta = 'Santander Cartola';
-                if (/_CM\.pdf$/i.test(nombreArchivo)) etiquetaCuenta = 'Santander Cuenta Vista';
-                else if (/_CC\.pdf$/i.test(nombreArchivo)) etiquetaCuenta = 'Santander Cuenta Corriente';
+                var columnasCuenta = COLUMNAS_CUENTA_VISTA;
+                if (/_CM\.pdf$/i.test(nombreArchivo)) {
+                  etiquetaCuenta = 'Santander Cuenta Vista';
+                  columnasCuenta = COLUMNAS_CUENTA_VISTA;
+                } else if (/_CC\.pdf$/i.test(nombreArchivo)) {
+                  etiquetaCuenta = 'Santander Cuenta Corriente';
+                  columnasCuenta = COLUMNAS_CUENTA_CORRIENTE;
+                }
                 var itemsRecibidos = result.items || [];
-                var txsCartola = parsearCartolaSantanderPorColumnas_(itemsRecibidos, anioEmail).map(function (t) {
+                var txsCartola = parsearCartolaSantanderPorColumnas_(itemsRecibidos, anioEmail, columnasCuenta).map(function (t) {
                   t.tarjeta = etiquetaCuenta;
                   return t;
                 });
