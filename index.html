@@ -351,6 +351,11 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
           <div style="font-size:11px;color:var(--text3);margin-top:8px">Si no ves este selector, fuerza recarga (Cmd+Shift+R) y comprueba en Netlify que el último deploy incluya el commit reciente de <code style="font-size:10px">main</code>.</div>
         </div>
         <div class="info-box" id="insights-hint" style="margin-bottom:14px">Define presupuestos por categoría en <strong>Configuración</strong> para ver gasto vs tope, % ejecutado y alertas al superar el 80%.</div>
+        <div class="card" id="recurrentes-alerta" style="display:none;margin-bottom:14px;border-color:var(--ambar,#F59E0B);background:#FFFBEB;padding:12px 14px">
+          <div style="font-size:12px;font-weight:700;color:#92400E;margin-bottom:6px">⚠ Recurrentes sin aparecer este mes</div>
+          <div id="recurrentes-alerta-lista" style="font-size:12px;color:#78350F"></div>
+          <div style="font-size:11px;color:#92400E;margin-top:6px">Puede ser que se dio de baja, que el cobro se atrasó, o que se junte con otro cobro el próximo mes.</div>
+        </div>
         <div class="metrics" id="metrics-budget-row" style="display:none;margin-bottom:14px">
           <div class="metric">
             <div class="metric-label">Presupuesto (categorías con tope)</div>
@@ -782,6 +787,25 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
     </div>
     <div style="font-size:11px;color:var(--text3);margin-top:-8px;margin-bottom:8px">En el mes del cargo se guarda <strong>solo la cuota mensual</strong> como monto (presupuesto / gráficos). El total de la compra queda en <strong>Monto_Total</strong> y en notas.</div>
   </div>
+  <div class="form-row" style="margin-top:4px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+      <input type="checkbox" id="pend-recurrente" style="width:18px;height:18px" onchange="togglePendRecurrenteFields()">
+      <label for="pend-recurrente" class="form-label" style="margin:0">Gasto recurrente (flujo de caja)</label>
+    </div>
+    <div id="pend-recurrente-extra" style="display:none">
+      <div class="grid2">
+        <div class="form-row"><label class="form-label">Frecuencia</label>
+          <select class="fi" id="pend-rec-freq">
+            <option value="mensual">Mensual</option>
+            <option value="anual">Anual</option>
+          </select>
+        </div>
+        <div class="form-row"><label class="form-label">Proyección hasta (opcional)</label>
+          <input class="fi" id="pend-rec-hasta" type="date" title="Después de esta fecha deja de contarse en comprometido">
+        </div>
+      </div>
+    </div>
+  </div>
   <div class="modal-actions">
     <button class="btn" onclick="closeModal('m-cat-pend')">Cancelar</button>
     <button class="btn btn-green" onclick="confirmarCat()">Confirmar OK</button>
@@ -1059,6 +1083,82 @@ function montoRecurrenteProyectado(g) {
   const m = Number(g.monto) || 0;
   if ((g.recurrenteFrecuencia || 'mensual').toLowerCase() === 'anual') return Math.round(m / 12);
   return m;
+}
+
+/** Normaliza un texto de comercio para comparar (sin tildes, sin símbolos, mayúsculas). */
+function normalizarComercioTexto_(s) {
+  return String(s || '')
+    .toUpperCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+/** ¿"a" y "b" comparten al menos una palabra significativa (≥4 letras)? */
+function comerciosParecidos_(a, b) {
+  const wa = normalizarComercioTexto_(a).split(' ').filter(w => w.length >= 4);
+  const wb = new Set(normalizarComercioTexto_(b).split(' ').filter(w => w.length >= 4));
+  return wa.some(w => wb.has(w));
+}
+/** Clave YYYY-MM del último mes ya cerrado (no el actual, para no marcar falso positivo si el cobro del mes en curso todavía no llega). */
+function mesAnteriorKey_() {
+  const hoy = new Date();
+  let y = hoy.getFullYear();
+  let m = hoy.getMonth(); // 0-based = número de mes anterior en 1-based
+  if (m === 0) { m = 12; y -= 1; }
+  return `${y}-${String(m).padStart(2, '0')}`;
+}
+/**
+ * Detecta gastos marcados como recurrentes cuyo cobro esperado no aparece
+ * en algún mes ya cerrado (entre su fecha de inicio y el mes anterior al
+ * actual). No revisa el mes en curso para evitar falsos positivos de cobros
+ * que todavía no llegan. Empareja por comercio parecido, no exacto.
+ */
+function detectarRecurrentesFaltantes() {
+  const topeMes = mesAnteriorKey_();
+  const plantillas = (S.gastos || []).filter(g => g.recurrente && tipoCuentaComoGastoReal(g.tipo));
+  const faltantes = [];
+  plantillas.forEach(g => {
+    const desde = String(g.fecha || '').slice(0, 7);
+    if (!desde || desde > topeMes) return;
+    const freq = (g.recurrenteFrecuencia || 'mensual').toLowerCase();
+    const hastaLimite = g.recurrenteHasta ? String(g.recurrenteHasta).slice(0, 7) : topeMes;
+    const limite = hastaLimite < topeMes ? hastaLimite : topeMes;
+    let [y, m] = desde.split('-').map(Number);
+    const mesInicial = m;
+    const meses = [];
+    let guard = 0;
+    while (guard++ < 120) {
+      m++;
+      if (m > 12) { m = 1; y++; }
+      const key = `${y}-${String(m).padStart(2, '0')}`;
+      if (key > limite) break;
+      if (freq === 'anual') {
+        if (m === mesInicial) meses.push(key);
+      } else {
+        meses.push(key);
+      }
+    }
+    meses.forEach(mesKey => {
+      const hayMatch = (S.gastos || []).some(o =>
+        o.id !== g.id &&
+        String(o.fecha || '').slice(0, 7) === mesKey &&
+        tipoCuentaComoGastoReal(o.tipo) &&
+        comerciosParecidos_(o.desc, g.desc)
+      );
+      if (!hayMatch) faltantes.push({ desc: g.desc, monto: g.monto, mes: mesKey });
+    });
+  });
+  return faltantes;
+}
+function renderRecurrentesAlerta() {
+  const box = document.getElementById('recurrentes-alerta');
+  const lista = document.getElementById('recurrentes-alerta-lista');
+  if (!box || !lista) return;
+  const faltantes = detectarRecurrentesFaltantes();
+  if (!faltantes.length) { box.style.display = 'none'; return; }
+  lista.innerHTML = faltantes.map(f => `${esc(f.desc)} (${fmt(f.monto)}) — no aparece en ${f.mes}`).join('<br>');
+  box.style.display = 'block';
 }
 
 /** Sheet manda en pendientes: evita 570 vs 610 entre dispositivos por caché local. */
@@ -1672,6 +1772,13 @@ function abrirCat(id) {
   if (tdet) tdet.value = '';
   const tph = document.getElementById('pend-tercero-monto-hint');
   if (tph) tph.textContent = fmt(p.monto);
+  const rchk = document.getElementById('pend-recurrente');
+  if (rchk) rchk.checked = false;
+  const rh = document.getElementById('pend-rec-hasta');
+  if (rh) rh.value = '';
+  const rf = document.getElementById('pend-rec-freq');
+  if (rf) rf.value = 'mensual';
+  togglePendRecurrenteFields();
   togglePendEspecial();
   if (/transferenc|traspaso/i.test(String(p.comercio || ''))) {
     document.getElementById('pend-cat').value = 'Transferencias propias';
@@ -1717,6 +1824,22 @@ function toggleCuotasFields() {
       document.getElementById('pend-cuota-start').value = 'este_mes';
     }
   }
+}
+function togglePendRecurrenteFields() {
+  const chk = document.getElementById('pend-recurrente');
+  const box = document.getElementById('pend-recurrente-extra');
+  if (box) box.style.display = (chk && chk.checked) ? 'block' : 'none';
+}
+function readPendRecurrenteFromForm() {
+  const chk = document.getElementById('pend-recurrente');
+  const recurrente = !!(chk && chk.checked);
+  const hasta = (document.getElementById('pend-rec-hasta')?.value || '').trim();
+  const freq = (document.getElementById('pend-rec-freq')?.value || 'mensual').trim() || 'mensual';
+  return {
+    recurrente,
+    recurrenteHasta: recurrente && hasta ? hasta : '',
+    recurrenteFrecuencia: recurrente ? freq : '',
+  };
 }
 function toggleCompFields() {
   const v=document.getElementById('pend-comp').value;
@@ -1827,7 +1950,8 @@ function confirmarCat() {
       gastosCreados.push(g);
     }
   } else {
-    const g={id:uid(),desc:p.comercio,monto:montoPersonal,montoTotal:p.monto,cat:catSel,tag,fecha:p.fecha,tarjeta:p.tarjeta,tipo,fuente:'gmail',banco:p.banco,notas,cuotas:null};
+    const rec = readPendRecurrenteFromForm();
+    const g={id:uid(),desc:p.comercio,monto:montoPersonal,montoTotal:p.monto,cat:catSel,tag,fecha:p.fecha,tarjeta:p.tarjeta,tipo,fuente:'gmail',banco:p.banco,notas,cuotas:null,...rec};
     S.gastos.push(g);
     gastosCreados.push(g);
   }
@@ -2874,6 +2998,7 @@ function esRegistroCuotaDashboard(g) {
 
 function renderDashboard() {
   fillDashPeriodSelect();
+  renderRecurrentesAlerta();
   const per = getDashboardPeriod();
   const now = new Date();
   let monthKeyDashStr = '';
