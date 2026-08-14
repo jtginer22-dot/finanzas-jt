@@ -1340,8 +1340,8 @@ function scanearEstadoCuentaSantander_(pendSheet, procesados, seenMsg, ventanaDi
                 // las columnas contra la posición real en vez de seguir adivinando
                 // (solo Cuenta Vista por ahora; Cuenta Corriente/CTA CTE LIFE queda
                 // para una siguiente vuelta, es un layout de columnas distinto).
-                if (txsCartola.length === 0 && etiquetaCuenta === 'Santander Cuenta Vista' && itemsRecibidos[0]) {
-                  var muestraItems = itemsRecibidos[0].slice(0, 130).map(function (it) {
+                if (txsCartola.length === 0 && texto.indexOf('SIN MOVIMIENTOS') === -1 && itemsRecibidos[0]) {
+                  var muestraItems = itemsRecibidos[0].slice(140, 280).map(function (it) {
                     return it.x + ',' + it.y + ':' + it.str;
                   }).join(' | ');
                   debugSheet_.appendRow([etiquetaCuenta + ' ITEMS', fecha, nombreArchivo, muestraItems.slice(0, 4500)]);
