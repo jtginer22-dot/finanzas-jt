@@ -303,6 +303,9 @@ function scanearGmail(ventanaHoras) {
   // guardado en Script Properties. Solo hace trabajo cuando llega un email nuevo.
   nuevos += scanearEstadoCuentaSantander_(pendSheet, procesados, seenMsg);
 
+  // ---- ESTADO DE CUENTA TC BANCO DE CHILE (PDF encriptado) ----
+  nuevos += scanearBancoChileTC_(pendSheet, procesados, seenMsg);
+
   Logger.log(`Scanner completo: ${nuevos} nuevos gastos detectados`);
   
   // Si hay nuevos, enviar notificación inmediata
@@ -1131,6 +1134,135 @@ function getRutBancoChile_() {
 }
 
 /**
+ * Parser de Estado de Cuenta TC Banco de Chile.
+ * Formato real (pdfjs colapsa columnas con espacios/saltos irregulares):
+ *   LUGAR\nDD/MM/YY\nCODIGO COMERCIO[\nCONTINUACION]\n$\nMONTO $\nMONTO\nN/N\n$\nVALOR_CUOTA
+ * La fecha a veces viene sola en su línea, a veces pegada al final de una
+ * línea de resumen ("...ABONOS 13/07/26") — se busca al final de la línea,
+ * no exigiendo que esté sola. El monto capturado es el TOTAL de la compra
+ * (no la cuota mensual) — igual que Santander, la app arma las cuotas al
+ * confirmar el pendiente, no en la captura.
+ * Validado contra un Estado de Cuenta real: coincide exacto con el total
+ * declarado ("TOTAL TARJETA...") antes de commitear.
+ */
+function parsearTransaccionesEstadoCuentaTCBancoChile_(texto, anioBase) {
+  var txs = [];
+  if (!texto) return txs;
+  var lineas = texto.split(/[\n\r]+/).map(function (l) { return l.trim(); }).filter(Boolean);
+  var fechaRe = /(\d{2})\/(\d{2})\/(\d{2})\s*$/;
+  var fechaSolaRe = /^(\d{2})\/(\d{2})\/(\d{2})$/;
+  var ignorar = /monto cancelado|total operaciones|total pagos a la cuenta|total pat a la cuenta|total tarjeta|total transacciones|sin movimientos|total cargos|total productos|periodo|saldo adeudado|monto facturado|comprobante de pago|timbre banco|n° de tarjeta|^nombre|numero de tarjeta|pagar hasta|tasa int\./i;
+
+  for (var i = 0; i < lineas.length; i++) {
+    var dateM = lineas[i].match(fechaRe);
+    if (!dateM) continue;
+    var fecha = '20' + dateM[3] + '-' + dateM[2] + '-' + dateM[1];
+
+    var comercioPartes = [];
+    for (var j = i + 1; j < Math.min(i + 4, lineas.length); j++) {
+      var c = lineas[j];
+      if (fechaRe.test(c)) break;
+      if (/^\$/.test(c)) break;
+      if (ignorar.test(c)) break;
+      if (c.length < 1) continue;
+      var sinCodigo = comercioPartes.length === 0 ? c.replace(/^\d{9,15}\s+/, '') : c;
+      comercioPartes.push(sinCodigo);
+      if (sinCodigo.length > 4) break; // línea ya sustanciosa, no es solo un fragmento corto
+    }
+    var comercio = comercioPartes.join(' ').trim();
+    if (!comercio || ignorar.test(comercio)) continue;
+
+    var monto = null;
+    for (var k = i + 1; k < Math.min(i + 12, lineas.length); k++) {
+      var kl = lineas[k];
+      if (fechaSolaRe.test(kl)) break;
+      var mM = kl.match(/^([\d.]+)/);
+      if (mM && lineas[k - 1] === '$') {
+        var n = parseFloat(mM[1].replace(/\./g, ''));
+        if (n >= 10 && n <= 50000000) { monto = n; break; }
+      }
+    }
+    if (!monto) continue;
+
+    txs.push({ fecha: fecha, comercio: comercio.slice(0, 60), monto: Math.round(monto) });
+  }
+  return txs;
+}
+
+/**
+ * Detecta emails de Banco de Chile con el Estado de Cuenta TC en PDF y los
+ * desencripta automáticamente (4 últimos dígitos del RUT). No requiere
+ * ninguna acción manual del usuario más allá de setRutSantander() (ya
+ * corrido). Cartola Cuenta Corriente de Banco de Chile queda pendiente —
+ * es un formato sin columnas $ claras, necesita calibración con coordenadas
+ * x,y reales antes de construirse, igual que pasó con Santander.
+ */
+function scanearBancoChileTC_(pendSheet, procesados, seenMsg, ventanaDias) {
+  ventanaDias = ventanaDias || 35;
+  var pass = getRutBancoChile_();
+  if (!pass) {
+    Logger.log('scanearBancoChileTC: RUT no configurado — ejecuta setRutSantander() una vez');
+    return 0;
+  }
+  var nuevos = 0;
+  var q = 'from:enviodigital@bancochile.cl subject:"Estado de Cuenta Tarjeta de Crédito" newer_than:' + ventanaDias + 'd';
+  var limiteHilos = ventanaDias > 60 ? 60 : 10;
+  try {
+    var hilos = GmailApp.search(q, 0, limiteHilos);
+    hilos.forEach(function (hilo) {
+      hilo.getMessages().forEach(function (msg) {
+        var msgId = msg.getId();
+        if (seenMsg.has(msgId) || procesados.has(msgId)) return;
+        seenMsg.add(msgId);
+        var anioEmail = msg.getDate().getFullYear();
+
+        var attachments = msg.getAttachments();
+        attachments.forEach(function (att) {
+          if (!/\.pdf$/i.test(att.getName())) return; // BdC manda octet-stream, no filtrar por mimeType
+          try {
+            var resp = UrlFetchApp.fetch(CONFIG.APP_URL + '/.netlify/functions/extract-pdf', {
+              method: 'POST', contentType: 'application/json',
+              payload: JSON.stringify({ pdfBase64: Utilities.base64Encode(att.getBytes()), password: pass }),
+              muteHttpExceptions: true,
+            });
+            if (resp.getResponseCode() !== 200) {
+              Logger.log('  BdC extract-pdf error ' + resp.getResponseCode());
+              return;
+            }
+            var result = JSON.parse(resp.getContentText());
+            var txs = parsearTransaccionesEstadoCuentaTCBancoChile_(result.text || '', anioEmail);
+            Logger.log('BdC TC ' + att.getName() + ': ' + txs.length + ' transacciones');
+
+            var localSeen = {};
+            txs.forEach(function (t) {
+              var localKey = t.fecha + '|' + t.monto + '|' + t.comercio.slice(0, 10).toUpperCase();
+              if (localSeen[localKey]) return;
+              localSeen[localKey] = true;
+
+              if (existeTransaccionDuplicada_(pendSheet, t.comercio, t.monto, t.fecha)) {
+                Logger.log('  ⏭ Ya existe: ' + t.comercio + ' $' + t.monto);
+                return;
+              }
+              var uid = Utilities.getUuid().slice(0, 8);
+              pendSheet.appendRow([uid, t.fecha, t.comercio, t.monto, 'TC Banco de Chile', 'Banco de Chile', msgId + '_' + uid, 'NO']);
+              SpreadsheetApp.flush();
+              Logger.log('  ➕ Nueva: ' + t.comercio + ' $' + t.monto);
+              nuevos++;
+            });
+          } catch (e) {
+            Logger.log('  Error BdC extract-pdf: ' + e.message);
+          }
+        });
+        procesados.add(msgId);
+      });
+    });
+  } catch (e) {
+    Logger.log('scanearBancoChileTC error: ' + e.message);
+  }
+  return nuevos;
+}
+
+/**
  * Diagnóstico Banco de Chile: descarga y desencripta el Estado de Cuenta TC
  * y la Cartola Cuenta Corriente más recientes, y escribe el texto crudo en
  * la pestaña "_Debug" del Sheet (no en Logger, para poder leerlo vía API sin
@@ -1190,12 +1322,15 @@ function debugBancoChilePDF() {
 }
 
 /**
- * Backfill de meses cerrados 2026 — ejecutar UNA vez.
- * Reescanea ~220 días hacia atrás (cubre desde enero 2026) para Santander
- * (Estado de Cuenta TC + Cartola Cuenta Vista + Cartola Cuenta Corriente,
- * ya automatizado) y deja un diagnóstico de Banco de Chile en la pestaña
- * _Debug (su parser de PDF aún no existe — hace falta ver el texto real
- * primero, ver debugBancoChilePDF).
+ * Backfill de meses cerrados 2026 — ejecutar UNA vez (es seguro repetir,
+ * el anti-duplicados evita crear filas de nuevo).
+ * Reescanea ~220 días hacia atrás (cubre desde enero 2026):
+ * - Santander: Estado de Cuenta TC + Cartola Cuenta Vista + Cartola Cuenta
+ *   Corriente, automatizado.
+ * - Banco de Chile: Estado de Cuenta TC, automatizado.
+ * - Banco de Chile Cartola Cuenta Corriente: todavía sin parser (formato sin
+ *   columnas $ claras en texto lineal, necesita coordenadas x,y reales para
+ *   calibrar) — queda como diagnóstico en _Debug nada más.
  */
 function importarCerrados2026() {
   Logger.log('=== BACKFILL 2026: Santander (TC + Cartola Vista + Cartola Cta Cte) ===');
@@ -1205,7 +1340,11 @@ function importarCerrados2026() {
   var n = scanearEstadoCuentaSantander_(pendSheet, new Set(), new Set(), 220);
   Logger.log('Santander: ' + n + ' transacciones nuevas/rellenadas');
 
-  Logger.log('=== Diagnóstico Banco de Chile (aún sin parser) ===');
+  Logger.log('=== BACKFILL 2026: Banco de Chile TC ===');
+  var nBdC = scanearBancoChileTC_(pendSheet, new Set(), new Set(), 220);
+  Logger.log('Banco de Chile TC: ' + nBdC + ' transacciones nuevas');
+
+  Logger.log('=== Diagnóstico Banco de Chile Cartola Cuenta Corriente (aún sin parser) ===');
   debugBancoChilePDF();
   Logger.log('=== FIN BACKFILL ===');
 }
