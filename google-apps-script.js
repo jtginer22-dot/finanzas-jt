@@ -1149,13 +1149,15 @@ function agruparLineasPorColumnas_(itemsPorPagina, columnas) {
  * anioBase: año de referencia (normalmente el año del email) para construir
  * la fecha ISO a partir de DD/MM, con corrección de fin de año.
  */
-function parsearCartolaSantanderPorColumnas_(itemsPorPagina, anioBase, columnas) {
+function parsearCartolaSantanderPorColumnas_(itemsPorPagina, fechaEmail, columnas) {
   var lineas = agruparLineasPorColumnas_(itemsPorPagina, columnas || COLUMNAS_CUENTA_VISTA);
   var txs = [];
   var fechaVigente = null;
   var montoLimpioRe = /^[\d.]{1,15}$/;
   var ruido = /^(FECHA|SUCURSAL|DESCRIPCION|NUMERO|SUC|SALDO|CHEQUES|DEPOSITOS|N°?\s?DCTO|DETALLE DE MOVIMIENTOS|SALDOS DIARIOS|MOVIMIENTO DE SU CUENTA|SALDO DIARIO|MENSAJES|Resumen de Comisiones|SIN COMISIONES|Si su direcci|Banco Santander Chile|Nota: Consideramos|INFORMESE|En caso de extrav|INFORMACION DE LA LINEA|INFORMACION DE CUENTA|CUPO APROBADO|MONTO UTILIZADO|SALDO DISPONIBLE|FECHA VENCIMIENTO|Saldo\s*(Dia|Inicial|Final)|SR\.CLIENTE|CARTOLA SIN MOVIMIENTOS|---)/i;
   var trasladoInterno = /traspaso.*(cr[eé]dito|cta\.?\s*cte|cuenta\s*(corriente|vista)|mismo\s*titular)/i;
+  var anioBase = fechaEmail.getFullYear();
+  var mesEmail = fechaEmail.getMonth() + 1; // 1-12
 
   lineas.forEach(function (l) {
     var desc = l.descripcion;
@@ -1172,9 +1174,13 @@ function parsearCartolaSantanderPorColumnas_(itemsPorPagina, anioBase, columnas)
 
     var partes = fechaVigente.split('/'); // [DD, MM]
     var mes = parseInt(partes[1], 10);
-    var anio = anioBase;
-    // Si el email llegó en enero pero la transacción es de diciembre, es del año anterior
-    if (mes === 12 && new Date().getMonth() === 0) anio = anioBase - 1;
+    // La cartola reporta el mes anterior (o en curso) al email. Si el mes de
+    // la transacción es POSTERIOR al mes del email (ej. transacción de
+    // diciembre en un email de enero), es del año anterior. Comparar contra
+    // el mes del email (no contra la fecha real de HOY) — antes este chequeo
+    // usaba new Date().getMonth(), lo que daba fechas erróneas (ej. "2026-12"
+    // en vez de "2025-12") cada vez que el backfill se corría fuera de enero.
+    var anio = mes > mesEmail ? anioBase - 1 : anioBase;
     var fecha = anio + '-' + partes[1] + '-' + partes[0];
 
     txs.push({ fecha: fecha, comercio: desc.slice(0, 60), monto: Math.round(monto) });
@@ -1195,13 +1201,15 @@ function parsearCartolaSantanderPorColumnas_(itemsPorPagina, anioBase, columnas)
  * usuario decida en la app si es gasto real o "no_gasto" — igual criterio
  * que ya usa Santander para casos ambiguos.
  */
-function parsearCartolaBancoChilePorColumnas_(itemsPorPagina, anioBase) {
+function parsearCartolaBancoChilePorColumnas_(itemsPorPagina, fechaEmail) {
   var lineas = agruparLineasPorColumnas_(itemsPorPagina, COLUMNAS_CUENTA_CORRIENTE_BANCOCHILE);
   var txs = [];
   var fechaVigente = null;
   var montoLimpioRe = /^[\d.]{1,15}$/;
   var ruido = /^(SALDO\s*(INICIAL|FINAL)|SR\(A\)|EJECUTIVO|SUCURSAL|TELEFONO|N°\s*DE\s*CUENTA|CARTOLA|MONEDA|N°\s*DE\s*PAGINA|DIA\/MES|DETALLE|N°\s*DOCTO|MONTO|SALDO|RETENCION|DISPONIBLE|IMPUESTOS|DEPOSITOS|CHEQUES|OTROS|GIROS|LINEA DE CREDITO|APROBADO|UTILIZADO|VENCIMIENTO|ANTES DE VIAJAR|EN WWW|Y LUEGO|CUENTA CORRIENTE|Infórmese)/i;
   var doblecontado = /pap.*centinela.*tarj.*credito|pago.*tarjeta.*cr[eé]dito|cargo por pago tc|pago tc\b/i;
+  var anioBase = fechaEmail.getFullYear();
+  var mesEmail = fechaEmail.getMonth() + 1;
 
   lineas.forEach(function (l) {
     var desc = (l.descripcion || '').trim();
@@ -1218,8 +1226,9 @@ function parsearCartolaBancoChilePorColumnas_(itemsPorPagina, anioBase) {
 
     var partes = fechaVigente.split('/'); // [DD, MM]
     var mes = parseInt(partes[1], 10);
-    var anio = anioBase;
-    if (mes === 12 && new Date().getMonth() === 0) anio = anioBase - 1;
+    // Ver comentario equivalente en parsearCartolaSantanderPorColumnas_: usar
+    // el mes del EMAIL, no el mes real de hoy, para detectar rollover de año.
+    var anio = mes > mesEmail ? anioBase - 1 : anioBase;
     var fecha = anio + '-' + partes[1] + '-' + partes[0];
 
     txs.push({ fecha: fecha, comercio: desc.slice(0, 60), monto: Math.round(monto) });
@@ -1281,7 +1290,6 @@ function scanearCartolaBancoChile_(pendSheet, procesados, seenMsg, ventanaDias) 
         var msgId = msg.getId();
         if (seenMsg.has(msgId) || procesados.has(msgId)) return;
         seenMsg.add(msgId);
-        var anioEmail = msg.getDate().getFullYear();
 
         var attachments = msg.getAttachments();
         attachments.forEach(function (att) {
@@ -1297,7 +1305,7 @@ function scanearCartolaBancoChile_(pendSheet, procesados, seenMsg, ventanaDias) 
               return;
             }
             var result = JSON.parse(resp.getContentText());
-            var txs = parsearCartolaBancoChilePorColumnas_(result.items || [], anioEmail);
+            var txs = parsearCartolaBancoChilePorColumnas_(result.items || [], msg.getDate());
             Logger.log('BdC Cartola ' + att.getName() + ': ' + txs.length + ' transacciones');
             var diagSaldo = verificarCartolaBancoChileContraSaldo_(result.items || [], result.text || '', 'BdC Cartola ' + att.getName());
             if (diagSaldo) {
@@ -1696,7 +1704,6 @@ function scanearEstadoCuentaSantander_(pendSheet, procesados, seenMsg, ventanaDi
           seenMsg.add(msgId);
 
           var fecha = Utilities.formatDate(msg.getDate(), CONFIG.TIMEZONE, 'yyyy-MM-dd');
-          var anioEmail = msg.getDate().getFullYear();
           var transacciones = [];
 
           // Desencriptar PDF via Netlify extract-pdf (usa RUT como contraseña)
@@ -1749,7 +1756,7 @@ function scanearEstadoCuentaSantander_(pendSheet, procesados, seenMsg, ventanaDi
                   columnasCuenta = COLUMNAS_CUENTA_CORRIENTE;
                 }
                 var itemsRecibidos = result.items || [];
-                var txsCartola = parsearCartolaSantanderPorColumnas_(itemsRecibidos, anioEmail, columnasCuenta).map(function (t) {
+                var txsCartola = parsearCartolaSantanderPorColumnas_(itemsRecibidos, msg.getDate(), columnasCuenta).map(function (t) {
                   t.tarjeta = etiquetaCuenta;
                   return t;
                 });
