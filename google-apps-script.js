@@ -306,6 +306,9 @@ function scanearGmail(ventanaHoras) {
   // ---- ESTADO DE CUENTA TC BANCO DE CHILE (PDF encriptado) ----
   nuevos += scanearBancoChileTC_(pendSheet, procesados, seenMsg);
 
+  // ---- CARTOLA CUENTA CORRIENTE BANCO DE CHILE (PDF encriptado) ----
+  nuevos += scanearCartolaBancoChile_(pendSheet, procesados, seenMsg);
+
   Logger.log(`Scanner completo: ${nuevos} nuevos gastos detectados`);
   
   // Si hay nuevos, enviar notificación inmediata
@@ -1078,6 +1081,15 @@ var COLUMNAS_CUENTA_CORRIENTE = {
   CARGO: [395, 460],
   ABONO: [460, 560],
 };
+// Cartola Cuenta Corriente Banco de Chile (formato "CartolaCuentaCorrienteNacionalMensual.pdf")
+// — calibrado contra coordenadas x,y reales (_Debug), no contra texto ni supuestos.
+// Fecha en formato DD/MM (sin año, a diferencia de Santander).
+var COLUMNAS_CUENTA_CORRIENTE_BANCOCHILE = {
+  FECHA: [15, 50],
+  DESC: [50, 370],
+  CARGO: [370, 450],
+  ABONO: [450, 530],
+};
 
 /**
  * Agrupa items de texto (con x,y, ver extract-pdf.js) en líneas y clasifica
@@ -1170,6 +1182,159 @@ function parsearCartolaSantanderPorColumnas_(itemsPorPagina, anioBase, columnas)
   return txs;
 }
 
+/**
+ * Parser de Cartola Cuenta Corriente Banco de Chile — calibrado contra
+ * coordenadas x,y reales (pestaña _Debug, columna "BdC Cartola Cuenta
+ * Corriente ITEMS"). Solo devuelve CARGOS (salidas de dinero), igual que el
+ * parser de Santander. Excluye el pago automático de la TC Banco de Chile
+ * desde la cuenta corriente ("PAP CENTINELA TARJ CREDITO", "CARGO POR PAGO
+ * TC") — ya se cuenta en scanearBancoChileTC_ a partir del Estado de Cuenta
+ * TC; contarlo aquí también duplicaría cada compra con tarjeta.
+ * Todo lo demás (intereses, comisiones, línea de crédito, préstamos,
+ * traspasos a otras cuentas propias) se deja pasar a Pendientes para que el
+ * usuario decida en la app si es gasto real o "no_gasto" — igual criterio
+ * que ya usa Santander para casos ambiguos.
+ */
+function parsearCartolaBancoChilePorColumnas_(itemsPorPagina, anioBase) {
+  var lineas = agruparLineasPorColumnas_(itemsPorPagina, COLUMNAS_CUENTA_CORRIENTE_BANCOCHILE);
+  var txs = [];
+  var fechaVigente = null;
+  var montoLimpioRe = /^[\d.]{1,15}$/;
+  var ruido = /^(SALDO\s*(INICIAL|FINAL)|SR\(A\)|EJECUTIVO|SUCURSAL|TELEFONO|N°\s*DE\s*CUENTA|CARTOLA|MONEDA|N°\s*DE\s*PAGINA|DIA\/MES|DETALLE|N°\s*DOCTO|MONTO|SALDO|RETENCION|DISPONIBLE|IMPUESTOS|DEPOSITOS|CHEQUES|OTROS|GIROS|LINEA DE CREDITO|APROBADO|UTILIZADO|VENCIMIENTO|ANTES DE VIAJAR|EN WWW|Y LUEGO|CUENTA CORRIENTE|Infórmese)/i;
+  var doblecontado = /pap.*centinela.*tarj.*credito|pago.*tarjeta.*cr[eé]dito|cargo por pago tc|pago tc\b/i;
+
+  lineas.forEach(function (l) {
+    var desc = (l.descripcion || '').trim();
+    if (!desc || desc.length < 4) return;
+    if (ruido.test(desc)) return;
+    if (l.fecha) fechaVigente = l.fecha;
+    if (!fechaVigente) return; // encabezado, todavía no vimos fecha real
+    if (!l.cargo) return; // solo salidas de dinero
+    if (!montoLimpioRe.test(l.cargo)) return;
+    if (doblecontado.test(desc)) return;
+
+    var monto = parseFloat(l.cargo.replace(/\./g, ''));
+    if (!monto || monto < 100 || monto > 50000000) return;
+
+    var partes = fechaVigente.split('/'); // [DD, MM]
+    var mes = parseInt(partes[1], 10);
+    var anio = anioBase;
+    if (mes === 12 && new Date().getMonth() === 0) anio = anioBase - 1;
+    var fecha = anio + '-' + partes[1] + '-' + partes[0];
+
+    txs.push({ fecha: fecha, comercio: desc.slice(0, 60), monto: Math.round(monto) });
+  });
+  return txs;
+}
+
+/**
+ * Verifica la Cartola Cuenta Corriente Banco de Chile contra su propia
+ * identidad contable: saldo inicial + abonos - cargos = saldo final. Mismo
+ * espíritu que verificarSumaContraTotalDeclarado_ (regla de CLAUDE.md) pero
+ * adaptado — una cartola de cuenta no declara un "monto facturado" único,
+ * declara saldos.
+ */
+function verificarCartolaBancoChileContraSaldo_(itemsPorPagina, texto, etiqueta) {
+  var lineas = agruparLineasPorColumnas_(itemsPorPagina, COLUMNAS_CUENTA_CORRIENTE_BANCOCHILE);
+  var montoLimpioRe = /^[\d.]{1,15}$/;
+  // Antes de la primera fecha real (DD/MM) todavía es encabezado — datos como
+  // "Línea de Crédito Aprobado: 1.000.000" caen por coincidencia en el rango
+  // de columna CARGO y contaminan la suma si no se descarta el encabezado.
+  var fechaVigente = null;
+  var sumaCargos = 0, sumaAbonos = 0;
+  lineas.forEach(function (l) {
+    if (l.fecha) fechaVigente = l.fecha;
+    if (!fechaVigente) return;
+    if (l.cargo && montoLimpioRe.test(l.cargo)) sumaCargos += parseFloat(l.cargo.replace(/\./g, ''));
+    if (l.abono && montoLimpioRe.test(l.abono)) sumaAbonos += parseFloat(l.abono.replace(/\./g, ''));
+  });
+  var mIni = texto.match(/SALDO\s+INICIAL\s*\n?\s*(-?[\d.]+)/i);
+  var mFin = texto.match(/SALDO\s+FINAL\s*\n?\s*(-?[\d.]+)/i);
+  if (!mIni || !mFin) return null;
+  var saldoIni = parseFloat(mIni[1].replace(/\./g, ''));
+  var saldoFin = parseFloat(mFin[1].replace(/\./g, ''));
+  var esperado = saldoIni + sumaAbonos - sumaCargos;
+  var ok = Math.abs(esperado - saldoFin) <= 1;
+  return (ok ? '✅' : '⚠️ DESCUADRE') + ' ' + etiqueta + ': saldoInicial=' + saldoIni + ' +abonos=' + sumaAbonos + ' -cargos=' + sumaCargos + ' = ' + esperado + ' vs saldoFinal declarado=' + saldoFin;
+}
+
+/**
+ * Detecta emails de Banco de Chile con la Cartola Cuenta Corriente en PDF,
+ * los desencripta (mismo RUT que TC) y aplica el parser por columnas.
+ * Antes de esto, Banco de Chile Cartola Cuenta Corriente no tenía parser —
+ * solo se volcaba diagnóstico en _Debug (ver debugBancoChilePDF).
+ */
+function scanearCartolaBancoChile_(pendSheet, procesados, seenMsg, ventanaDias) {
+  ventanaDias = ventanaDias || 35;
+  var pass = getRutBancoChile_();
+  if (!pass) {
+    Logger.log('scanearCartolaBancoChile: RUT no configurado — ejecuta setRutSantander() una vez');
+    return 0;
+  }
+  var nuevos = 0;
+  var q = 'from:enviodigital@bancochile.cl subject:"Cartola Cuenta Corriente" newer_than:' + ventanaDias + 'd';
+  var limiteHilos = ventanaDias > 60 ? 60 : 10;
+  try {
+    var hilos = GmailApp.search(q, 0, limiteHilos);
+    hilos.forEach(function (hilo) {
+      hilo.getMessages().forEach(function (msg) {
+        var msgId = msg.getId();
+        if (seenMsg.has(msgId) || procesados.has(msgId)) return;
+        seenMsg.add(msgId);
+        var anioEmail = msg.getDate().getFullYear();
+
+        var attachments = msg.getAttachments();
+        attachments.forEach(function (att) {
+          if (!/\.pdf$/i.test(att.getName())) return;
+          try {
+            var resp = UrlFetchApp.fetch(CONFIG.APP_URL + '/.netlify/functions/extract-pdf', {
+              method: 'POST', contentType: 'application/json',
+              payload: JSON.stringify({ pdfBase64: Utilities.base64Encode(att.getBytes()), password: pass }),
+              muteHttpExceptions: true,
+            });
+            if (resp.getResponseCode() !== 200) {
+              Logger.log('  BdC Cartola extract-pdf error ' + resp.getResponseCode());
+              return;
+            }
+            var result = JSON.parse(resp.getContentText());
+            var txs = parsearCartolaBancoChilePorColumnas_(result.items || [], anioEmail);
+            Logger.log('BdC Cartola ' + att.getName() + ': ' + txs.length + ' transacciones');
+            var diagSaldo = verificarCartolaBancoChileContraSaldo_(result.items || [], result.text || '', 'BdC Cartola ' + att.getName());
+            if (diagSaldo) {
+              Logger.log('  ' + diagSaldo);
+              var ssDebug_ = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('_Debug');
+              if (ssDebug_) ssDebug_.appendRow(['BdC Cartola suma', Utilities.formatDate(msg.getDate(), CONFIG.TIMEZONE, 'yyyy-MM-dd'), att.getName(), diagSaldo]);
+            }
+
+            var localSeen = {};
+            txs.forEach(function (t) {
+              var localKey = t.fecha + '|' + t.monto + '|' + t.comercio.slice(0, 10).toUpperCase();
+              if (localSeen[localKey]) return;
+              localSeen[localKey] = true;
+
+              if (existeTransaccionDuplicada_(pendSheet, t.comercio, t.monto, t.fecha)) {
+                Logger.log('  ⏭ Ya existe: ' + t.comercio + ' $' + t.monto);
+                return;
+              }
+              var uid = Utilities.getUuid().slice(0, 8);
+              pendSheet.appendRow([uid, t.fecha, t.comercio, t.monto, 'Cartola Cta Cte Banco de Chile', 'Banco de Chile', msgId + '_' + uid, 'NO']);
+              SpreadsheetApp.flush();
+              Logger.log('  ➕ Nueva: ' + t.comercio + ' $' + t.monto);
+              nuevos++;
+            });
+          } catch (e) {
+            Logger.log('  Error BdC Cartola extract-pdf: ' + e.message);
+          }
+        });
+        procesados.add(msgId);
+      });
+    });
+  } catch (e) {
+    Logger.log('scanearCartolaBancoChile error: ' + e.message);
+  }
+  return nuevos;
+}
+
 /** Contraseña de PDFs Banco de Chile: 4 últimos dígitos del RUT (sin DV), derivados del RUT ya guardado. */
 function getRutBancoChile_() {
   var rut = PropertiesService.getScriptProperties().getProperty('RUT_SANTANDER') || '';
@@ -1237,9 +1402,8 @@ function parsearTransaccionesEstadoCuentaTCBancoChile_(texto, anioBase) {
  * Detecta emails de Banco de Chile con el Estado de Cuenta TC en PDF y los
  * desencripta automáticamente (4 últimos dígitos del RUT). No requiere
  * ninguna acción manual del usuario más allá de setRutSantander() (ya
- * corrido). Cartola Cuenta Corriente de Banco de Chile queda pendiente —
- * es un formato sin columnas $ claras, necesita calibración con coordenadas
- * x,y reales antes de construirse, igual que pasó con Santander.
+ * corrido). Cartola Cuenta Corriente de Banco de Chile: ver
+ * scanearCartolaBancoChile_.
  */
 function scanearBancoChileTC_(pendSheet, procesados, seenMsg, ventanaDias) {
   ventanaDias = ventanaDias || 35;
@@ -1397,10 +1561,7 @@ function debugBancoChilePDF() {
  * Reescanea ~220 días hacia atrás (cubre desde enero 2026):
  * - Santander: Estado de Cuenta TC + Cartola Cuenta Vista + Cartola Cuenta
  *   Corriente, automatizado.
- * - Banco de Chile: Estado de Cuenta TC, automatizado.
- * - Banco de Chile Cartola Cuenta Corriente: todavía sin parser (formato sin
- *   columnas $ claras en texto lineal, necesita coordenadas x,y reales para
- *   calibrar) — queda como diagnóstico en _Debug nada más.
+ * - Banco de Chile: Estado de Cuenta TC + Cartola Cuenta Corriente, automatizado.
  */
 function importarCerrados2026() {
   Logger.log('=== BACKFILL 2026: Santander (TC + Cartola Vista + Cartola Cta Cte) ===');
@@ -1414,8 +1575,9 @@ function importarCerrados2026() {
   var nBdC = scanearBancoChileTC_(pendSheet, new Set(), new Set(), 220);
   Logger.log('Banco de Chile TC: ' + nBdC + ' transacciones nuevas');
 
-  Logger.log('=== Diagnóstico Banco de Chile Cartola Cuenta Corriente (aún sin parser) ===');
-  debugBancoChilePDF();
+  Logger.log('=== BACKFILL 2026: Banco de Chile Cartola Cuenta Corriente ===');
+  var nBdCCartola = scanearCartolaBancoChile_(pendSheet, new Set(), new Set(), 220);
+  Logger.log('Banco de Chile Cartola: ' + nBdCCartola + ' transacciones nuevas');
   Logger.log('=== FIN BACKFILL ===');
 }
 
