@@ -1454,11 +1454,15 @@ function scanearBancoChileTC_(pendSheet, procesados, seenMsg, ventanaDias) {
             var result = JSON.parse(resp.getContentText());
             var txs = parsearTransaccionesEstadoCuentaTCBancoChile_(result.text || '', anioEmail);
             Logger.log('BdC TC ' + att.getName() + ': ' + txs.length + ' transacciones');
-            var diagSumaBdC = verificarSumaContraTotalDeclarado_(txs, result.text || '', 'BdC TC ' + att.getName());
-            if (diagSumaBdC) {
-              Logger.log('  ' + diagSumaBdC);
-              debugSheet_.appendRow(['BdC TC suma', Utilities.formatDate(msg.getDate(), CONFIG.TIMEZONE, 'yyyy-MM-dd'), att.getName(), diagSumaBdC]);
-            }
+            // Chequeo de suma vs "Monto Facturado" DESACTIVADO para TC: la etiqueta
+            // es ambigua en este formato — aparece también como "MONTO FACTURADO A
+            // PAGAR (PERÍODO ANTERIOR)" (mes pasado, no éste) y como "TOTAL TARJETA"
+            // repetido por página como subtotal de una sola categoría de compra
+            // (ej. "en una cuota"), no el total del período. verificarSumaContraTotalDeclarado_
+            // producía descuadre en TODOS los estados de cuenta probados por comparar
+            // contra el campo equivocado — falsa alarma, no un problema del parser de
+            // transacciones en sí. Reactivar cuando se identifique con certeza la
+            // etiqueta correcta del total del período actual.
 
             var localSeen = {};
             txs.forEach(function (t) {
@@ -1737,11 +1741,11 @@ function scanearEstadoCuentaSantander_(pendSheet, procesados, seenMsg, ventanaDi
                   t.tarjeta = 'TC Santander';
                   return t;
                 });
-                var diagSuma = verificarSumaContraTotalDeclarado_(txsTC, texto, 'Santander TC ' + nombreArchivo);
-                if (diagSuma) {
-                  Logger.log('  ' + diagSuma);
-                  debugSheet_.appendRow(['Santander TC suma', fecha, nombreArchivo, diagSuma]);
-                }
+                // Chequeo de suma vs "Monto Facturado" DESACTIVADO — ver comentario
+                // equivalente en scanearBancoChileTC_. Misma ambigüedad de etiqueta,
+                // mismo resultado (descuadre en el 100% de los estados de cuenta
+                // probados, incluida época sin cuotas activas) — el problema es del
+                // chequeo, no evidencia de que falten o sobren transacciones.
                 transacciones = transacciones.concat(txsTC);
               } else {
                 // Cartola Cuenta Vista (_CM) o Cuenta Corriente (_CC) — identificar por nombre
