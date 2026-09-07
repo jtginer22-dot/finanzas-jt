@@ -1581,6 +1581,25 @@ function importarCerrados2026() {
   Logger.log('=== FIN BACKFILL ===');
 }
 
+/**
+ * Backfill SOLO de Cartola Cuenta Corriente Banco de Chile, cubriendo todo
+ * 2026 (260 días desde hoy). Separado de importarCerrados2026() a propósito:
+ * esa función reescanea Santander + Banco de Chile TC + esta Cartola en una
+ * sola ejecución, y Google Apps Script corta ejecuciones largas a los ~6
+ * minutos — con Santander solo (decenas de PDFs) ya se puede comer casi todo
+ * ese presupuesto, dejando la Cartola de Banco de Chile sin procesar meses
+ * más antiguos sin ningún error visible en el log. Ejecutar esta función
+ * sola evita competir por ese tiempo.
+ */
+function importarCartolaBancoChile2026() {
+  Logger.log('=== BACKFILL 2026: Banco de Chile Cartola Cuenta Corriente (todo el año) ===');
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var pendSheet = ss.getSheetByName(SHEETS.PENDIENTES);
+  var n = scanearCartolaBancoChile_(pendSheet, new Set(), new Set(), 260);
+  Logger.log('Banco de Chile Cartola: ' + n + ' transacciones nuevas');
+  Logger.log('=== FIN ===');
+}
+
 // ============================================================
 // CONFIGURAR ACTIVADORES — ejecutar UNA sola vez
 // ============================================================
