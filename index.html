@@ -2795,11 +2795,17 @@ async function syncSheets() {
   btn.disabled = false;
 }
 
+let _sheetsCriticasVerificadas = false;
 async function loadFromSheets() {
   if (!S.gsId) return;
-  // P0: asegurar que las pestañas críticas existan antes de leer
-  const sheetsCriticas = ['Gastos', 'Pendientes', 'Categorias', 'Cuentas_Por_Cobrar', 'Presupuestos', 'Ingresos', 'Inversiones', 'Conciliacion_Mensual', 'Compartidos'];
-  await Promise.allSettled(sheetsCriticas.map(s => ensureSheetExists(s)));
+  // P0: asegurar que las pestañas críticas existan antes de leer.
+  // Solo una vez por sesión de página — repetirlo en cada poll/refresh
+  // gasta 9 lecturas extra de cuota de Sheets sin necesidad.
+  if (!_sheetsCriticasVerificadas) {
+    const sheetsCriticas = ['Gastos', 'Pendientes', 'Categorias', 'Cuentas_Por_Cobrar', 'Presupuestos', 'Ingresos', 'Inversiones', 'Conciliacion_Mensual', 'Compartidos'];
+    await Promise.allSettled(sheetsCriticas.map(s => ensureSheetExists(s)));
+    _sheetsCriticasVerificadas = true;
+  }
   try {
     const dG = await sheetsFnGet(`${SHEET_NAME_GASTOS}!A2:Q5000`);
     if (dG.values) {

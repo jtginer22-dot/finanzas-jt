@@ -961,6 +961,50 @@ function reconciliarHistorico() {
  * Los montos en moneda extranjera tienen coma decimal (ej: 18.476,00) → se ignoran.
  * Las líneas de pago ("MONTO CANCELADO") se excluyen.
  */
+/**
+ * Extrae el "Monto Facturado" (total declarado por el propio Estado de
+ * Cuenta TC) para poder verificar que la suma de lo parseado coincide con
+ * lo que el banco dice haber facturado — regla de CLAUDE.md que hasta ahora
+ * solo estaba documentada, nunca aplicada como chequeo real.
+ * Busca la etiqueta y el monto en pocas líneas de distancia porque en el
+ * texto lineal del PDF el "$" y el número casi siempre quedan en líneas
+ * separadas de la etiqueta.
+ */
+function extraerMontoFacturadoDeclarado_(texto) {
+  if (!texto) return null;
+  var lineas = texto.split(/[\n\r]+/).map(function (l) { return l.trim(); }).filter(Boolean);
+  for (var i = 0; i < lineas.length; i++) {
+    if (!/monto facturado/i.test(lineas[i])) continue;
+    for (var k = i; k < Math.min(i + 6, lineas.length); k++) {
+      var kl = lineas[k];
+      var mDirecto = kl.match(/\$\s*([\d.]{3,})/);
+      if (mDirecto) {
+        var n = parseFloat(mDirecto[1].replace(/\./g, ''));
+        if (n > 0) return n;
+      }
+      if (kl === '$' && lineas[k + 1] && /^[\d.]{3,}$/.test(lineas[k + 1])) {
+        var n2 = parseFloat(lineas[k + 1].replace(/\./g, ''));
+        if (n2 > 0) return n2;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Compara la suma de transacciones parseadas contra el "Monto Facturado"
+ * declarado por el propio documento. Devuelve un string de diagnóstico listo
+ * para Logger/_Debug, o null si no se encontró el total declarado (no todos
+ * los formatos lo incluyen de forma parseable, no bloquear por eso).
+ */
+function verificarSumaContraTotalDeclarado_(txs, texto, etiqueta) {
+  var declarado = extraerMontoFacturadoDeclarado_(texto);
+  if (declarado === null) return null;
+  var suma = txs.reduce(function (acc, t) { return acc + t.monto; }, 0);
+  var ok = Math.abs(suma - declarado) <= 1; // tolerancia por redondeo
+  return (ok ? '✅' : '⚠️ DESCUADRE') + ' ' + etiqueta + ': parseado=$' + suma + ' vs declarado=$' + declarado;
+}
+
 function parsearTransaccionesEstadoCuentaTC_(texto) {
   var txs = [];
   if (!texto) return txs;
@@ -1205,6 +1249,12 @@ function scanearBancoChileTC_(pendSheet, procesados, seenMsg, ventanaDias) {
     return 0;
   }
   var nuevos = 0;
+  var ss_ = SpreadsheetApp.getActiveSpreadsheet();
+  var debugSheet_ = ss_.getSheetByName('_Debug');
+  if (!debugSheet_) {
+    debugSheet_ = ss_.insertSheet('_Debug');
+    debugSheet_.getRange(1, 1, 1, 4).setValues([['Tipo', 'Fecha', 'Archivo', 'TextoCrudo']]);
+  }
   var q = 'from:enviodigital@bancochile.cl subject:"Estado de Cuenta Tarjeta de Crédito" newer_than:' + ventanaDias + 'd';
   var limiteHilos = ventanaDias > 60 ? 60 : 10;
   try {
@@ -1232,6 +1282,11 @@ function scanearBancoChileTC_(pendSheet, procesados, seenMsg, ventanaDias) {
             var result = JSON.parse(resp.getContentText());
             var txs = parsearTransaccionesEstadoCuentaTCBancoChile_(result.text || '', anioEmail);
             Logger.log('BdC TC ' + att.getName() + ': ' + txs.length + ' transacciones');
+            var diagSumaBdC = verificarSumaContraTotalDeclarado_(txs, result.text || '', 'BdC TC ' + att.getName());
+            if (diagSumaBdC) {
+              Logger.log('  ' + diagSumaBdC);
+              debugSheet_.appendRow(['BdC TC suma', Utilities.formatDate(msg.getDate(), CONFIG.TIMEZONE, 'yyyy-MM-dd'), att.getName(), diagSumaBdC]);
+            }
 
             var localSeen = {};
             txs.forEach(function (t) {
@@ -1479,6 +1534,11 @@ function scanearEstadoCuentaSantander_(pendSheet, procesados, seenMsg, ventanaDi
                   t.tarjeta = 'TC Santander';
                   return t;
                 });
+                var diagSuma = verificarSumaContraTotalDeclarado_(txsTC, texto, 'Santander TC ' + nombreArchivo);
+                if (diagSuma) {
+                  Logger.log('  ' + diagSuma);
+                  debugSheet_.appendRow(['Santander TC suma', fecha, nombreArchivo, diagSuma]);
+                }
                 transacciones = transacciones.concat(txsTC);
               } else {
                 // Cartola Cuenta Vista (_CM) o Cuenta Corriente (_CC) — identificar por nombre
