@@ -1366,6 +1366,21 @@ function debugBancoChilePDF() {
             var texto = (result.text || '').slice(0, 8000);
             debugSheet.appendRow([item.tipo, Utilities.formatDate(msg.getDate(), CONFIG.TIMEZONE, 'yyyy-MM-dd'), att.getName(), texto]);
             Logger.log('✅ ' + item.tipo + ' → ' + att.getName() + ' (' + (result.text || '').length + ' chars)');
+
+            // Cartola Cuenta Corriente todavía no tiene parser — el texto lineal
+            // no alcanza para distinguir cargo/abono (mismo problema que tuvo
+            // Santander). Volcar coordenadas x,y reales de la página 0 para
+            // poder calibrar columnas, igual que se hizo con COLUMNAS_CUENTA_VISTA.
+            if (item.tipo === 'BdC Cartola Cuenta Corriente' && result.items && result.items[0]) {
+              var pagina0 = result.items[0];
+              var muestra = pagina0.slice(0, 400).map(function (it) {
+                return it.x + ',' + it.y + ':' + it.str;
+              }).join(' | ');
+              debugSheet.appendRow([item.tipo + ' ITEMS', Utilities.formatDate(msg.getDate(), CONFIG.TIMEZONE, 'yyyy-MM-dd'), att.getName(), muestra.slice(0, 8000)]);
+              if (muestra.length > 8000) {
+                debugSheet.appendRow([item.tipo + ' ITEMS 2', Utilities.formatDate(msg.getDate(), CONFIG.TIMEZONE, 'yyyy-MM-dd'), att.getName(), muestra.slice(8000, 16000)]);
+              }
+            }
           } catch (e) {
             debugSheet.appendRow([item.tipo, '', att.getName(), 'EXCEPCION: ' + e.message]);
           }
