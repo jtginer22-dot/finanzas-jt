@@ -1216,6 +1216,68 @@ function agruparLineasPorColumnas_(itemsPorPagina, columnas) {
  * anioBase: año de referencia (normalmente el año del email) para construir
  * la fecha ISO a partir de DD/MM, con corrección de fin de año.
  */
+/**
+ * Busca en el texto crudo una ventana de N tokens numéricos consecutivos
+ * (separados por espacio/salto de línea) y los devuelve parseados. Se usa
+ * en vez de un regex de posición fija porque el texto lineal del PDF no
+ * garantiza que las etiquetas queden pegadas a sus valores (confirmado con
+ * datos reales: en Cuenta Vista el bloque de saldos aparece separado de sus
+ * etiquetas por un párrafo entero de aviso legal). Puede haber varias
+ * ventanas candidatas (montos de transacciones individuales); el llamador
+ * decide cuál es la correcta verificando que cuadre la identidad contable.
+ */
+function candidatosNumericos_(texto, n) {
+  var tokens = texto.split(/\s+/).filter(Boolean);
+  var candidatos = [];
+  var limpioRe = /^-?[\d.]+(?:,\d+)?$/;
+  for (var i = 0; i + n <= tokens.length; i++) {
+    var ventana = tokens.slice(i, i + n);
+    if (ventana.every(function (t) { return limpioRe.test(t); })) {
+      candidatos.push(ventana.map(function (t) { return parseFloat(t.replace(/\./g, '')); }));
+    }
+  }
+  return candidatos;
+}
+
+/**
+ * Verifica la Cartola Santander (Cuenta Corriente o Cuenta Vista) contra su
+ * propia identidad contable, igual espíritu que verificarCartolaBancoChileContraSaldo_.
+ * Dos plantillas distintas de Santander, cada una con su propio set de
+ * campos — confirmado contra 3 cartolas reales (Cuenta Corriente con
+ * movimientos, Cuenta Vista con movimientos, Cuenta Corriente vacía
+ * "SIN MOVIMIENTOS"):
+ * - Cuenta Corriente: SALDO INICIAL + DEPOSITOS + OTROS ABONOS - CHEQUES -
+ *   OTROS CARGOS - IMPUESTOS = SALDO FINAL (7 valores, ese orden).
+ * - Cuenta Vista: Saldo Inicial - Cheques o Cargos + Depósitos o Abonos =
+ *   Saldo Final (4 valores, ese orden).
+ */
+function verificarCartolaSantanderContraSaldo_(texto, etiqueta) {
+  if (!texto) return null;
+  if (/SALDO INICIAL/i.test(texto) && /OTROS ABONOS/i.test(texto)) {
+    var cands7 = candidatosNumericos_(texto, 7);
+    for (var i = 0; i < cands7.length; i++) {
+      var v = cands7[i];
+      var esperado = v[0] + v[1] + v[2] - v[3] - v[4] - v[5];
+      if (Math.abs(esperado - v[6]) <= 1) {
+        return '✅ ' + etiqueta + ' (Cta Cte): saldoInicial=' + v[0] + ' +depositos=' + v[1] + ' +otrosAbonos=' + v[2] + ' -cheques=' + v[3] + ' -otrosCargos=' + v[4] + ' -impuestos=' + v[5] + ' = ' + esperado + ' vs saldoFinal=' + v[6];
+      }
+    }
+    return '⚠️ DESCUADRE ' + etiqueta + ' (Cta Cte): ninguno de ' + cands7.length + ' candidato(s) cuadra';
+  }
+  if (/Saldo Inicial/i.test(texto) && /Cheques o Cargos/i.test(texto)) {
+    var cands4 = candidatosNumericos_(texto, 4);
+    for (var j = 0; j < cands4.length; j++) {
+      var v2 = cands4[j];
+      var esperado2 = v2[0] - v2[1] + v2[2];
+      if (Math.abs(esperado2 - v2[3]) <= 1) {
+        return '✅ ' + etiqueta + ' (Cta Vista): saldoInicial=' + v2[0] + ' -chequesOCargos=' + v2[1] + ' +depositosOAbonos=' + v2[2] + ' = ' + esperado2 + ' vs saldoFinal=' + v2[3];
+      }
+    }
+    return '⚠️ DESCUADRE ' + etiqueta + ' (Cta Vista): ninguno de ' + cands4.length + ' candidato(s) cuadra';
+  }
+  return null;
+}
+
 function parsearCartolaSantanderPorColumnas_(itemsPorPagina, fechaEmail, columnas) {
   var lineas = agruparLineasPorColumnas_(itemsPorPagina, columnas || COLUMNAS_CUENTA_VISTA);
   var txs = [];
@@ -1950,11 +2012,11 @@ function scanearEstadoCuentaSantander_(pendSheet, procesados, seenMsg, ventanaDi
                   return t;
                 });
                 debugSheet_.appendRow([etiquetaCuenta, fecha, nombreArchivo, 'DIAG texto=' + texto.length + 'chars paginas=' + result.pages + ' items_pag0=' + (itemsRecibidos[0] ? itemsRecibidos[0].length : 0) + ' transacciones_parseadas=' + txsCartola.length]);
-                // Volcado de texto crudo — para poder construir un chequeo de
-                // saldo inicial/final como el que ya existe para Banco de Chile
-                // Cartola (verificarCartolaBancoChileContraSaldo_). Automático,
-                // corre solo en el próximo scan de 10 min, sin acción manual.
-                debugSheet_.appendRow([etiquetaCuenta + ' TEXTO', fecha, nombreArchivo, texto.slice(0, 8000)]);
+                var diagSaldoSantander = verificarCartolaSantanderContraSaldo_(texto, etiquetaCuenta + ' ' + nombreArchivo);
+                if (diagSaldoSantander) {
+                  Logger.log('  ' + diagSaldoSantander);
+                  debugSheet_.appendRow([etiquetaCuenta + ' suma', fecha, nombreArchivo, diagSaldoSantander]);
+                }
                 // Volcado de coordenadas x,y reales de los primeros items — para calibrar
                 // las columnas contra la posición real en vez de seguir adivinando
                 // (solo Cuenta Vista por ahora; Cuenta Corriente/CTA CTE LIFE queda
