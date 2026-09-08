@@ -1606,23 +1606,35 @@ function debugBancoChilePDF() {
               debugSheet.appendRow([item.tipo, Utilities.formatDate(msg.getDate(), CONFIG.TIMEZONE, 'yyyy-MM-dd'), att.getName(), 'ERROR ' + resp.getResponseCode() + ': ' + (result.error || '')]);
               return;
             }
-            var texto = (result.text || '').slice(0, 8000);
-            debugSheet.appendRow([item.tipo, Utilities.formatDate(msg.getDate(), CONFIG.TIMEZONE, 'yyyy-MM-dd'), att.getName(), texto]);
-            Logger.log('✅ ' + item.tipo + ' → ' + att.getName() + ' (' + (result.text || '').length + ' chars)');
+            var textoCompleto = result.text || '';
+            debugSheet.appendRow([item.tipo, Utilities.formatDate(msg.getDate(), CONFIG.TIMEZONE, 'yyyy-MM-dd'), att.getName(), textoCompleto.slice(0, 8000)]);
+            if (textoCompleto.length > 8000) {
+              debugSheet.appendRow([item.tipo + ' TEXTO 2', Utilities.formatDate(msg.getDate(), CONFIG.TIMEZONE, 'yyyy-MM-dd'), att.getName(), textoCompleto.slice(8000, 16000)]);
+            }
+            Logger.log('✅ ' + item.tipo + ' → ' + att.getName() + ' (' + textoCompleto.length + ' chars)');
 
             // Cartola Cuenta Corriente todavía no tiene parser — el texto lineal
             // no alcanza para distinguir cargo/abono (mismo problema que tuvo
             // Santander). Volcar coordenadas x,y reales de la página 0 para
             // poder calibrar columnas, igual que se hizo con COLUMNAS_CUENTA_VISTA.
-            if (item.tipo === 'BdC Cartola Cuenta Corriente' && result.items && result.items[0]) {
-              var pagina0 = result.items[0];
-              var muestra = pagina0.slice(0, 400).map(function (it) {
-                return it.x + ',' + it.y + ':' + it.str;
-              }).join(' | ');
-              debugSheet.appendRow([item.tipo + ' ITEMS', Utilities.formatDate(msg.getDate(), CONFIG.TIMEZONE, 'yyyy-MM-dd'), att.getName(), muestra.slice(0, 8000)]);
-              if (muestra.length > 8000) {
-                debugSheet.appendRow([item.tipo + ' ITEMS 2', Utilities.formatDate(msg.getDate(), CONFIG.TIMEZONE, 'yyyy-MM-dd'), att.getName(), muestra.slice(8000, 16000)]);
-              }
+            //
+            // Estado de Cuenta TC: el chequeo de suma-vs-total quedó desactivado
+            // (ver verificarSumaContraTotalDeclarado_) porque el monto capturado
+            // por transacción es el TOTAL de la compra, no la cuota mensual — para
+            // reconciliar de verdad contra "Monto Total Facturado a Pagar" hace
+            // falta el campo "valor cuota" por transacción y saber qué páginas
+            // corresponden al período actual (el PDF repite un historial de
+            // comprobantes de meses anteriores). Volcar coordenadas x,y de todas
+            // las páginas para poder construir eso con datos reales.
+            if ((item.tipo === 'BdC Cartola Cuenta Corriente' || item.tipo === 'BdC Estado de Cuenta TC') && result.items && result.items[0]) {
+              result.items.forEach(function (pagina, pIdx) {
+                var muestra = pagina.map(function (it) {
+                  return it.x + ',' + it.y + ':' + it.str;
+                }).join(' | ');
+                for (var offset = 0; offset < muestra.length; offset += 8000) {
+                  debugSheet.appendRow([item.tipo + ' ITEMS p' + pIdx + (offset > 0 ? ' (cont)' : ''), Utilities.formatDate(msg.getDate(), CONFIG.TIMEZONE, 'yyyy-MM-dd'), att.getName(), muestra.slice(offset, offset + 8000)]);
+                }
+              });
             }
           } catch (e) {
             debugSheet.appendRow([item.tipo, '', att.getName(), 'EXCEPCION: ' + e.message]);
@@ -1832,6 +1844,11 @@ function scanearEstadoCuentaSantander_(pendSheet, procesados, seenMsg, ventanaDi
                   return t;
                 });
                 debugSheet_.appendRow([etiquetaCuenta, fecha, nombreArchivo, 'DIAG texto=' + texto.length + 'chars paginas=' + result.pages + ' items_pag0=' + (itemsRecibidos[0] ? itemsRecibidos[0].length : 0) + ' transacciones_parseadas=' + txsCartola.length]);
+                // Volcado de texto crudo — para poder construir un chequeo de
+                // saldo inicial/final como el que ya existe para Banco de Chile
+                // Cartola (verificarCartolaBancoChileContraSaldo_). Automático,
+                // corre solo en el próximo scan de 10 min, sin acción manual.
+                debugSheet_.appendRow([etiquetaCuenta + ' TEXTO', fecha, nombreArchivo, texto.slice(0, 8000)]);
                 // Volcado de coordenadas x,y reales de los primeros items — para calibrar
                 // las columnas contra la posición real en vez de seguir adivinando
                 // (solo Cuenta Vista por ahora; Cuenta Corriente/CTA CTE LIFE queda
