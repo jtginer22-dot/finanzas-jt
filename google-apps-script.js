@@ -310,11 +310,78 @@ function scanearGmail(ventanaHoras) {
   nuevos += scanearCartolaBancoChile_(pendSheet, procesados, seenMsg);
 
   Logger.log(`Scanner completo: ${nuevos} nuevos gastos detectados`);
-  
+
   // Si hay nuevos, enviar notificación inmediata
   if (nuevos > 0) {
     enviarNotificacionNuevos(nuevos);
   }
+
+  // ---- CONTROL DE INTEGRIDAD: fechas imposibles ----
+  // Corre en cada scan (cada 10 min) para detectar automáticamente la misma
+  // clase de bug que encontramos manualmente (rollover de año mal calculado):
+  // cualquier fecha futura sin ser una cuota proyectada legítima es, por
+  // definición, un error de captura — nunca debería ocurrir de otra forma.
+  auditarIntegridadFechas_();
+}
+
+/**
+ * Control de integridad de fechas: busca en Pendientes y Gastos cualquier
+ * fecha futura que no corresponda a una cuota proyectada legítima (las
+ * cuotas SÍ generan fechas futuras a propósito — ver Notas "Cuota X/Y").
+ * En Pendientes NINGUNA fecha futura es legítima (las cuotas recién se
+ * generan al confirmar). Escribe hallazgos en _Alertas (pestaña dedicada,
+ * se crea sola) y manda un correo si encuentra algo — pensado para no
+ * necesitar una auditoría manual cada vez, después de haber encontrado el
+ * bug de rollover de año que dejó 22 fechas mal calculadas silenciosamente.
+ */
+function auditarIntegridadFechas_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var hoy = new Date();
+  var limiteFuturo = new Date(hoy.getTime() + 24 * 60 * 60 * 1000); // +1 día de margen
+  var hallazgos = [];
+
+  var pendSheet = ss.getSheetByName(SHEETS.PENDIENTES);
+  var pendData = pendSheet.getLastRow() > 1 ? pendSheet.getRange(2, 1, pendSheet.getLastRow() - 1, 8).getValues() : [];
+  pendData.forEach(function (r, idx) {
+    var f = new Date(String(r[1] || ''));
+    if (isNaN(f.getTime())) return;
+    if (f.getTime() > limiteFuturo.getTime()) {
+      hallazgos.push('Pendientes fila ' + (idx + 2) + ' (ID ' + r[0] + '): fecha futura ' + r[1] + ' — "' + r[2] + '" $' + r[3] + ' (' + r[5] + ')');
+    }
+  });
+
+  var gastosSheet = ss.getSheetByName(SHEETS.GASTOS);
+  var gastosData = gastosSheet.getLastRow() > 1 ? gastosSheet.getRange(2, 1, gastosSheet.getLastRow() - 1, 11).getValues() : [];
+  gastosData.forEach(function (r, idx) {
+    var f = new Date(String(r[1] || ''));
+    if (isNaN(f.getTime())) return;
+    if (f.getTime() > limiteFuturo.getTime()) {
+      var notas = String(r[10] || '');
+      if (/cuota/i.test(notas)) return; // cuota proyectada legítima
+      hallazgos.push('Gastos fila ' + (idx + 2) + ' (ID ' + r[0] + '): fecha futura ' + r[1] + ' sin nota de cuota — "' + r[2] + '" $' + r[5] + ' (' + r[9] + ')');
+    }
+  });
+
+  if (!hallazgos.length) return;
+
+  Logger.log('⚠️ auditarIntegridadFechas_: ' + hallazgos.length + ' hallazgo(s)');
+  var alertasSheet = ss.getSheetByName('_Alertas');
+  if (!alertasSheet) {
+    alertasSheet = ss.insertSheet('_Alertas');
+    alertasSheet.getRange(1, 1, 1, 2).setValues([['Timestamp', 'Hallazgo']]);
+  }
+  var ahora = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm');
+  hallazgos.forEach(function (h) {
+    alertasSheet.appendRow([ahora, h]);
+    Logger.log('  ' + h);
+  });
+
+  GmailApp.sendEmail(
+    CONFIG.EMAIL_DESTINO,
+    '⚠️ Finanzas JT — ' + hallazgos.length + ' fecha(s) imposible(s) detectada(s)',
+    'Se encontraron fechas futuras sin justificación de cuota:\n\n' + hallazgos.join('\n') + '\n\nRevisar en la pestaña _Alertas del Sheet.',
+    { name: 'Finanzas JT' }
+  );
 }
 
 // ============================================================
