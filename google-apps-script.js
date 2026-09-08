@@ -1473,6 +1473,116 @@ function parsearTransaccionesEstadoCuentaTCBancoChile_(texto, anioBase) {
   return txs;
 }
 
+// ============================================================
+// RECONCILIACIÓN ESTADO DE CUENTA TC BANCO DE CHILE
+// ============================================================
+// El chequeo original (verificarSumaContraTotalDeclarado_) se desactivó por
+// comparar contra el campo equivocado. Investigando el texto real con
+// coordenadas x,y se encontró la fórmula correcta, validada exacta contra
+// DOS estados de cuenta reales e independientes (mayo y julio 2026):
+//
+//   SALDO ADEUDADO FINAL PERÍODO ANTERIOR + Σ(VALOR CUOTA MENSUAL de cada
+//   transacción del período actual) = MONTO TOTAL FACTURADO A PAGAR
+//
+// (el monto capturado por transacción para Pendientes es el TOTAL de la
+// compra, no la cuota — por diseño, ver parsearTransaccionesEstadoCuentaTCBancoChile_.
+// "Valor cuota mensual" es un campo distinto en el PDF, columna aparte, que
+// solo se usa para esta reconciliación).
+var COLUMNAS_TC_BANCOCHILE = {
+  FECHA: [90, 122],
+  DESC: [122, 326],
+  N_CUOTA: [500, 528],
+  VALOR_CUOTA: [528, 600],
+};
+
+/** Agrupa items x,y del Estado de Cuenta TC Banco de Chile en líneas por columna. */
+function agruparLineasTCBancoChile_(itemsPorPagina) {
+  var lineas = [];
+  (itemsPorPagina || []).forEach(function (items) {
+    var porY = {};
+    items.forEach(function (it) {
+      var y = it.y, key = null;
+      for (var k in porY) { if (Math.abs(Number(k) - y) <= 3) { key = k; break; } }
+      if (key === null) key = y;
+      if (!porY[key]) porY[key] = [];
+      porY[key].push(it);
+    });
+    Object.keys(porY).map(Number).sort(function (a, b) { return b - a; }).forEach(function (y) {
+      var ws = porY[y].sort(function (a, b) { return a.x - b.x; });
+      var fecha = null, descParts = [], valorCuota = null, nCuota = null;
+      ws.forEach(function (w) {
+        var x = w.x, txt = (w.str || '').trim();
+        if (!txt) return;
+        if (x >= COLUMNAS_TC_BANCOCHILE.FECHA[0] && x < COLUMNAS_TC_BANCOCHILE.FECHA[1] && /^\d{2}\/\d{2}\/\d{2}$/.test(txt)) {
+          fecha = txt;
+        } else if (x >= COLUMNAS_TC_BANCOCHILE.DESC[0] && x < COLUMNAS_TC_BANCOCHILE.DESC[1]) {
+          descParts.push(txt);
+        } else if (x >= COLUMNAS_TC_BANCOCHILE.N_CUOTA[0] && x < COLUMNAS_TC_BANCOCHILE.N_CUOTA[1] && /^\d{2}\/\d{2}$/.test(txt)) {
+          nCuota = txt;
+        } else if (x >= COLUMNAS_TC_BANCOCHILE.VALOR_CUOTA[0] && x < COLUMNAS_TC_BANCOCHILE.VALOR_CUOTA[1] && /\d/.test(txt)) {
+          valorCuota = txt;
+        }
+      });
+      lineas.push({ fecha: fecha, descripcion: descParts.join(' ').trim(), valorCuota: valorCuota, nCuota: nCuota });
+    });
+  });
+  return lineas;
+}
+
+/** Busca una etiqueta por posición y devuelve el número más cercano a su derecha en la misma línea (y). */
+function extraerNumeroJuntoAEtiqueta_(itemsPorPagina, etiquetaRe) {
+  for (var p = 0; p < itemsPorPagina.length; p++) {
+    var items = itemsPorPagina[p];
+    for (var i = 0; i < items.length; i++) {
+      if (!etiquetaRe.test(items[i].str)) continue;
+      var y0 = items[i].y, x0 = items[i].x;
+      for (var j = 0; j < items.length; j++) {
+        if (Math.abs(items[j].y - y0) <= 3 && items[j].x > x0) {
+          var m = items[j].str.match(/(-?[\d.]{1,15})/);
+          if (m) {
+            var n = parseFloat(m[1].replace(/\./g, ''));
+            if (!isNaN(n)) return n;
+          }
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Reconcilia el Estado de Cuenta TC Banco de Chile contra la fórmula real
+ * del banco (ver comentario de sección arriba). Requiere itemsPorPagina
+ * (coordenadas x,y) de extract-pdf, no solo el texto lineal.
+ */
+function verificarFacturacionBancoChileTC_(itemsPorPagina, etiqueta) {
+  var saldoAnterior = extraerNumeroJuntoAEtiqueta_(itemsPorPagina, /SALDO ADEUDADO FINAL PER[IÍ]ODO ANTERIOR/);
+  var declarado = extraerNumeroJuntoAEtiqueta_(itemsPorPagina, /MONTO TOTAL FACTURADO A PAGAR \(/);
+  if (saldoAnterior === null || declarado === null) return null;
+
+  var lineas = agruparLineasTCBancoChile_(itemsPorPagina);
+  var sumaValorCuota = 0;
+  lineas.forEach(function (l) {
+    if (!l.fecha || !l.valorCuota) return;
+    // Cuota "00/NN": la compra se acaba de registrar este período pero su
+    // primer cobro real es el PRÓXIMO período (confirmado con datos reales:
+    // sin excluir esto, el descuadre coincidía exacto con el valor de esa
+    // cuota). No es un cargo de este período.
+    if (l.nCuota && /^00\//.test(l.nCuota)) return;
+    var vc = parseFloat(l.valorCuota.replace(/\./g, ''));
+    // Valores negativos son pagos/abonos recibidos (ej. "MONTO CANCELADO", "Pago
+    // Pesos TEF", "Pago PAP Cuenta Corriente") — ya están reflejados en SALDO
+    // ADEUDADO FINAL PERÍODO ANTERIOR, no son cargos nuevos de este período.
+    // Validado contra 2 estados de cuenta reales: solo sumar cargos (positivos)
+    // reproduce la fórmula exacta del banco.
+    if (!isNaN(vc) && vc > 0) sumaValorCuota += vc;
+  });
+
+  var esperado = saldoAnterior + sumaValorCuota;
+  var ok = Math.abs(esperado - declarado) <= 1;
+  return (ok ? '✅' : '⚠️ DESCUADRE') + ' ' + etiqueta + ': saldoAnterior=' + saldoAnterior + ' +cuotasPeriodo=' + sumaValorCuota + ' = ' + esperado + ' vs declarado=' + declarado;
+}
+
 /**
  * Detecta emails de Banco de Chile con el Estado de Cuenta TC en PDF y los
  * desencripta automáticamente (4 últimos dígitos del RUT). No requiere
@@ -1521,15 +1631,11 @@ function scanearBancoChileTC_(pendSheet, procesados, seenMsg, ventanaDias) {
             var result = JSON.parse(resp.getContentText());
             var txs = parsearTransaccionesEstadoCuentaTCBancoChile_(result.text || '', anioEmail);
             Logger.log('BdC TC ' + att.getName() + ': ' + txs.length + ' transacciones');
-            // Chequeo de suma vs "Monto Facturado" DESACTIVADO para TC: la etiqueta
-            // es ambigua en este formato — aparece también como "MONTO FACTURADO A
-            // PAGAR (PERÍODO ANTERIOR)" (mes pasado, no éste) y como "TOTAL TARJETA"
-            // repetido por página como subtotal de una sola categoría de compra
-            // (ej. "en una cuota"), no el total del período. verificarSumaContraTotalDeclarado_
-            // producía descuadre en TODOS los estados de cuenta probados por comparar
-            // contra el campo equivocado — falsa alarma, no un problema del parser de
-            // transacciones en sí. Reactivar cuando se identifique con certeza la
-            // etiqueta correcta del total del período actual.
+            var diagFacturacion = verificarFacturacionBancoChileTC_(result.items || [], 'BdC TC ' + att.getName());
+            if (diagFacturacion) {
+              Logger.log('  ' + diagFacturacion);
+              debugSheet_.appendRow(['BdC TC facturación', Utilities.formatDate(msg.getDate(), CONFIG.TIMEZONE, 'yyyy-MM-dd'), att.getName(), diagFacturacion]);
+            }
 
             var localSeen = {};
             txs.forEach(function (t) {
