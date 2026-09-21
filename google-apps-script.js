@@ -154,6 +154,51 @@ function parseMontoDesdeCorreoSantanderTC_(cuerpo) {
   return amounts[0];
 }
 
+// ============================================================
+// REGISTRO PERSISTENTE DE CORREOS CON PDF YA PROCESADOS (_Procesados)
+// ============================================================
+// Los scanners de PDF (Santander, Banco de Chile TC, Banco de Chile Cartola)
+// buscan en una ventana de 35 días. Antes decidían "ya procesado" mirando la
+// col G de Pendientes, pero ahí se guarda "msgId_uid" (clave compuesta) y se
+// comparaba contra el msgId crudo: nunca coincidía, así que CADA scan (cada
+// 10 min) volvía a descargar, desencriptar y analizar todos los PDF de los
+// últimos 35 días (consumo de cuota de Apps Script/UrlFetch y filas repetidas
+// en _Debug). Además una cartola sin movimientos nunca genera filas, por lo
+// que jamás habría quedado como "procesada".
+// Ahora cada scanner marca el correo como procesado SOLO si todos sus PDF se
+// leyeron sin error (si algo falla transitoriamente, se reintenta en el
+// próximo scan). El registro vive en la pestaña _Procesados. Los backfills
+// manuales (importarCerrados2026, etc.) pasan Sets vacíos y no lo consultan,
+// así que siguen pudiendo reprocesar todo a propósito.
+var PROCESADOS_NUEVOS_ = [];
+
+function cargarProcesadosPdf_(ss) {
+  var ids = [];
+  var sh = ss.getSheetByName('_Procesados');
+  if (sh && sh.getLastRow() > 1) {
+    sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues().forEach(function (r) {
+      if (r[0]) ids.push(String(r[0]));
+    });
+  }
+  return ids;
+}
+
+function marcarProcesadoPdf_(procesados, msgId, fuente, fecha) {
+  procesados.add(msgId);
+  PROCESADOS_NUEVOS_.push([msgId, fecha, fuente, Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm')]);
+}
+
+function persistirProcesadosPdf_(ss) {
+  if (!PROCESADOS_NUEVOS_.length) return;
+  var sh = ss.getSheetByName('_Procesados');
+  if (!sh) {
+    sh = ss.insertSheet('_Procesados');
+    sh.getRange(1, 1, 1, 4).setValues([['Email_ID', 'Fecha_Email', 'Fuente', 'Procesado_En']]);
+  }
+  sh.getRange(sh.getLastRow() + 1, 1, PROCESADOS_NUEVOS_.length, 4).setValues(PROCESADOS_NUEVOS_);
+  PROCESADOS_NUEVOS_ = [];
+}
+
 /**
  * ventanaHoras: ventana de búsqueda en Gmail.
  * - Trigger automático (cada 10 min) llama sin parámetros → usa 1 hora.
@@ -180,6 +225,9 @@ function scanearGmail(ventanaHoras) {
     const ids = pendSheet.getRange(2, 7, numRows, 1).getValues().flat();
     ids.forEach(id => procesados.add(id));
   }
+  // Correos con PDF ya leídos por completo (ver bloque _Procesados arriba)
+  PROCESADOS_NUEVOS_ = [];
+  cargarProcesadosPdf_(ss).forEach(id => procesados.add(id));
 
   let nuevos = 0;
 
@@ -308,6 +356,8 @@ function scanearGmail(ventanaHoras) {
 
   // ---- CARTOLA CUENTA CORRIENTE BANCO DE CHILE (PDF encriptado) ----
   nuevos += scanearCartolaBancoChile_(pendSheet, procesados, seenMsg);
+
+  persistirProcesadosPdf_(ss);
 
   Logger.log(`Scanner completo: ${nuevos} nuevos gastos detectados`);
 
@@ -1419,10 +1469,12 @@ function scanearCartolaBancoChile_(pendSheet, procesados, seenMsg, ventanaDias) 
         var msgId = msg.getId();
         if (seenMsg.has(msgId) || procesados.has(msgId)) return;
         seenMsg.add(msgId);
+        var hayPdf = false, okTodos = true;
 
         var attachments = msg.getAttachments();
         attachments.forEach(function (att) {
           if (!/\.pdf$/i.test(att.getName())) return;
+          hayPdf = true;
           try {
             var resp = UrlFetchApp.fetch(CONFIG.APP_URL + '/.netlify/functions/extract-pdf', {
               method: 'POST', contentType: 'application/json',
@@ -1431,6 +1483,7 @@ function scanearCartolaBancoChile_(pendSheet, procesados, seenMsg, ventanaDias) 
             });
             if (resp.getResponseCode() !== 200) {
               Logger.log('  BdC Cartola extract-pdf error ' + resp.getResponseCode());
+              okTodos = false;
               return;
             }
             var result = JSON.parse(resp.getContentText());
@@ -1461,9 +1514,10 @@ function scanearCartolaBancoChile_(pendSheet, procesados, seenMsg, ventanaDias) 
             });
           } catch (e) {
             Logger.log('  Error BdC Cartola extract-pdf: ' + e.message);
+            okTodos = false;
           }
         });
-        procesados.add(msgId);
+        if (hayPdf && okTodos) marcarProcesadoPdf_(procesados, msgId, 'BdC Cartola Cta Cte', Utilities.formatDate(msg.getDate(), CONFIG.TIMEZONE, 'yyyy-MM-dd'));
       });
     });
   } catch (e) {
@@ -1676,10 +1730,12 @@ function scanearBancoChileTC_(pendSheet, procesados, seenMsg, ventanaDias) {
         if (seenMsg.has(msgId) || procesados.has(msgId)) return;
         seenMsg.add(msgId);
         var anioEmail = msg.getDate().getFullYear();
+        var hayPdf = false, okTodos = true;
 
         var attachments = msg.getAttachments();
         attachments.forEach(function (att) {
           if (!/\.pdf$/i.test(att.getName())) return; // BdC manda octet-stream, no filtrar por mimeType
+          hayPdf = true;
           try {
             var resp = UrlFetchApp.fetch(CONFIG.APP_URL + '/.netlify/functions/extract-pdf', {
               method: 'POST', contentType: 'application/json',
@@ -1688,6 +1744,7 @@ function scanearBancoChileTC_(pendSheet, procesados, seenMsg, ventanaDias) {
             });
             if (resp.getResponseCode() !== 200) {
               Logger.log('  BdC extract-pdf error ' + resp.getResponseCode());
+              okTodos = false;
               return;
             }
             var result = JSON.parse(resp.getContentText());
@@ -1717,9 +1774,10 @@ function scanearBancoChileTC_(pendSheet, procesados, seenMsg, ventanaDias) {
             });
           } catch (e) {
             Logger.log('  Error BdC extract-pdf: ' + e.message);
+            okTodos = false;
           }
         });
-        procesados.add(msgId);
+        if (hayPdf && okTodos) marcarProcesadoPdf_(procesados, msgId, 'BdC TC', Utilities.formatDate(msg.getDate(), CONFIG.TIMEZONE, 'yyyy-MM-dd'));
       });
     });
   } catch (e) {
@@ -1956,11 +2014,13 @@ function scanearEstadoCuentaSantander_(pendSheet, procesados, seenMsg, ventanaDi
 
           var fecha = Utilities.formatDate(msg.getDate(), CONFIG.TIMEZONE, 'yyyy-MM-dd');
           var transacciones = [];
+          var hayPdf = false, okTodos = true;
 
           // Desencriptar PDF via Netlify extract-pdf (usa RUT como contraseña)
           var attachments = msg.getAttachments();
           attachments.forEach(function(att) {
             if (att.getContentType() !== 'application/pdf') return;
+            hayPdf = true;
             var nombreArchivo = att.getName();
             Logger.log('Cartola PDF: ' + nombreArchivo);
             try {
@@ -1976,6 +2036,7 @@ function scanearEstadoCuentaSantander_(pendSheet, procesados, seenMsg, ventanaDi
               if (status !== 200) {
                 Logger.log('  extract-pdf error ' + status + ': ' + (result.error || ''));
                 debugSheet_.appendRow(['Santander ' + nombreArchivo, fecha, nombreArchivo, 'ERROR extract-pdf ' + status + ': ' + (result.error || '')]);
+                okTodos = false;
                 return;
               }
               var texto = result.text || '';
@@ -2032,6 +2093,7 @@ function scanearEstadoCuentaSantander_(pendSheet, procesados, seenMsg, ventanaDi
             } catch (e) {
               Logger.log('  Error extract-pdf: ' + e.message);
               debugSheet_.appendRow(['Santander ' + nombreArchivo, '', nombreArchivo, 'EXCEPCION: ' + e.message]);
+              okTodos = false;
             }
           });
 
@@ -2060,7 +2122,9 @@ function scanearEstadoCuentaSantander_(pendSheet, procesados, seenMsg, ventanaDi
             Logger.log('  ➕ Nueva: ' + t.comercio + ' $' + t.monto + ' (' + (t.tarjeta || 'TC Santander') + ')');
             nuevos++;
           });
-          if (transacciones.length) procesados.add(msgId);
+          // Se marca aunque no haya movimientos (cartola vacía "SIN MOVIMIENTOS"),
+          // pero solo si todos los PDF se leyeron sin error.
+          if (hayPdf && okTodos) marcarProcesadoPdf_(procesados, msgId, 'Santander', fecha);
         });
       });
     } catch (e) {
