@@ -757,14 +757,22 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
   </div>
   <div id="pend-comp-extra" style="display:none">
     <div class="grid2">
-      <div class="form-row"><label class="form-label">&#191;Con qui&#233;n?</label><input class="fi" id="pend-quien" list="personas-list" placeholder="Nombre"></div>
+      <div class="form-row"><label class="form-label">&#191;Con qui&#233;n?</label>
+        <select class="fi" id="pend-quien" onchange="togglePendQuienNueva()"></select>
+        <input class="fi" id="pend-quien-nueva-txt" placeholder="Nombre de la persona nueva" style="display:none;margin-top:4px">
+      </div>
       <div class="form-row"><label class="form-label">A cobrar ($)</label><input class="fi" id="pend-a-cobrar" type="number" inputmode="numeric"></div>
     </div>
   </div>
   <div id="pend-comp-grupo" style="display:none">
     <div class="form-row">
-      <label class="form-label">Nombres (separados por coma)</label>
-      <input class="fi" id="pend-personas" placeholder="Ej: Polola, Juan, María">
+      <label class="form-label">Con qui&#233;n divides (adem&#225;s de ti)</label>
+      <div id="pend-personas-picker" style="display:flex;flex-wrap:wrap;gap:2px;margin-bottom:6px"></div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="pend-persona-nueva-chk" onchange="togglePendPersonaNueva()">
+        <label for="pend-persona-nueva-chk" style="margin:0;font-size:13px;cursor:pointer">Otra persona (nueva)</label>
+      </div>
+      <input class="fi" id="pend-persona-nueva-txt" placeholder="Nombre (o varios, separados por coma)" style="display:none;margin-top:4px">
     </div>
     <div style="font-size:11px;color:var(--text3);margin-top:-8px;margin-bottom:8px">Se asume que tú también participas. Se divide en partes iguales entre todos.</div>
   </div>
@@ -1326,6 +1334,62 @@ function refreshPersonasDatalist() {
   dl.innerHTML = personasConocidas().map(n => `<option value="${esc(n)}">`).join('');
 }
 
+// Checkbox de personas conocidas + "otra persona" con texto libre — mismo
+// patrón que las etiquetas (renderTagCheckboxRow), para no tener que volver
+// a tipear el nombre de una persona ya usada y evitar variantes ("Trini" vs
+// "Trinidad") que después complican cobrar.
+function renderPersonasCheckboxRow(containerId, seleccionadas, namePrefix) {
+  const cont = document.getElementById(containerId);
+  if (!cont) return;
+  const sel = new Set(seleccionadas || []);
+  const nombres = personasConocidas();
+  cont.innerHTML = nombres.length
+    ? nombres.map(n => {
+        const ck = sel.has(n) ? 'checked' : '';
+        return `<label style="display:inline-flex;align-items:center;gap:4px;margin:4px 10px 4px 0;font-size:13px;cursor:pointer;user-select:none"><input type="checkbox" name="${namePrefix}-persona" value="${esc(n)}" ${ck}/> ${esc(n)}</label>`;
+      }).join('')
+    : `<div style="font-size:12px;color:var(--text3)">Todavía no hay personas registradas — usa "Otra persona" abajo.</div>`;
+}
+function readPersonasCheckboxRow(containerId, namePrefix) {
+  const cont = document.getElementById(containerId);
+  return cont ? [...cont.querySelectorAll(`input[name="${namePrefix}-persona"]:checked`)].map(el => el.value) : [];
+}
+function togglePendPersonaNueva() {
+  const chk = document.getElementById('pend-persona-nueva-chk');
+  document.getElementById('pend-persona-nueva-txt').style.display = chk.checked ? 'block' : 'none';
+}
+function leerPendPersonasGrupo() {
+  const desdeChecks = readPersonasCheckboxRow('pend-personas-picker', 'pend');
+  const chk = document.getElementById('pend-persona-nueva-chk');
+  const nuevas = chk && chk.checked
+    ? (document.getElementById('pend-persona-nueva-txt').value || '').split(',').map(x => x.trim()).filter(Boolean)
+    : [];
+  return [...new Set([...desdeChecks, ...nuevas])];
+}
+
+// "¿Con quién?" (polola/custom, una sola persona) — mismo espíritu: elegir
+// de la lista conocida en vez de retipear, con opción de agregar una nueva.
+function fillPendQuienSelect(seleccionado) {
+  const sel = document.getElementById('pend-quien');
+  if (!sel) return;
+  const nombres = personasConocidas();
+  const opciones = ['Polola', ...nombres.filter(n => n !== 'Polola')];
+  sel.innerHTML = opciones.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('') + `<option value="__nueva__">Otra persona (nueva)…</option>`;
+  if (seleccionado && opciones.includes(seleccionado)) sel.value = seleccionado;
+  else if (seleccionado) { sel.value = '__nueva__'; document.getElementById('pend-quien-nueva-txt').value = seleccionado; }
+  togglePendQuienNueva();
+}
+function togglePendQuienNueva() {
+  const sel = document.getElementById('pend-quien');
+  document.getElementById('pend-quien-nueva-txt').style.display = sel && sel.value === '__nueva__' ? 'block' : 'none';
+}
+function leerPendQuien() {
+  const sel = document.getElementById('pend-quien');
+  if (!sel) return 'Polola';
+  if (sel.value === '__nueva__') return (document.getElementById('pend-quien-nueva-txt').value || '').trim() || 'Polola';
+  return sel.value || 'Polola';
+}
+
 function updateMontoRepairBanner() {
   const box = document.getElementById('monto-repair-box');
   const desc = document.getElementById('monto-repair-desc');
@@ -1834,7 +1898,11 @@ function abrirCat(id) {
   document.getElementById('pend-cuotas').value='no';
   document.getElementById('pend-cuotas-extra').style.display='none';
   document.getElementById('pend-a-cobrar').value=Math.round(p.monto/2);
-  document.getElementById('pend-personas').value='';
+  fillPendQuienSelect('Polola');
+  renderPersonasCheckboxRow('pend-personas-picker', [], 'pend');
+  document.getElementById('pend-persona-nueva-chk').checked = false;
+  document.getElementById('pend-persona-nueva-txt').value = '';
+  togglePendPersonaNueva();
   document.getElementById('pend-especial').value = '';
   document.getElementById('pend-prestamo-persona').value = '';
   const det = document.getElementById('pend-prestamo-detalle');
@@ -1921,7 +1989,7 @@ function toggleCompFields() {
   document.getElementById('pend-comp-extra').style.display=(v==='polola'||v==='custom')?'flex':'none';
   document.getElementById('pend-comp-grupo').style.display=(v==='grupo_n')?'block':'none';
   const cur = S.propuestas.find(x=>x.id===S.pendIdx);
-  if(v==='polola') { document.getElementById('pend-quien').value='Polola'; document.getElementById('pend-a-cobrar').value=Math.round(cur?.monto/2||0); }
+  if(v==='polola') { document.getElementById('pend-quien').value='Polola'; togglePendQuienNueva(); document.getElementById('pend-a-cobrar').value=Math.round(cur?.monto/2||0); }
 }
 function confirmarCat() {
   const p=S.propuestas.find(x=>x.id===S.pendIdx);
@@ -1981,10 +2049,7 @@ function confirmarCat() {
     // Tu gasto personal no debe incluir la parte que será cobrada a terceros.
     montoPersonal = Math.max(0, p.monto - mc);
   } else if (comp==='grupo_n') {
-    const personas = (document.getElementById('pend-personas').value || '')
-      .split(',')
-      .map(x=>x.trim())
-      .filter(Boolean);
+    const personas = leerPendPersonasGrupo();
     const nTotal = personas.length + 1; // +1 por ti
     if (personas.length < 1) { alert('Ingresa al menos una persona para dividir el gasto.'); return; }
     const porPersona = p.monto / nTotal;
@@ -2031,14 +2096,11 @@ function confirmarCat() {
     gastosCreados.push(g);
   }
   if(comp==='polola'||comp==='custom') {
-    const quien=document.getElementById('pend-quien').value||'Polola';
+    const quien=leerPendQuien();
     const mc=parseFloat(document.getElementById('pend-a-cobrar').value)||Math.round(p.monto/2);
     S.cuentas.push({id:uid(),tipo:'cobrar',persona:quien,monto:mc,fecha:'',desc:p.comercio,pagado:false,dias:0});
   } else if (comp==='grupo_n') {
-    const personas = (document.getElementById('pend-personas').value || '')
-      .split(',')
-      .map(x=>x.trim())
-      .filter(Boolean);
+    const personas = leerPendPersonasGrupo();
     const porPersona = p.monto / (personas.length + 1);
     personas.forEach(persona => {
       S.cuentas.push({id:uid(),tipo:'cobrar',persona,monto:porPersona,fecha:'',desc:p.comercio,pagado:false,dias:0});
