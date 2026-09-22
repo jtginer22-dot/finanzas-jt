@@ -8,7 +8,7 @@ Vivo mientras José categoriza. Cada regla nueva se agrega aquí cuando surge un
 - **Costos financieros son gasto real** y se categorizan como tal (ver abajo) — no se excluyen del análisis.
 - **Ante duda, se conversa en el chat con Claude Code.** Si la regla resultante es reutilizable (aplica a más de un movimiento futuro), se agrega a este documento.
 
-## Categorías para costos financieros (propuestas, a confirmar con uso real)
+## Categorías para costos financieros (confirmado por José, 22-sep-2026)
 - **Costo financiero**: intereses de mora, intereses rotativos, impuesto línea de crédito, intereses línea de crédito.
 - **Avance en efectivo**: "Avance Normal TEF", "Avance en Efectivo".
 - Objetivo: poder ver cuánto le cuesta a José usar crédito/rotativo por separado del consumo real, no mezclado.
