@@ -28,6 +28,10 @@ El sistema tiene **tres** niveles, no dos — justamente para no tener que elegi
 - **Restaurantes**: pagar por comida ya preparada/servida en un local, en una comida planeada (almuerzo, cena, bar).
 - **Snacks** (antes `Comida`, renombrada 22-sep-2026 — mismo ID `mst2u7edkjw`, no se perdió el historial): compras chicas, impulsivas, fuera de horario de comida — un café en la calle, un helado, agua, algo para picar. Es un tipo de gasto real y recurrente (no una situación puntual), por eso se justifica como categoría propia en vez de etiqueta. Se reasignó también el único gasto que ya la usaba (EL TOLDO AZUL, $3.500, 01-jul-2026).
 
+## Categoría `Otros` — para lo que no tienes certeza (22-sep-2026)
+Cuando el nombre del cobro es poco descriptivo y no tienes cómo saber con certeza qué fue, se categoriza como **Otros** en vez de adivinar o dejarlo pendiente indefinidamente. No es lo mismo que `no_gasto` (que exige certeza de que es un traspaso propio) — `Otros` es explícitamente "gasto real, tipo desconocido".
+**Guardrail**: `Otros` no debe volverse un cajón de sastre silencioso — si empieza a acumular un monto relevante mes a mes, vale la pena revisarlo (quizás la mayoría son la misma cosa recurrente y merecen su propia categoría o etiqueta).
+
 ## Casos ya resueltos
 - **Cerveza en after office con compañeros de trabajo** → Categoría `Restaurantes`, Etiqueta `Trabajo`. No se creó categoría nueva ("After office") porque es la historia del gasto (etiqueta), no un tipo de gasto nuevo.
 - **Carne para asado con un amigo, comprada en el supermercado** → Categoría `Supermercado`, Etiqueta `Amigos`. La compra fue en el supermercado — el motivo (asado, amigo) es la etiqueta, no cambia la categoría.
