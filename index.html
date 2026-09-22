@@ -2507,13 +2507,22 @@ function applyCategoriasFromSheet(values) {
       tipo: tipo || 'variable',
     });
   });
+  // El Sheet manda: si una categoría cambió de nombre ahí (ej. Comida → Snacks,
+  // mismo ID), la versión local vieja se descarta en vez de quedar como
+  // categoría fantasma aparte. Antes esto se mezclaba por NOMBRE en minúsculas
+  // — un rename en el Sheet no se detectaba como el mismo registro y quedaban
+  // las dos ("Comida" local + "Snacks" del Sheet) para siempre en el navegador
+  // que ya tenía la vieja cacheada.
   const merged = new Map();
-  const addList = arr => arr.forEach(c => {
+  fromSheetCats.forEach(c => merged.set(c.id, c));
+  (S.cats || []).forEach(c => {
     if (!c?.nombre?.trim()) return;
-    merged.set(String(c.nombre).toLowerCase(), c);
+    if (merged.has(c.id)) return; // el Sheet ya tiene este ID — gana el Sheet
+    const nombreLower = String(c.nombre).toLowerCase();
+    const chocaPorNombre = fromSheetCats.some(sc => sc.nombre.toLowerCase() === nombreLower);
+    if (chocaPorNombre) return; // rename detectado por nombre aunque el ID no calzara — se descarta la vieja
+    merged.set(c.id, c); // categoría creada localmente, todavía no sincronizada al Sheet
   });
-  addList(S.cats || []);
-  addList(fromSheetCats);
   S.cats = Array.from(merged.values()).sort((a,b) => String(a.nombre).localeCompare(String(b.nombre), 'es'));
   if (tags.length) S.tags = [...new Set([...(S.tags || []), ...tags])];
 }
