@@ -32,6 +32,13 @@ El sistema tiene **tres** niveles, no dos — justamente para no tener que elegi
 Cuando el nombre del cobro es poco descriptivo y no tienes cómo saber con certeza qué fue, se categoriza como **Otros** en vez de adivinar o dejarlo pendiente indefinidamente. No es lo mismo que `no_gasto` (que exige certeza de que es un traspaso propio) — `Otros` es explícitamente "gasto real, tipo desconocido".
 **Guardrail**: `Otros` no debe volverse un cajón de sastre silencioso — si empieza a acumular un monto relevante mes a mes, vale la pena revisarlo (quizás la mayoría son la misma cosa recurrente y merecen su propia categoría o etiqueta).
 
+## Costo financiero 100% trasladable a un tercero (ej. préstamo a Papá, 22-sep-2026)
+Cuando José le presta plata a alguien usando su línea de crédito o TC, y esa persona asume también el costo financiero (intereses, impuesto/timbre) mientras el préstamo esté vigente — confirmado con José que este es el caso con Papá, 100% del interés de julio es atribuible al préstamo, sin mezcla con otro uso:
+- **Categoría**: `Costo financiero` (no cambia — sigue siendo la categoría correcta para el tipo de cargo).
+- **Mecánica para que no quede como gasto tuyo**: al categorizar, "¿Es compartido?" → modo con monto editable (antes "Con polola", hoy sirve para cualquier persona), persona = quien corresponda (ej. Papá), **"A cobrar" = el monto completo del cargo** (no la mitad). Esto dejá `montoPersonal = 0` (no te pega el costo) y genera una Cuenta por Cobrar por el 100% a esa persona.
+- Se repite cada mes que el préstamo siga vigente y sigan apareciendo cargos de interés/impuesto de línea de crédito o TC — mismo patrón cada vez.
+- **Nota sin resolver**: los movimientos "AMORTIZACION A LINEA DE CREDITO" y "PAGO PRESTAMO..." que aparecen junto a estos intereses son de otra naturaleza (pago de capital, no costo financiero) — no se decidió su categorización en esta sesión, se resuelve cuando José llegue a esas filas.
+
 ## Casos ya resueltos
 - **Cerveza en after office con compañeros de trabajo** → Categoría `Restaurantes`, Etiqueta `Trabajo`. No se creó categoría nueva ("After office") porque es la historia del gasto (etiqueta), no un tipo de gasto nuevo.
 - **Carne para asado con un amigo, comprada en el supermercado** → Categoría `Supermercado`, Etiqueta `Amigos`. La compra fue en el supermercado — el motivo (asado, amigo) es la etiqueta, no cambia la categoría.
