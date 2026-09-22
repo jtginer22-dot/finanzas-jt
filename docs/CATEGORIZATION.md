@@ -68,7 +68,7 @@ Comisión de administración de cuenta corriente, mantención de tarjeta de cré
 ## Línea de crédito auto-pagando un cargo propio (22-sep-2026)
 Caso: se cobra una comisión/cargo (ej. "Comisión Admin. Mensual Plan Cuenta Central") y, el mismo día y por el mismo monto, aparece un abono "TRANSFERENCIA DESDE LINEA DE CREDI..." — la línea de crédito cubrió automáticamente ese cargo porque no había fondos en la cuenta.
 - **El cargo original**: se categoriza normal según su naturaleza (en este ejemplo, `Suscripciones` — ver regla de comisiones arriba). Es un gasto real, no cambia.
-- **El abono de la línea de crédito**: no es un ingreso ni una deuda de un tercero — es tu propia línea de crédito financiando algo que ya contaste como gasto. Se categoriza en el modal de abono como **"Traspaso entre mis propias cuentas"** (no genera ningún registro nuevo).
+- **El abono de la línea de crédito**: no es un ingreso ni una deuda de un tercero — es tu propia línea de crédito financiando algo que ya contaste como gasto. Se categoriza en el modal de abono como **"Traspaso entre mis propias cuentas"**. No cambia ningún monto, pero sí puedes elegir (opcional) a qué gasto corresponde — queda una nota en ese gasto conectándolos, para poder rastrearlo después.
 - Si más adelante esa línea de crédito te cobra intereses por haber quedado en descubierto, esos intereses se categorizan aparte como `Costo financiero` cuando aparezcan (regla ya existente) — no hay que anticiparlos ahora.
 
 ## Casos ya resueltos

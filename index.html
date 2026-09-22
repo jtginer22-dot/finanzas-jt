@@ -894,7 +894,10 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
     <div class="form-row"><label class="form-label">Fuente</label><input class="fi" id="abono-ingreso-fuente" placeholder="Ej: Sueldo, Finiquito"></div>
     <div class="form-row"><label class="form-label">Notas (opcional)</label><input class="fi" id="abono-ingreso-notas"></div>
   </div>
-  <div id="abono-traspaso-extra" style="display:none;margin-bottom:8px;font-size:11px;color:var(--text3)">No genera ningún registro — solo se marca como procesado.</div>
+  <div id="abono-traspaso-extra" style="display:none;margin-bottom:8px;background:var(--gris-m);border-radius:var(--radius);padding:10px 12px">
+    <div class="form-row"><label class="form-label">¿A qué gasto corresponde? (opcional)</label><select class="fi" id="abono-traspaso-gasto"><option value="">No aplica / ninguno en particular</option></select></div>
+    <div style="font-size:11px;color:var(--text3)">No cambia el monto de ningún gasto — solo deja una nota conectándolos (ej. "línea de crédito cubriendo la comisión"), para poder rastrear después por qué llegó esta plata.</div>
+  </div>
   <div class="modal-actions">
     <button class="btn" onclick="closeModal('m-cat-abono')">Cancelar</button>
     <button class="btn btn-green" onclick="confirmarAbono()">Confirmar</button>
@@ -2176,6 +2179,21 @@ function fillAbonoCuentaCobrarSelect(montoPendiente) {
   }
   sel.innerHTML = abiertas.map(c => `<option value="${c.id}">${esc(c.persona)} — ${fmt(c.monto)}${c.desc ? ' — ' + esc(c.desc.slice(0, 40)) : ''}</option>`).join('');
 }
+/** Para "Traspaso entre mis propias cuentas": José pidió poder dejar constancia
+ *  de qué gasto financió este traspaso (ej. la línea de crédito cubriendo una
+ *  comisión) aunque no cambie ningún monto — mismo criterio de cercanía que
+ *  los otros selects de vínculo. Ver docs/DECISIONS.md 22-sep-2026. */
+function fillAbonoTraspasoGastoSelect(montoPendiente) {
+  const sel = document.getElementById('abono-traspaso-gasto');
+  if (!sel) return;
+  const candidatos = (S.gastos || [])
+    .filter(g => tipoCuentaComoGastoReal(g.tipo) && Number(g.monto) > 0)
+    .slice()
+    .sort((a, b) => Math.abs(a.monto - montoPendiente) - Math.abs(b.monto - montoPendiente))
+    .slice(0, 40);
+  const opcionVacia = `<option value="">No aplica / ninguno en particular</option>`;
+  sel.innerHTML = opcionVacia + candidatos.map(g => `<option value="${g.id}">${esc(g.fecha)} — ${esc((g.desc || '').slice(0, 40))} — ${fmt(g.monto)}</option>`).join('');
+}
 function abrirCatAbono(id) {
   S.pendIdx = id;
   const p = S.propuestas.find(x => x.id === id);
@@ -2186,6 +2204,7 @@ function abrirCatAbono(id) {
   document.getElementById('abono-meta').textContent = `${p.fecha} | ${fmt(p.monto)} | ${p.tarjeta || ''}`;
   document.getElementById('abono-tipo').value = 'cobrar';
   fillAbonoCuentaCobrarSelect(p.monto);
+  fillAbonoTraspasoGastoSelect(p.monto);
   const pp = document.getElementById('abono-prestamo-persona'); if (pp) pp.value = '';
   const pd = document.getElementById('abono-prestamo-detalle'); if (pd) pd.value = '';
   const ifu = document.getElementById('abono-ingreso-fuente'); if (ifu) ifu.value = comercioLimpio;
@@ -2238,8 +2257,17 @@ function confirmarAbono() {
     const notas = (document.getElementById('abono-ingreso-notas').value || '').trim();
     S.ingresos.push({ id: uid(), fecha: p.fecha, fuente, monto: p.monto, notas });
     tocaIngresos = true;
+  } else if (tipo === 'traspaso') {
+    // No cambia ningún monto — solo deja la traza de qué gasto financió,
+    // si José la eligió (opcional). Ver docs/DECISIONS.md 22-sep-2026.
+    const gastoId = document.getElementById('abono-traspaso-gasto')?.value || '';
+    const gastoRelacionado = gastoId ? S.gastos.find(g => g.id === gastoId) : null;
+    if (gastoRelacionado) {
+      gastoRelacionado.notas = (gastoRelacionado.notas || '') + ` | Cubierto por traspaso interno ${p.fecha}: ${fmt(p.monto)} (${comercioLimpio})`;
+      updateGastoRowInSheets(gastoRelacionado);
+      renderGastos(); renderHistorial();
+    }
   }
-  // tipo === 'traspaso': no genera ningún registro, solo se marca procesado.
 
   p.estado = 'confirmado';
   save();
