@@ -2603,7 +2603,20 @@ function applyCategoriasFromSheet(values) {
     merged.set(c.id, c); // categoría creada localmente, todavía no sincronizada al Sheet
   });
   S.cats = Array.from(merged.values()).sort((a,b) => String(a.nombre).localeCompare(String(b.nombre), 'es'));
-  if (tags.length) S.tags = [...new Set([...(S.tags || []), ...tags])];
+  // El Sheet también manda para Etiquetas: antes esto solo AGREGABA (unión), así
+  // que borrar una etiqueta en el Sheet nunca la sacaba de los checkboxes — se
+  // quedaba cacheada localmente para siempre. Ahora la lista del Sheet reemplaza
+  // a la local, con una sola excepción de seguridad: si una etiqueta está en uso
+  // en algún gasto local que todavía no se sincronizó, no se pierde de la vista
+  // aunque el Sheet no la tenga (todavía) — evita hacerla desaparecer del picker
+  // en medio de un guardado en curso.
+  if (tags.length || (S.tags || []).length) {
+    const enUsoLocal = new Set();
+    (S.gastos || []).forEach(g => tagsFromCsv(g.tag).forEach(t => enUsoLocal.add(t)));
+    const sheetSet = new Set(tags);
+    const aConservar = (S.tags || []).filter(t => !sheetSet.has(t) && enUsoLocal.has(t));
+    S.tags = [...new Set([...tags, ...aConservar])];
+  }
 }
 
 function ensureCategoriesFromGastos() {
