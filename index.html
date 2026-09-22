@@ -388,13 +388,32 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
             <div class="card-title">Por categor&#237;a | <span id="mes-label"></span></div>
             <div id="legend-cat" class="legend"></div>
             <div class="chart-wrap"><canvas id="chart-cat" role="img" aria-label="Gastos por categor&#237;a">.</canvas></div>
-            <div class="chart-note">Muestra tu gasto personal del mes por categoría (ya descontando la parte que se cobra a otras personas).</div>
+            <div class="chart-note">Muestra tu gasto personal del mes por categoría (ya descontando la parte que se cobra a otras personas). Haz clic en una porción para ver el detalle.</div>
+            <div id="cat-detalle" style="display:none;margin-top:10px;border-top:1px solid var(--border);padding-top:10px"></div>
           </div>
           <div class="card">
             <div class="card-title">Tendencia semanal</div>
             <div class="chart-wrap"><canvas id="chart-tend" role="img" aria-label="Tendencia semanal">.</canvas></div>
             <div class="chart-note">Resume cómo se distribuye tu gasto personal durante el mes, semana a semana.</div>
           </div>
+        </div>
+        <div class="card" style="margin-bottom:18px">
+          <div class="card-title">Tarjeta: lo tuyo vs el total bruto</div>
+          <div class="charts-row" style="gap:16px">
+            <div class="metric">
+              <div class="metric-label">Total tarjeta (bruto)</div>
+              <div class="metric-value" id="m-tc-bruto">—</div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">Tuyo (neto, ya descontado lo compartido)</div>
+              <div class="metric-value" id="m-tc-neto">—</div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">Cobrado / de terceros</div>
+              <div class="metric-value" id="m-tc-terceros">—</div>
+            </div>
+          </div>
+          <div class="chart-note">La diferencia entre el bruto y lo tuyo se explica por los gastos compartidos/préstamos/trámites que le corresponden a otra persona.</div>
         </div>
       </div>
 
@@ -883,6 +902,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
   <div style="background:var(--gris-m);border-radius:var(--radius);padding:12px;margin-bottom:16px">
     <div style="font-size:14px;font-weight:600" id="eg-title"></div>
     <div style="font-size:12px;color:var(--text3);margin-top:3px;font-family:var(--mono)" id="eg-meta"></div>
+    <div id="eg-cuenta-link" style="display:none;font-size:12px;margin-top:6px"><a href="#" onclick="event.preventDefault();closeModal('m-edit-gasto');nav('cuentas')" style="color:var(--azul)">Ver Cuenta por Cobrar/Pagar relacionada →</a></div>
   </div>
   <div class="form-row"><label class="form-label">Categoría</label><select class="fi" id="eg-cat"></select></div>
   <div class="form-row">
@@ -2172,13 +2192,16 @@ function confirmarAbono() {
       cuenta.monto = saldoAnterior - p.monto;
     }
     cuenta.desc = (cuenta.desc || '') + ` | Abono ${p.fecha}: ${fmt(p.monto)}`;
+    pushHistorialCuenta(cuenta, { fecha: p.fecha, monto: p.monto, nota: 'Abono recibido' });
     tocaCuentas = true;
   } else if (tipo === 'prestamo_recibido') {
     const persona = (document.getElementById('abono-prestamo-persona').value || '').trim();
     if (!persona) { alert('Indica quién te prestó esta plata.'); return; }
     const extra = (document.getElementById('abono-prestamo-detalle')?.value || '').trim();
     const desc = extra ? (`Préstamo recibido · ${comercioLimpio} · ` + extra) : (`Préstamo recibido · ${comercioLimpio}`);
-    S.cuentas.push({ id: uid(), tipo: 'pagar', persona, monto: p.monto, fecha: '', desc, pagado: false, dias: 0 });
+    const cuentaNueva = { id: uid(), tipo: 'pagar', persona, monto: p.monto, fecha: '', desc, pagado: false, historial: [], dias: 0 };
+    pushHistorialCuenta(cuentaNueva, { fecha: p.fecha, monto: p.monto, nota: 'Préstamo recibido' });
+    S.cuentas.push(cuentaNueva);
     tocaCuentas = true;
   } else if (tipo === 'ingreso') {
     const fuente = (document.getElementById('abono-ingreso-fuente').value || '').trim() || comercioLimpio;
@@ -2244,6 +2267,13 @@ function toggleCompFields() {
   if(v==='invito') { document.getElementById('pend-quien').value='Trini'; togglePendQuienNueva(); }
   if(v==='grupo_n') renderPendRepartoMontos();
 }
+/** Agrega un evento al historial navegable de una Cuenta (creación, abono, pago).
+ *  gastoId es opcional: solo se setea cuando el evento tiene un Gasto asociado
+ *  (un abono puro de Ingreso no tiene Gasto). Ver docs/DECISIONS.md 22-sep-2026. */
+function pushHistorialCuenta(cuenta, { fecha, monto, nota, gastoId }) {
+  if (!cuenta.historial) cuenta.historial = [];
+  cuenta.historial.push({ fecha: fecha || '', monto: Math.round(Number(monto) || 0), nota: nota || '', gastoId: gastoId || '' });
+}
 function confirmarCat() {
   const p=S.propuestas.find(x=>x.id===S.pendIdx);
   if(!p) return;
@@ -2257,11 +2287,14 @@ function confirmarCat() {
     mergeTagsIntoGlobal(tag);
     const notasG = extra ? (`Trámite por tercero (${persona}). ` + extra) : `Trámite por tercero (${persona}) · fuera del gasto mensual`;
     const descCuenta = extra ? (`Trámite · ${p.comercio} · ` + extra) : (`Trámite · ${p.comercio}`);
+    const cuentaId = uid();
     const g={
-      id:uid(),desc:p.comercio,monto:p.monto,montoTotal:p.monto,cat:catSel,tag,fecha:p.fecha,tarjeta:p.tarjeta,tipo:'tramite_terceros',fuente:'gmail',banco:p.banco,notas:notasG,cuotas:null
+      id:uid(),desc:p.comercio,monto:p.monto,montoTotal:p.monto,cat:catSel,tag,fecha:p.fecha,tarjeta:p.tarjeta,tipo:'tramite_terceros',fuente:'gmail',banco:p.banco,notas:notasG,cuotas:null,cuentaId
     };
     S.gastos.push(g);
-    S.cuentas.push({id:uid(),tipo:'cobrar',persona,monto:p.monto,fecha:'',desc:descCuenta,pagado:false,dias:0});
+    const cuentaNueva = {id:cuentaId,tipo:'cobrar',persona,monto:p.monto,fecha:'',desc:descCuenta,pagado:false,gastoId:g.id,historial:[],dias:0};
+    pushHistorialCuenta(cuentaNueva, { fecha: p.fecha, monto: p.monto, nota: 'Trámite pagado', gastoId: g.id });
+    S.cuentas.push(cuentaNueva);
     p.estado='confirmado';
     p.propuesta={ cat:catSel, tag:tag||'' };
     save(); closeModal('m-cat-pend'); updateBadge(); renderPendientes(); renderRevision(); renderDashboard(); renderCuentas();
@@ -2279,11 +2312,14 @@ function confirmarCat() {
     mergeTagsIntoGlobal(tag);
     const notasG = extra ? (`Préstamo otorgado a ${persona}. ` + extra) : `Préstamo otorgado a ${persona}`;
     const descCuenta = extra ? (`Préstamo · ${p.comercio} · ` + extra) : (`Préstamo · ${p.comercio}`);
+    const cuentaId = uid();
     const g={
-      id:uid(),desc:p.comercio,monto:p.monto,montoTotal:p.monto,cat:catSel,tag,fecha:p.fecha,tarjeta:p.tarjeta,tipo:'prestamo',fuente:'gmail',banco:p.banco,notas:notasG,cuotas:null
+      id:uid(),desc:p.comercio,monto:p.monto,montoTotal:p.monto,cat:catSel,tag,fecha:p.fecha,tarjeta:p.tarjeta,tipo:'prestamo',fuente:'gmail',banco:p.banco,notas:notasG,cuotas:null,cuentaId
     };
     S.gastos.push(g);
-    S.cuentas.push({id:uid(),tipo:'cobrar',persona,monto:p.monto,fecha:'',desc:descCuenta,pagado:false,dias:0});
+    const cuentaNueva = {id:cuentaId,tipo:'cobrar',persona,monto:p.monto,fecha:'',desc:descCuenta,pagado:false,gastoId:g.id,historial:[],dias:0};
+    pushHistorialCuenta(cuentaNueva, { fecha: p.fecha, monto: p.monto, nota: 'Préstamo otorgado', gastoId: g.id });
+    S.cuentas.push(cuentaNueva);
     p.estado='confirmado';
     p.propuesta={ cat:catSel, tag:tag||'' };
     save(); closeModal('m-cat-pend'); updateBadge(); renderPendientes(); renderRevision(); renderDashboard(); renderCuentas();
@@ -2316,9 +2352,10 @@ function confirmarCat() {
     cuenta.desc = (cuenta.desc || '') + ` | Pago ${p.fecha}: ${fmt(p.monto)}`;
     const notasG = `Pago de deuda a ${cuenta.persona} (saldo anterior ${fmt(saldoAnterior)})`;
     const g={
-      id:uid(),desc:p.comercio,monto:p.monto,montoTotal:p.monto,cat:catSel,tag,fecha:p.fecha,tarjeta:p.tarjeta,tipo:'pago_deuda',fuente:'gmail',banco:p.banco,notas:notasG,cuotas:null
+      id:uid(),desc:p.comercio,monto:p.monto,montoTotal:p.monto,cat:catSel,tag,fecha:p.fecha,tarjeta:p.tarjeta,tipo:'pago_deuda',fuente:'gmail',banco:p.banco,notas:notasG,cuotas:null,cuentaId:cuenta.id
     };
     S.gastos.push(g);
+    pushHistorialCuenta(cuenta, { fecha: p.fecha, monto: p.monto, nota: 'Pago de deuda', gastoId: g.id });
     p.estado='confirmado';
     p.propuesta={ cat:catSel, tag:tag||'' };
     save(); closeModal('m-cat-pend'); updateBadge(); renderPendientes(); renderRevision(); renderDashboard(); renderCuentas();
@@ -2483,14 +2520,14 @@ async function editarMontoPropuesta(id) {
 async function updateGastoRowInSheets(g) {
   if (!S.gsId || !g) return;
   try {
-    const d = await sheetsFnGet(`${SHEET_NAME_GASTOS}!A2:Q1000`);
+    const d = await sheetsFnGet(`${SHEET_NAME_GASTOS}!A2:R1000`);
     if (!d.values) return;
     const idx = d.values.findIndex(row => String(row[0]).trim() === String(g.id).trim());
     if (idx < 0) return;
     const rowNum = idx + 2;
     await sheetsFnPost({
       operation: 'put',
-      range: `${SHEET_NAME_GASTOS}!A${rowNum}:Q${rowNum}`,
+      range: `${SHEET_NAME_GASTOS}!A${rowNum}:R${rowNum}`,
       values: [gastoToSheetRow(g)],
       majorDimension: 'ROWS',
     });
@@ -2503,6 +2540,8 @@ function abrirEditarGasto(id) {
   S.editGastoId = id;
   document.getElementById('eg-title').textContent = g.desc;
   document.getElementById('eg-meta').textContent = `${g.fecha} | ${fmt(g.monto)} | ${g.tarjeta || ''}`;
+  const egCuentaLink = document.getElementById('eg-cuenta-link');
+  if (egCuentaLink) egCuentaLink.style.display = g.cuentaId ? 'block' : 'none';
   fillCat('eg-cat');
   document.getElementById('eg-cat').value = g.cat || '';
   renderTagCheckboxRow('eg-tags-picker', g.tag || '', 'eg');
@@ -3042,10 +3081,10 @@ async function sheetsFnPost(body) {
 
 // Headers por defecto para auto-recrear pestañas si se borran accidentalmente (P0)
 const SHEET_HEADERS = {
-  'Gastos':              ['ID','Fecha','Descripción','Categoría','Etiqueta','Monto','Tarjeta','Tipo','Fuente','Banco','Notas','Monto_Total','Recurrente','Recurrente_Hasta','Recurrente_Frecuencia','Reembolso_Monto','Reembolso_Estado'],
+  'Gastos':              ['ID','Fecha','Descripción','Categoría','Etiqueta','Monto','Tarjeta','Tipo','Fuente','Banco','Notas','Monto_Total','Recurrente','Recurrente_Hasta','Recurrente_Frecuencia','Reembolso_Monto','Reembolso_Estado','Cuenta_ID'],
   'Pendientes':          ['ID','Fecha','Comercio','Monto','Tarjeta','Banco','Email_ID','Procesado'],
   'Categorias':          ['ID','Nombre','Color','Tipo','Activa'],
-  'Cuentas_Por_Cobrar':  ['ID','Tipo','Persona','Monto','Fecha_Creacion','Fecha_Limite','Estado','Descripción'],
+  'Cuentas_Por_Cobrar':  ['ID','Tipo','Persona','Monto','Fecha_Creacion','Fecha_Limite','Estado','Descripción','Gasto_ID','Historial_JSON'],
   'Presupuestos':        ['Categoria','Monto_Mensual'],
   'Ingresos':            ['ID','Fecha','Fuente','Monto','Notas'],
   'Inversiones':         ['ID','Fecha','Instrumento','Monto_Invertido','Valor_Actual','Notas','Cantidad','Ticker'],
@@ -3119,6 +3158,7 @@ function gastoToSheetRow(g) {
     g.recurrenteFrecuencia || '',
     Math.round(Number(g.reembolsoMonto) || 0),
     g.reembolsoEstado || '',
+    g.cuentaId || '',
   ];
 }
 function gastoFromSheetRow(row) {
@@ -3140,6 +3180,7 @@ function gastoFromSheetRow(row) {
     recurrenteFrecuencia: row[14] || '',
     reembolsoMonto: row[15] !== undefined && row[15] !== '' ? parseMontoFromSheetCell(row[15]) : 0,
     reembolsoEstado: row[16] || '',
+    cuentaId: row[17] || '',
   };
   const idKey = String(g.id || '').trim() || uid();
   return { ...g, id: idKey };
@@ -3155,12 +3196,12 @@ async function pushGastoToSheets(g) {
 
 async function pushGastosFullToSheets() {
   if (!S.gsId) return;
-  const headers = [['ID', 'Fecha', 'Descripción', 'Categoría', 'Etiqueta', 'Monto', 'Tarjeta', 'Tipo', 'Fuente', 'Banco', 'Notas', 'Monto_Total', 'Recurrente', 'Recurrente_Hasta', 'Recurrente_Frecuencia', 'Reembolso_Monto', 'Reembolso_Estado']];
+  const headers = [['ID', 'Fecha', 'Descripción', 'Categoría', 'Etiqueta', 'Monto', 'Tarjeta', 'Tipo', 'Fuente', 'Banco', 'Notas', 'Monto_Total', 'Recurrente', 'Recurrente_Hasta', 'Recurrente_Frecuencia', 'Reembolso_Monto', 'Reembolso_Estado', 'Cuenta_ID']];
   const rows = (S.gastos || []).map(gastoToSheetRow);
   const values = headers.concat(rows);
   await sheetsFnPost({
     operation: 'put',
-    range: `${SHEET_NAME_GASTOS}!A1:Q${Math.max(1, values.length)}`,
+    range: `${SHEET_NAME_GASTOS}!A1:R${Math.max(1, values.length)}`,
     values,
     majorDimension: 'ROWS',
   });
@@ -3202,7 +3243,7 @@ async function sheetsAppend(sheet, values) {
 
 async function syncCuentasToSheets() {
   if (!S.gsId) return;
-  const headers = [['ID', 'Tipo', 'Persona', 'Monto', 'Fecha_Creacion', 'Fecha_Limite', 'Estado', 'Descripción']];
+  const headers = [['ID', 'Tipo', 'Persona', 'Monto', 'Fecha_Creacion', 'Fecha_Limite', 'Estado', 'Descripción', 'Gasto_ID', 'Historial_JSON']];
   const rows = (S.cuentas || []).map(c => [
     c.id,
     c.tipo || 'cobrar',
@@ -3212,11 +3253,13 @@ async function syncCuentasToSheets() {
     c.fecha || '',
     c.pagado ? 'pagado' : 'pendiente',
     c.desc || '',
+    c.gastoId || '',
+    JSON.stringify(c.historial || []),
   ]);
   const values = headers.concat(rows);
   await sheetsFnPost({
     operation: 'put',
-    range: `${SHEET_NAME_CUENTAS}!A1:H${Math.max(1, values.length)}`,
+    range: `${SHEET_NAME_CUENTAS}!A1:J${Math.max(1, values.length)}`,
     values,
     majorDimension: 'ROWS',
   });
@@ -3303,7 +3346,7 @@ async function loadFromSheets() {
     _sheetsCriticasVerificadas = true;
   }
   try {
-    const dG = await sheetsFnGet(`${SHEET_NAME_GASTOS}!A2:Q5000`);
+    const dG = await sheetsFnGet(`${SHEET_NAME_GASTOS}!A2:R5000`);
     if (dG.values) {
       const byId = new Map();
       for (const row of dG.values) {
@@ -3359,19 +3402,25 @@ async function loadFromSheets() {
       }
     } catch (e) { console.log('Inversiones sheet (opcional):', e); }
     try {
-      const dCu = await sheetsFnGet(`${SHEET_NAME_CUENTAS}!A2:H1000`);
+      const dCu = await sheetsFnGet(`${SHEET_NAME_CUENTAS}!A2:J1000`);
       if (dCu.values && dCu.values.length) {
-        S.cuentas = dCu.values.map(r => ({
-          id: String(r[0] || '').trim() || uid(),
-          tipo: String(r[1] || 'cobrar').trim() === 'pagar' ? 'pagar' : 'cobrar',
-          persona: decodeEntities(r[2] || ''),
-          monto: parseMontoFromSheetCell(r[3]),
-          fechaCreacion: r[4] || '',
-          fecha: r[5] || '',
-          pagado: String(r[6] || '').toLowerCase() === 'pagado',
-          desc: decodeEntities(r[7] || ''),
-          dias: 0,
-        }));
+        S.cuentas = dCu.values.map(r => {
+          let historial = [];
+          try { historial = JSON.parse(r[9] || '[]'); } catch (_) { historial = []; }
+          return {
+            id: String(r[0] || '').trim() || uid(),
+            tipo: String(r[1] || 'cobrar').trim() === 'pagar' ? 'pagar' : 'cobrar',
+            persona: decodeEntities(r[2] || ''),
+            monto: parseMontoFromSheetCell(r[3]),
+            fechaCreacion: r[4] || '',
+            fecha: r[5] || '',
+            pagado: String(r[6] || '').toLowerCase() === 'pagado',
+            desc: decodeEntities(r[7] || ''),
+            gastoId: String(r[8] || '').trim(),
+            historial: Array.isArray(historial) ? historial : [],
+            dias: 0,
+          };
+        });
       }
     } catch (e) { console.log('Cuentas sheet (opcional):', e); }
     try {
@@ -3624,6 +3673,16 @@ function renderDashboard() {
   const ps = document.getElementById('m-pend-s');
   if (ps) ps.textContent = per.mode === 'month' ? 'Sin categorizar Gmail (este período)' : 'Sin categorizar Gmail (todas las fechas)';
 
+  // Tarjeta: bruto (lo que salió de la tarjeta) vs neto (lo que efectivamente es
+  // tuyo, ya descontando compartidos/préstamos/trámites) — pedido de José
+  // 22-sep-2026 para ver la diferencia explicada por lo que le corresponde a otros.
+  const totalBrutoTC = gm.reduce((a, g) => a + (Number(g.montoTotal ?? g.monto) || 0), 0);
+  const totalNetoTC = totalConfirmed;
+  const tcTercerosEl = document.getElementById('m-tc-terceros');
+  document.getElementById('m-tc-bruto').textContent = fmt(totalBrutoTC);
+  document.getElementById('m-tc-neto').textContent = fmt(totalNetoTC);
+  if (tcTercerosEl) tcTercerosEl.textContent = fmt(Math.max(0, totalBrutoTC - totalNetoTC));
+
   renderCatChart(gm);
   if (per.mode === 'all') {
     renderTendChart(gm);
@@ -3698,14 +3757,31 @@ function renderBudgetInsights(gm) {
   }).join('');
 }
 
+/** Click en una porción de la torta (o su leyenda) muestra el detalle de
+ *  movimientos de esa categoría debajo del gráfico — pedido de José 22-sep-2026. */
+function mostrarDetalleCategoria(gm, catNombre) {
+  const el = document.getElementById('cat-detalle');
+  if (!el) return;
+  const items = gm.filter(g => g.cat === catNombre).sort((a, b) => b.fecha.localeCompare(a.fecha));
+  el.style.display = 'block';
+  el.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <strong>${esc(catNombre)}</strong>
+      <a href="#" onclick="event.preventDefault();document.getElementById('cat-detalle').style.display='none'" style="font-size:12px;color:var(--text3)">cerrar ✕</a>
+    </div>` +
+    items.map(g => `<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid var(--border)">
+      <span>${esc(g.fecha)} · ${esc(g.desc)}</span><span style="font-family:var(--mono)">${fmt(montoEfectivo(g))}</span>
+    </div>`).join('') || `<div style="font-size:12px;color:var(--text3)">Sin movimientos.</div>`;
+}
 function renderCatChart(gm) {
   const cats={}; gm.forEach(g=>cats[g.cat]=(cats[g.cat]||0)+montoEfectivo(g));
   const labels=Object.keys(cats); const data=Object.values(cats);
   const bgs=labels.map(l=>COLORS[catByNombre(l).color]||'#6B7280');
-  document.getElementById('legend-cat').innerHTML=labels.map((l,i)=>`<div class="legend-item"><div class="legend-dot" style="background:${bgs[i]}"></div>${l} <strong style="font-family:var(--mono)">${fmt(data[i])}</strong></div>`).join('');
+  document.getElementById('legend-cat').innerHTML=labels.map((l,i)=>`<div class="legend-item" style="cursor:pointer" onclick="mostrarDetalleCategoria(S.charts.catGm,'${esc(l).replace(/'/g,"\\'")}')"><div class="legend-dot" style="background:${bgs[i]}"></div>${l} <strong style="font-family:var(--mono)">${fmt(data[i])}</strong></div>`).join('');
+  document.getElementById('cat-detalle').style.display = 'none';
+  S.charts.catGm = gm;
   if(S.charts.cat) S.charts.cat.destroy();
   if(!labels.length) return;
-  S.charts.cat=new Chart(document.getElementById('chart-cat'),{type:'doughnut',data:{labels,datasets:[{data,backgroundColor:bgs,borderWidth:3,borderColor:'#fff'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`${c.label}: ${fmt(c.raw)}`}}}}});
+  S.charts.cat=new Chart(document.getElementById('chart-cat'),{type:'doughnut',data:{labels,datasets:[{data,backgroundColor:bgs,borderWidth:3,borderColor:'#fff'}]},options:{responsive:true,maintainAspectRatio:false,onClick:(evt,elements)=>{ if(elements&&elements.length) mostrarDetalleCategoria(gm, labels[elements[0].index]); },plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`${c.label}: ${fmt(c.raw)}`}}}}});
 }
 
 function renderTendChart(gm,mes,anio) {
@@ -3794,11 +3870,19 @@ function renderCuentas() {
       const abonoBtn = (c.tipo === 'cobrar' && !c.pagado && c.monto > 0)
         ? `<button type="button" class="btn btn-sm" style="padding:5px 8px" onclick="abonarCuentaCobrar('${c.id}')" title="Registrar devolución parcial">Abono</button>`
         : '';
+      // Historial navegable: cada evento (creación, abono, pago) con link directo
+      // al Gasto que lo originó, cuando corresponde — ver docs/DECISIONS.md 22-sep-2026.
+      const historialHtml = (c.historial && c.historial.length)
+        ? `<div class="cuenta-historial" style="font-size:11px;color:var(--text3);margin-top:2px">` +
+          c.historial.map(h => `${esc(h.fecha || '')} ${esc(h.nota || '')} ${fmt(h.monto)}${h.gastoId ? ` · <a href="#" onclick="event.preventDefault();abrirEditarGasto('${h.gastoId}')" style="color:var(--azul)">Ver gasto →</a>` : ''}`).join('<br>') +
+          `</div>`
+        : '';
       return`<div class="cuenta-row" style="${c.pagado?'opacity:.45':''}">
         <div class="cuenta-avatar" style="background:${ac}22;color:${ac}">${ini}</div>
         <div class="cuenta-info">
           <div class="cuenta-name">${c.persona}</div>
           <div class="cuenta-sub">${c.desc||''}${c.fecha?` | Vence ${c.fecha}`:''}${dias>7?` | <span style="color:var(--rojo)">${dias}d</span>`:''}</div>
+          ${historialHtml}
         </div>
         <div class="cuenta-amount" style="color:${c.tipo==='cobrar'?'var(--verde-d)':'var(--rojo)'}">${fmt(c.monto)}</div>
         ${abonoBtn}
