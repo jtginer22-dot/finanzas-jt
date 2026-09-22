@@ -427,6 +427,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
           </div>
           <div class="chart-note" style="margin-top:8px;margin-bottom:0">Filtros y orden aplican a la lista y a la tabla de revisión. “Confirmar / Rechazar todas” sólo opera sobre pendientes visibles.</div>
         </div>
+        <div id="pend-progreso"></div>
         <div id="pendientes-list"></div>
         <div class="card" style="margin-top:12px">
           <div class="card-title">Revisión masiva (mismos pendientes)</div>
@@ -1713,11 +1714,47 @@ function passesPendFilter(p, f) {
   return true;
 }
 
+function renderPendProgreso(f) {
+  const el = document.getElementById('pend-progreso');
+  if (!el) return;
+  const enRango = (fecha) => {
+    if (f.desde && fecha < f.desde) return false;
+    if (f.hasta && fecha > f.hasta) return false;
+    return true;
+  };
+  const pendEnRango = S.propuestas.filter(p => p.estado === 'pendiente' && enRango(p.fecha));
+  const gastosEnRango = S.gastos.filter(g => enRango(g.fecha));
+  const nTotal = pendEnRango.length + gastosEnRango.length;
+  const nHecho = gastosEnRango.length;
+  const mPend = pendEnRango.reduce((a, p) => a + (Number(p.monto) || 0), 0);
+  const mHecho = gastosEnRango.reduce((a, g) => a + (Number(g.monto) || 0), 0);
+  const mTotal = mPend + mHecho;
+  if (!nTotal) { el.innerHTML = ''; return; }
+  const pctN = Math.round(nHecho / nTotal * 100);
+  const pctM = mTotal > 0 ? Math.round(mHecho / mTotal * 100) : 0;
+  const rango = (f.desde || f.hasta) ? `del ${f.desde || '…'} al ${f.hasta || '…'}` : 'de todo lo capturado (sin filtro de fecha)';
+  el.innerHTML = `<div class="card" style="margin-bottom:12px">
+    <div class="card-title" style="margin-bottom:8px">Avance de categorización — ${esc(rango)}</div>
+    <div style="display:flex;gap:16px;flex-wrap:wrap">
+      <div style="flex:1;min-width:180px">
+        <div style="font-size:12px;color:var(--text3)">Movimientos</div>
+        <div style="font-size:16px;font-weight:700;font-family:var(--mono)">${nHecho} de ${nTotal} <span style="font-size:12px;font-weight:600;color:var(--text3)">(${pctN}%)</span></div>
+        <div class="prog"><div class="prog-fill" style="width:${pctN}%;background:var(--verde)"></div></div>
+      </div>
+      <div style="flex:1;min-width:180px">
+        <div style="font-size:12px;color:var(--text3)">Monto</div>
+        <div style="font-size:16px;font-weight:700;font-family:var(--mono)">${fmt(mHecho)} de ${fmt(mTotal)} <span style="font-size:12px;font-weight:600;color:var(--text3)">(${pctM}%)</span></div>
+        <div class="prog"><div class="prog-fill" style="width:${pctM}%;background:var(--azul)"></div></div>
+      </div>
+    </div>
+  </div>`;
+}
 function renderPendientes() {
   const el=document.getElementById('pendientes-list');
   const f = getPendFilter();
   const totalPend = S.propuestas.filter(p => p.estado === 'pendiente');
   const pend = sortPendientesList(totalPend.filter(p => passesPendFilter(p, f)));
+  renderPendProgreso(f);
   if (!totalPend.length) {
     el.innerHTML = `<div class="empty"><div class="empty-icon"></div>Sin gastos pendientes de categorizar</div>`;
     renderRevision();
