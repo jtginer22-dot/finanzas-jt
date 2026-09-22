@@ -1932,7 +1932,7 @@ function configurarActivadores() {
   Logger.log('Triggers existentes: ' + existentes.length);
   existentes.forEach(function(t) {
     var fn = t.getHandlerFunction();
-    if (fn === 'scanearGmail' || fn === 'enviarResumenDiario') {
+    if (fn === 'scanearGmail' || fn === 'enviarResumenDiario' || fn === 'backupDiarioSheet') {
       ScriptApp.deleteTrigger(t);
       Logger.log('  Eliminado: ' + fn);
     }
@@ -1941,10 +1941,54 @@ function configurarActivadores() {
   ScriptApp.newTrigger('scanearGmail').timeBased().everyMinutes(10).create();
   // Resumen diario a las 8 AM
   ScriptApp.newTrigger('enviarResumenDiario').timeBased().atHour(8).everyDays(1).create();
-  Logger.log('✅ Activadores creados: scanearGmail cada 10 min + resumen 8 AM');
+  // Backup diario del Sheet a las 4 AM (antes de que arranque la actividad del día)
+  ScriptApp.newTrigger('backupDiarioSheet').timeBased().atHour(4).everyDays(1).create();
+  Logger.log('✅ Activadores creados: scanearGmail cada 10 min + resumen 8 AM + backup 4 AM');
   // Verificar que quedaron bien
   var activos = ScriptApp.getProjectTriggers().map(function(t) { return t.getHandlerFunction(); });
   Logger.log('Triggers activos ahora: ' + activos.join(', '));
+}
+
+// ============================================================
+// BACKUP DIARIO DEL SHEET
+// ============================================================
+// P0 histórico (Notion): si se borra una pestaña, se pierde todo — Google
+// Sheets es la única copia real de los datos. Copia completa del archivo
+// (todas las pestañas, todos los datos) a una carpeta de Drive cada noche,
+// reteniendo los últimos 14 días. No requiere nada del usuario más allá de
+// correr configurarActivadores() una vez.
+var BACKUP_CARPETA_NOMBRE = 'Finanzas JT - Backups';
+var BACKUP_RETENCION_DIAS = 14;
+
+function backupDiarioSheet() {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var carpetas = DriveApp.getFoldersByName(BACKUP_CARPETA_NOMBRE);
+    var carpeta = carpetas.hasNext() ? carpetas.next() : DriveApp.createFolder(BACKUP_CARPETA_NOMBRE);
+
+    var hoy = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd');
+    var nombreCopia = 'Backup ' + hoy + ' — ' + ss.getName();
+    var archivoOriginal = DriveApp.getFileById(ss.getId());
+    archivoOriginal.makeCopy(nombreCopia, carpeta);
+    Logger.log('✅ Backup creado: ' + nombreCopia);
+
+    // Retención: borrar copias con más de BACKUP_RETENCION_DIAS días
+    var limite = new Date(Date.now() - BACKUP_RETENCION_DIAS * 24 * 60 * 60 * 1000);
+    var archivos = carpeta.getFiles();
+    var borrados = 0;
+    while (archivos.hasNext()) {
+      var f = archivos.next();
+      if (f.getDateCreated() < limite) {
+        f.setTrashed(true);
+        borrados++;
+      }
+    }
+    Logger.log('Backups antiguos movidos a la papelera: ' + borrados);
+  } catch (e) {
+    Logger.log('❌ Error en backupDiarioSheet: ' + e.message);
+    // Aviso por correo — un backup que falla en silencio es peor que no tenerlo
+    GmailApp.sendEmail(CONFIG.EMAIL_DESTINO, '⚠️ Finanzas JT — falló el backup diario', 'backupDiarioSheet: ' + e.message, { name: 'Finanzas JT' });
+  }
 }
 
 // ============================================================
