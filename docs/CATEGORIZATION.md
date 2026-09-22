@@ -20,8 +20,14 @@ El sistema ya tiene dos niveles distintos, pensados justamente para no tener que
 
 **Regla práctica**: la categoría responde "¿qué TIPO de gasto es?" (para sumar); la etiqueta responde "¿cuál es la historia de ESTE gasto?" (para buscar/recordar/filtrar después). Ante una duda de "¿necesito una categoría nueva?", la respuesta casi siempre es no — lo que se necesita es una etiqueta.
 
+## Supermercado vs. Restaurantes vs. Comida (22-sep-2026)
+- **Supermercado**: compras de insumos/productos para preparar o consumir en casa — sea comida diaria, un asado con amigos, lo que sea. La categoría refleja el TIPO de compra (supermercado), no la ocasión (esa va en la etiqueta).
+- **Restaurantes**: pagar por comida ya preparada/servida en un local (restorán, bar, delivery de comida lista).
+- **`Comida`**: categoría a **retirar** — al 22-sep-2026 solo tenía 1 uso (EL TOLDO AZUL, $3.500) y se superpone con las otras dos sin aportar distinción propia. Pendiente: José la reasigna a Restaurantes/Supermercado según corresponda y la elimina de `Categorias` cuando termine de categorizar jul/ago.
+
 ## Casos ya resueltos
 - **Cerveza en after office con compañeros de trabajo** → Categoría `Restaurantes`, Etiqueta `Trabajo`. No se creó categoría nueva ("After office") porque es la historia del gasto (etiqueta), no un tipo de gasto nuevo.
+- **Carne para asado con un amigo, comprada en el supermercado** → Categoría `Supermercado`, Etiqueta `Amigos`. La compra fue en el supermercado — el motivo (asado, amigo) es la etiqueta, no cambia la categoría.
 
 ## Cómo se relaciona con `no_gasto` y con Cuentas_Por_Cobrar
 - Un préstamo a un tercero o un trámite pagado por José que después se cobra va a `Cuentas_Por_Cobrar`, tipo `prestamo` o `tramite_terceros` (no es gasto propio, aunque salga de la tarjeta de José).
