@@ -65,6 +65,12 @@ Cuando José le presta plata a alguien usando su línea de crédito o TC, y esa 
 ## Comisiones/mantención de cuenta y tarjeta (22-sep-2026)
 Comisión de administración de cuenta corriente, mantención de tarjeta de crédito, etc. (de cualquier banco) → categoría **Suscripciones**. Es un costo fijo recurrente por tener el producto, no una variable de consumo — distinto de `Costo financiero` (que es por USAR crédito: intereses, impuesto línea de crédito).
 
+## Línea de crédito auto-pagando un cargo propio (22-sep-2026)
+Caso: se cobra una comisión/cargo (ej. "Comisión Admin. Mensual Plan Cuenta Central") y, el mismo día y por el mismo monto, aparece un abono "TRANSFERENCIA DESDE LINEA DE CREDI..." — la línea de crédito cubrió automáticamente ese cargo porque no había fondos en la cuenta.
+- **El cargo original**: se categoriza normal según su naturaleza (en este ejemplo, `Suscripciones` — ver regla de comisiones arriba). Es un gasto real, no cambia.
+- **El abono de la línea de crédito**: no es un ingreso ni una deuda de un tercero — es tu propia línea de crédito financiando algo que ya contaste como gasto. Se categoriza en el modal de abono como **"Traspaso entre mis propias cuentas"** (no genera ningún registro nuevo).
+- Si más adelante esa línea de crédito te cobra intereses por haber quedado en descubierto, esos intereses se categorizan aparte como `Costo financiero` cuando aparezcan (regla ya existente) — no hay que anticiparlos ahora.
+
 ## Casos ya resueltos
 - **Cerveza en after office con compañeros de trabajo** → Categoría `Restaurantes`, Etiqueta `Trabajo`. No se creó categoría nueva ("After office") porque es la historia del gasto (etiqueta), no un tipo de gasto nuevo.
 - **Carne para asado con un amigo, comprada en el supermercado** → Categoría `Supermercado`, Etiqueta `Amigos`. La compra fue en el supermercado — el motivo (asado, amigo) es la etiqueta, no cambia la categoría.
