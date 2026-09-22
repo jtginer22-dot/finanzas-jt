@@ -422,6 +422,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
             </select>
             <button type="button" class="btn btn-sm" onclick="filterPendSospechosos()">Sospechosos</button>
             <button type="button" class="btn btn-sm" onclick="filterPendSoloTcCargo()">TC cargos</button>
+            <button type="button" class="btn btn-sm" onclick="filterPendSoloAbonos()">Abonos</button>
             <button type="button" class="btn btn-sm" onclick="clearPendFilters()">Limpiar</button>
           </div>
           <div class="chart-note" style="margin-top:8px;margin-bottom:0">Filtros y orden aplican a la lista y a la tabla de revisión. “Confirmar / Rechazar todas” sólo opera sobre pendientes visibles.</div>
@@ -730,6 +731,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
       <option value="">Gasto normal (compartido / cuotas abajo)</option>
       <option value="tramite_terceros">Trámite terceros (no es mi gasto)</option>
       <option value="prestamo">Préstamo por cobrar</option>
+      <option value="pago_deuda">Pago de una deuda propia (no es mi gasto)</option>
     </select>
   </div>
   <div id="pend-prestamo-extra" style="display:none;margin-bottom:8px;background:var(--gris-m);border-radius:var(--radius);padding:10px 12px">
@@ -741,6 +743,10 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
     <div class="form-row"><label class="form-label">&#191;A qui&#233;n le cobras?</label><input class="fi" id="pend-tercero-persona" list="personas-list" placeholder="Ej: Juan"></div>
     <div class="form-row"><label class="form-label">Detalle (opcional)</label><input class="fi" id="pend-tercero-detalle" placeholder="Ej: notar&#237;a a nombre de Juan"></div>
     <div style="font-size:11px;color:var(--text3)">Monto del correo: <span id="pend-tercero-monto-hint"></span>. Queda en historial como tr&#225;mite y en Por cobrar.</div>
+  </div>
+  <div id="pend-pagodeuda-extra" style="display:none;margin-bottom:8px;background:var(--gris-m);border-radius:var(--radius);padding:10px 12px">
+    <div class="form-row"><label class="form-label">&#191;Qu&#233; deuda est&#225;s pagando?</label><select class="fi" id="pend-pagodeuda-cuenta"></select></div>
+    <div style="font-size:11px;color:var(--text3)">Monto del correo: <span id="pend-pagodeuda-monto-hint"></span>. Si la diferencia con el saldo de la deuda es menor a 2%, se marca como pagada completa; si no, se abona parcial.</div>
   </div>
   <div class="form-row">
     <label class="form-label">Etiquetas</label>
@@ -832,6 +838,42 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
   <div class="modal-actions">
     <button class="btn" onclick="closeModal('m-cat-pend')">Cancelar</button>
     <button class="btn btn-green" onclick="confirmarCat()">Confirmar OK</button>
+  </div>
+</div></div>
+
+<!-- MODAL CATEGORIZAR ABONO (dinero entrando) — ver docs/DECISIONS.md 22-sep-2026 -->
+<div class="overlay" id="m-cat-abono"><div class="modal">
+  <div class="modal-handle"></div>
+  <div class="modal-title">¿Qué es este ingreso?</div>
+  <div style="background:var(--gris-m);border-radius:var(--radius);padding:12px;margin-bottom:16px">
+    <div style="font-size:14px;font-weight:600" id="abono-title"></div>
+    <div style="font-size:12px;color:var(--text3);margin-top:3px;font-family:var(--mono)" id="abono-meta"></div>
+  </div>
+  <div class="form-row">
+    <select class="fi" id="abono-tipo" onchange="toggleAbonoTipo()">
+      <option value="cobrar">Me pagaron algo que me debían (Cuenta por Cobrar)</option>
+      <option value="prestamo_recibido">Me prestaron esta plata (yo se la debo a alguien)</option>
+      <option value="ingreso">Es un ingreso mío (sueldo, etc.)</option>
+      <option value="traspaso">Traspaso entre mis propias cuentas</option>
+    </select>
+  </div>
+  <div id="abono-cobrar-extra" style="display:none;margin-bottom:8px;background:var(--gris-m);border-radius:var(--radius);padding:10px 12px">
+    <div class="form-row"><label class="form-label">¿Qué deuda te están pagando?</label><select class="fi" id="abono-cuenta-select"></select></div>
+    <div style="font-size:11px;color:var(--text3)">Si la diferencia con el saldo es menor a 2%, se marca como cobrada completa; si no, queda un saldo pendiente por el resto.</div>
+  </div>
+  <div id="abono-prestamo-extra" style="display:none;margin-bottom:8px;background:var(--gris-m);border-radius:var(--radius);padding:10px 12px">
+    <div class="form-row"><label class="form-label">¿Quién te prestó esta plata?</label><input class="fi" id="abono-prestamo-persona" list="personas-list" placeholder="Ej: Trini"></div>
+    <div class="form-row"><label class="form-label">Detalle (opcional)</label><input class="fi" id="abono-prestamo-detalle" placeholder="Ej: para pasárselo a Papá"></div>
+    <div style="font-size:11px;color:var(--text3)">Queda registrado en Cuentas por Pagar — se lo debes a esa persona.</div>
+  </div>
+  <div id="abono-ingreso-extra" style="display:none;margin-bottom:8px;background:var(--gris-m);border-radius:var(--radius);padding:10px 12px">
+    <div class="form-row"><label class="form-label">Fuente</label><input class="fi" id="abono-ingreso-fuente" placeholder="Ej: Sueldo, Finiquito"></div>
+    <div class="form-row"><label class="form-label">Notas (opcional)</label><input class="fi" id="abono-ingreso-notas"></div>
+  </div>
+  <div id="abono-traspaso-extra" style="display:none;margin-bottom:8px;font-size:11px;color:var(--text3)">No genera ningún registro — solo se marca como procesado.</div>
+  <div class="modal-actions">
+    <button class="btn" onclick="closeModal('m-cat-abono')">Cancelar</button>
+    <button class="btn btn-green" onclick="confirmarAbono()">Confirmar</button>
   </div>
 </div></div>
 
@@ -1821,6 +1863,13 @@ function filterPendSoloTcCargo() {
   if (so) so.value = 'fecha_desc';
   renderPendientes();
 }
+function filterPendSoloAbonos() {
+  const q = document.getElementById('pend-filter-q');
+  if (q) q.value = '[ABONO]';
+  const so = document.getElementById('pend-sort');
+  if (so) so.value = 'fecha_desc';
+  renderPendientes();
+}
 
 /** Cartola Vista/CC: a veces el PDF pega número de cuenta como monto (millones falsos). */
 function esComercioImportCartola(comercio) {
@@ -1934,22 +1983,34 @@ function renderPendientes() {
     renderRevision();
     return;
   }
-  el.innerHTML=pend.map((p)=>`
+  el.innerHTML=pend.map((p)=>{
+    const abono = esAbonoPendiente(p);
+    const comercioLimpio = abono ? p.comercio.replace(/^\[ABONO\]\s*/, '') : p.comercio;
+    const montoStyle = p.montoSospechoso ? 'color:var(--ambar);text-decoration:underline dotted' : (abono ? 'color:var(--verde-d)' : '');
+    return `
     <div class="gmail-item">
       <div style="font-size:20px">${p.banco==='Santander'?'SAN':'BCH'}</div>
       <div class="gmail-item-info">
-        <div class="gmail-item-title">${esc(p.comercio)}</div>
+        <div class="gmail-item-title">${abono ? '<span class="badge b-verde" style="margin-right:6px">↓ Abono</span>' : ''}${esc(comercioLimpio)}</div>
         <div class="gmail-item-sub">${esc(p.fecha)} · ${esc(p.tarjeta)} · ${esc(p.banco)}</div>
       </div>
-      <div class="gmail-item-amount" style="${p.montoSospechoso ? 'color:var(--ambar);text-decoration:underline dotted' : ''}" title="${p.montoSospechoso ? 'Monto probablemente incorrecto (cupo/deuda). Usa Monto.' : ''}">${fmt(p.monto)}${p.montoSospechoso ? ' ⚠' : ''}</div>
+      <div class="gmail-item-amount" style="${montoStyle}" title="${p.montoSospechoso ? 'Monto probablemente incorrecto (cupo/deuda). Usa Monto.' : (abono ? 'Dinero entrando a tu cuenta' : '')}">${abono ? '+' : ''}${fmt(p.monto)}${p.montoSospechoso ? ' ⚠' : ''}</div>
       <button type="button" class="btn btn-sm" onclick="editarMontoPropuesta('${p.id}')" title="Corregir monto si llegó mal desde el banco">Monto</button>
       <button class="btn btn-sm btn-green" onclick="abrirCat('${p.id}')">Categorizar</button>
       <button class="del-btn" onclick="descartarPend('${p.id}')"></button>
-    </div>`).join('');
+    </div>`;
+  }).join('');
   renderRevision();
 }
 
+/** Un Pendiente de abono (dinero entrando) se distingue por el prefijo "[ABONO] "
+ *  que le agrega el Apps Script — ver docs/DECISIONS.md 22-sep-2026. */
+function esAbonoPendiente(p) {
+  return /^\[ABONO\]\s*/.test(String(p?.comercio || ''));
+}
 function abrirCat(id) {
+  const pAbono = S.propuestas.find(x => x.id === id);
+  if (pAbono && esAbonoPendiente(pAbono)) { abrirCatAbono(id); return; }
   S.pendIdx=id;
   const p=S.propuestas.find(x=>x.id===id);
   if(!p) return;
@@ -2002,6 +2063,22 @@ function abrirCat(id) {
   }
   openModal('m-cat-pend');
 }
+/** Llena el select de "¿Qué deuda estás pagando?" con las Cuentas por Pagar
+ *  abiertas, ordenadas por cercanía de monto al pendiente (la más parecida
+ *  primero) — para encontrar rápido cuál es sin tener que adivinar. */
+function fillPendPagoDeudaSelect(montoPendiente) {
+  const sel = document.getElementById('pend-pagodeuda-cuenta');
+  if (!sel) return;
+  const abiertas = (S.cuentas || [])
+    .filter(c => c.tipo === 'pagar' && !c.pagado && Number(c.monto) > 0)
+    .slice()
+    .sort((a, b) => Math.abs(a.monto - montoPendiente) - Math.abs(b.monto - montoPendiente));
+  if (!abiertas.length) {
+    sel.innerHTML = `<option value="">No tienes deudas abiertas en Cuentas por Pagar</option>`;
+    return;
+  }
+  sel.innerHTML = abiertas.map(c => `<option value="${c.id}">${esc(c.persona)} — ${fmt(c.monto)}${c.desc ? ' — ' + esc(c.desc.slice(0, 40)) : ''}</option>`).join('');
+}
 function togglePendEspecial() {
   const esp = document.getElementById('pend-especial');
   const v = esp ? esp.value : '';
@@ -2009,6 +2086,14 @@ function togglePendEspecial() {
   if (prest) prest.style.display = v === 'prestamo' ? 'block' : 'none';
   const terc = document.getElementById('pend-tercero-extra');
   if (terc) terc.style.display = v === 'tramite_terceros' ? 'block' : 'none';
+  const pd = document.getElementById('pend-pagodeuda-extra');
+  if (pd) pd.style.display = v === 'pago_deuda' ? 'block' : 'none';
+  if (v === 'pago_deuda') {
+    const p = S.propuestas.find(x => x.id === S.pendIdx);
+    fillPendPagoDeudaSelect(p?.monto || 0);
+    const h = document.getElementById('pend-pagodeuda-monto-hint');
+    if (h) h.textContent = fmt(p?.monto || 0);
+  }
   const block = !!v;
   const pc = document.getElementById('pend-comp');
   const pq = document.getElementById('pend-cuotas');
@@ -2022,6 +2107,99 @@ function togglePendEspecial() {
     document.getElementById('pend-cuotas-extra').style.display = 'none';
   }
 }
+
+// ============================================================
+// ABONOS (dinero entrando) — flujo de categorización aparte, ver
+// docs/DECISIONS.md 22-sep-2026. José: "no me importa que sea un flujo
+// distinto" — lo que le importa es poder cruzar/vincular los movimientos.
+// ============================================================
+function fillAbonoCuentaCobrarSelect(montoPendiente) {
+  const sel = document.getElementById('abono-cuenta-select');
+  if (!sel) return;
+  const abiertas = (S.cuentas || [])
+    .filter(c => c.tipo === 'cobrar' && !c.pagado && Number(c.monto) > 0)
+    .slice()
+    .sort((a, b) => Math.abs(a.monto - montoPendiente) - Math.abs(b.monto - montoPendiente));
+  if (!abiertas.length) {
+    sel.innerHTML = `<option value="">No tienes cuentas por cobrar abiertas</option>`;
+    return;
+  }
+  sel.innerHTML = abiertas.map(c => `<option value="${c.id}">${esc(c.persona)} — ${fmt(c.monto)}${c.desc ? ' — ' + esc(c.desc.slice(0, 40)) : ''}</option>`).join('');
+}
+function abrirCatAbono(id) {
+  S.pendIdx = id;
+  const p = S.propuestas.find(x => x.id === id);
+  if (!p) return;
+  refreshPersonasDatalist();
+  const comercioLimpio = p.comercio.replace(/^\[ABONO\]\s*/, '');
+  document.getElementById('abono-title').textContent = comercioLimpio;
+  document.getElementById('abono-meta').textContent = `${p.fecha} | ${fmt(p.monto)} | ${p.tarjeta || ''}`;
+  document.getElementById('abono-tipo').value = 'cobrar';
+  fillAbonoCuentaCobrarSelect(p.monto);
+  const pp = document.getElementById('abono-prestamo-persona'); if (pp) pp.value = '';
+  const pd = document.getElementById('abono-prestamo-detalle'); if (pd) pd.value = '';
+  const ifu = document.getElementById('abono-ingreso-fuente'); if (ifu) ifu.value = comercioLimpio;
+  const ino = document.getElementById('abono-ingreso-notas'); if (ino) ino.value = '';
+  toggleAbonoTipo();
+  openModal('m-cat-abono');
+}
+function toggleAbonoTipo() {
+  const v = document.getElementById('abono-tipo')?.value || 'cobrar';
+  document.getElementById('abono-cobrar-extra').style.display = v === 'cobrar' ? 'block' : 'none';
+  document.getElementById('abono-prestamo-extra').style.display = v === 'prestamo_recibido' ? 'block' : 'none';
+  document.getElementById('abono-ingreso-extra').style.display = v === 'ingreso' ? 'block' : 'none';
+  document.getElementById('abono-traspaso-extra').style.display = v === 'traspaso' ? 'block' : 'none';
+}
+function confirmarAbono() {
+  const p = S.propuestas.find(x => x.id === S.pendIdx);
+  if (!p) return;
+  const tipo = document.getElementById('abono-tipo')?.value || 'cobrar';
+  const comercioLimpio = p.comercio.replace(/^\[ABONO\]\s*/, '');
+  let tocaCuentas = false, tocaIngresos = false;
+
+  if (tipo === 'cobrar') {
+    const cuentaId = document.getElementById('abono-cuenta-select')?.value || '';
+    const cuenta = S.cuentas.find(c => c.id === cuentaId);
+    if (!cuenta) { alert('Selecciona qué deuda te están pagando (o crea la Cuenta por Cobrar primero en Cuentas).'); return; }
+    // Misma regla de tolerancia 2% que "Pago de deuda propia" — ver confirmarCat().
+    const saldoAnterior = Math.round(Number(cuenta.monto) || 0);
+    const tolerancia = saldoAnterior * 0.02;
+    const diff = Math.abs(saldoAnterior - p.monto);
+    if (diff <= tolerancia || p.monto >= saldoAnterior) {
+      cuenta.monto = 0;
+      cuenta.pagado = true;
+    } else {
+      cuenta.monto = saldoAnterior - p.monto;
+    }
+    cuenta.desc = (cuenta.desc || '') + ` | Abono ${p.fecha}: ${fmt(p.monto)}`;
+    tocaCuentas = true;
+  } else if (tipo === 'prestamo_recibido') {
+    const persona = (document.getElementById('abono-prestamo-persona').value || '').trim();
+    if (!persona) { alert('Indica quién te prestó esta plata.'); return; }
+    const extra = (document.getElementById('abono-prestamo-detalle')?.value || '').trim();
+    const desc = extra ? (`Préstamo recibido · ${comercioLimpio} · ` + extra) : (`Préstamo recibido · ${comercioLimpio}`);
+    S.cuentas.push({ id: uid(), tipo: 'pagar', persona, monto: p.monto, fecha: '', desc, pagado: false, dias: 0 });
+    tocaCuentas = true;
+  } else if (tipo === 'ingreso') {
+    const fuente = (document.getElementById('abono-ingreso-fuente').value || '').trim() || comercioLimpio;
+    const notas = (document.getElementById('abono-ingreso-notas').value || '').trim();
+    S.ingresos.push({ id: uid(), fecha: p.fecha, fuente, monto: p.monto, notas });
+    tocaIngresos = true;
+  }
+  // tipo === 'traspaso': no genera ningún registro, solo se marca procesado.
+
+  p.estado = 'confirmado';
+  save();
+  closeModal('m-cat-abono');
+  updateBadge();
+  renderPendientes();
+  renderRevision();
+  renderDashboard();
+  if (tocaCuentas) { renderCuentas(); void syncCuentasToSheets().catch(() => {}); }
+  if (tocaIngresos) { renderIngresos(); pushIngresosFullToSheets().catch(() => {}); }
+  marcarPendienteProcesado(p);
+}
+
 function toggleCuotasFields() {
   const v=document.getElementById('pend-cuotas').value;
   document.getElementById('pend-cuotas-extra').style.display=v==='si'?'block':'none';
@@ -2106,6 +2284,41 @@ function confirmarCat() {
     };
     S.gastos.push(g);
     S.cuentas.push({id:uid(),tipo:'cobrar',persona,monto:p.monto,fecha:'',desc:descCuenta,pagado:false,dias:0});
+    p.estado='confirmado';
+    p.propuesta={ cat:catSel, tag:tag||'' };
+    save(); closeModal('m-cat-pend'); updateBadge(); renderPendientes(); renderRevision(); renderDashboard(); renderCuentas();
+    pushGastoToSheets(g);
+    void syncCuentasToSheets().catch(() => {});
+    marcarPendienteProcesado(p);
+    return;
+  }
+  if (especial === 'pago_deuda') {
+    const cuentaId = document.getElementById('pend-pagodeuda-cuenta')?.value || '';
+    const cuenta = S.cuentas.find(c => c.id === cuentaId);
+    if (!cuenta) { alert('Selecciona qué deuda estás pagando (o crea una Cuenta por Pagar primero en Cuentas).'); return; }
+    const catSel = document.getElementById('pend-cat').value || 'Otros';
+    const tag = readTagCheckboxes('pend-tags-picker', 'pend', 'pend-tag-extra');
+    mergeTagsIntoGlobal(tag);
+    // Regla de José (22-sep-2026): si la diferencia con el saldo de la deuda es
+    // menor a 2%, se considera pagada completa (nadie devuelve/paga de a poco
+    // por unos pesos de diferencia) — si no, es abono parcial.
+    const saldoAnterior = Math.round(Number(cuenta.monto) || 0);
+    const tolerancia = saldoAnterior * 0.02;
+    const diff = Math.abs(saldoAnterior - p.monto);
+    let saldoNuevo;
+    if (diff <= tolerancia || p.monto >= saldoAnterior) {
+      saldoNuevo = 0;
+      cuenta.pagado = true;
+    } else {
+      saldoNuevo = saldoAnterior - p.monto;
+    }
+    cuenta.monto = saldoNuevo;
+    cuenta.desc = (cuenta.desc || '') + ` | Pago ${p.fecha}: ${fmt(p.monto)}`;
+    const notasG = `Pago de deuda a ${cuenta.persona} (saldo anterior ${fmt(saldoAnterior)})`;
+    const g={
+      id:uid(),desc:p.comercio,monto:p.monto,montoTotal:p.monto,cat:catSel,tag,fecha:p.fecha,tarjeta:p.tarjeta,tipo:'pago_deuda',fuente:'gmail',banco:p.banco,notas:notasG,cuotas:null
+    };
+    S.gastos.push(g);
     p.estado='confirmado';
     p.propuesta={ cat:catSel, tag:tag||'' };
     save(); closeModal('m-cat-pend'); updateBadge(); renderPendientes(); renderRevision(); renderDashboard(); renderCuentas();
@@ -3279,7 +3492,7 @@ function fillDashPeriodSelect() {
 
 function tipoCuentaComoGastoReal(tipo) {
   const t = tipo || 'normal';
-  return t !== 'transferencia_interna' && t !== 'no_gasto' && t !== 'tramite_terceros' && t !== 'prestamo';
+  return t !== 'transferencia_interna' && t !== 'no_gasto' && t !== 'tramite_terceros' && t !== 'prestamo' && t !== 'pago_deuda';
 }
 function esRegistroCuotaDashboard(g) {
   return !!(g && ((Number(g.cuotas) || 0) > 1 || /\bCuota\s+\d+\s*\/\s*\d+/i.test(String(g.notas || ''))));

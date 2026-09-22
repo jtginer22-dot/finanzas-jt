@@ -1328,9 +1328,20 @@ function verificarCartolaSantanderContraSaldo_(texto, etiqueta) {
   return null;
 }
 
+/**
+ * Devuelve { cargos, abonos } — hasta 22-sep-2026 esta función solo devolvía
+ * cargos (salidas de dinero); los abonos (dinero entrando, ej. un amigo
+ * devolviendo su parte de un gasto compartido, o alguien prestándole plata a
+ * José) se descartaban. José pidió poder ver y "cruzar" esos movimientos
+ * (vincularlos a una Cuenta por Cobrar/Pagar existente, o registrarlos como
+ * Ingreso) — ver docs/DECISIONS.md 22-sep-2026. No se excluyen traspasos
+ * entre cuentas propias en abonos (a diferencia de cargos): el usuario decide
+ * en la app si es "traspaso interno" al categorizar, en vez de adivinarlo acá.
+ */
 function parsearCartolaSantanderPorColumnas_(itemsPorPagina, fechaEmail, columnas) {
   var lineas = agruparLineasPorColumnas_(itemsPorPagina, columnas || COLUMNAS_CUENTA_VISTA);
   var txs = [];
+  var abonos = [];
   var fechaVigente = null;
   var montoLimpioRe = /^[\d.]{1,15}$/;
   var ruido = /^(FECHA|SUCURSAL|DESCRIPCION|NUMERO|SUC|SALDO|CHEQUES|DEPOSITOS|N°?\s?DCTO|DETALLE DE MOVIMIENTOS|SALDOS DIARIOS|MOVIMIENTO DE SU CUENTA|SALDO DIARIO|MENSAJES|Resumen de Comisiones|SIN COMISIONES|Si su direcci|Banco Santander Chile|Nota: Consideramos|INFORMESE|En caso de extrav|INFORMACION DE LA LINEA|INFORMACION DE CUENTA|CUPO APROBADO|MONTO UTILIZADO|SALDO DISPONIBLE|FECHA VENCIMIENTO|Saldo\s*(Dia|Inicial|Final)|SR\.CLIENTE|CARTOLA SIN MOVIMIENTOS|---)/i;
@@ -1344,12 +1355,6 @@ function parsearCartolaSantanderPorColumnas_(itemsPorPagina, fechaEmail, columna
     if (ruido.test(desc)) return;
     if (l.fecha) fechaVigente = l.fecha;
     if (!fechaVigente) return; // todavía no vimos ninguna fecha real — es encabezado
-    if (!l.cargo) return; // solo nos interesan las salidas de dinero
-    if (!montoLimpioRe.test(l.cargo)) return;
-    if (trasladoInterno.test(desc)) return; // traspaso entre cuentas propias, no es gasto
-
-    var monto = parseFloat(l.cargo.replace(/\./g, ''));
-    if (!monto || monto < 100 || monto > 50000000) return;
 
     var partes = fechaVigente.split('/'); // [DD, MM]
     var mes = parseInt(partes[1], 10);
@@ -1362,9 +1367,20 @@ function parsearCartolaSantanderPorColumnas_(itemsPorPagina, fechaEmail, columna
     var anio = mes > mesEmail ? anioBase - 1 : anioBase;
     var fecha = anio + '-' + partes[1] + '-' + partes[0];
 
-    txs.push({ fecha: fecha, comercio: desc.slice(0, 60), monto: Math.round(monto) });
+    if (l.cargo && montoLimpioRe.test(l.cargo) && !trasladoInterno.test(desc)) {
+      var montoCargo = parseFloat(l.cargo.replace(/\./g, ''));
+      if (montoCargo && montoCargo >= 100 && montoCargo <= 50000000) {
+        txs.push({ fecha: fecha, comercio: desc.slice(0, 60), monto: Math.round(montoCargo) });
+      }
+    }
+    if (l.abono && montoLimpioRe.test(l.abono)) {
+      var montoAbono = parseFloat(l.abono.replace(/\./g, ''));
+      if (montoAbono && montoAbono >= 100 && montoAbono <= 50000000) {
+        abonos.push({ fecha: fecha, comercio: desc.slice(0, 60), monto: Math.round(montoAbono) });
+      }
+    }
   });
-  return txs;
+  return { cargos: txs, abonos: abonos };
 }
 
 /**
@@ -1380,9 +1396,11 @@ function parsearCartolaSantanderPorColumnas_(itemsPorPagina, fechaEmail, columna
  * usuario decida en la app si es gasto real o "no_gasto" — igual criterio
  * que ya usa Santander para casos ambiguos.
  */
+/** Devuelve { cargos, abonos } — ver comentario equivalente en parsearCartolaSantanderPorColumnas_. */
 function parsearCartolaBancoChilePorColumnas_(itemsPorPagina, fechaEmail) {
   var lineas = agruparLineasPorColumnas_(itemsPorPagina, COLUMNAS_CUENTA_CORRIENTE_BANCOCHILE);
   var txs = [];
+  var abonos = [];
   var fechaVigente = null;
   var montoLimpioRe = /^[\d.]{1,15}$/;
   var ruido = /^(SALDO\s*(INICIAL|FINAL)|SR\(A\)|EJECUTIVO|SUCURSAL|TELEFONO|N°\s*DE\s*CUENTA|CARTOLA|MONEDA|N°\s*DE\s*PAGINA|DIA\/MES|DETALLE|N°\s*DOCTO|MONTO|SALDO|RETENCION|DISPONIBLE|IMPUESTOS|DEPOSITOS|CHEQUES|OTROS|GIROS|LINEA DE CREDITO|APROBADO|UTILIZADO|VENCIMIENTO|ANTES DE VIAJAR|EN WWW|Y LUEGO|CUENTA CORRIENTE|Infórmese)/i;
@@ -1396,12 +1414,6 @@ function parsearCartolaBancoChilePorColumnas_(itemsPorPagina, fechaEmail) {
     if (ruido.test(desc)) return;
     if (l.fecha) fechaVigente = l.fecha;
     if (!fechaVigente) return; // encabezado, todavía no vimos fecha real
-    if (!l.cargo) return; // solo salidas de dinero
-    if (!montoLimpioRe.test(l.cargo)) return;
-    if (doblecontado.test(desc)) return;
-
-    var monto = parseFloat(l.cargo.replace(/\./g, ''));
-    if (!monto || monto < 100 || monto > 50000000) return;
 
     var partes = fechaVigente.split('/'); // [DD, MM]
     var mes = parseInt(partes[1], 10);
@@ -1410,9 +1422,20 @@ function parsearCartolaBancoChilePorColumnas_(itemsPorPagina, fechaEmail) {
     var anio = mes > mesEmail ? anioBase - 1 : anioBase;
     var fecha = anio + '-' + partes[1] + '-' + partes[0];
 
-    txs.push({ fecha: fecha, comercio: desc.slice(0, 60), monto: Math.round(monto) });
+    if (l.cargo && montoLimpioRe.test(l.cargo) && !doblecontado.test(desc)) {
+      var montoCargo = parseFloat(l.cargo.replace(/\./g, ''));
+      if (montoCargo && montoCargo >= 100 && montoCargo <= 50000000) {
+        txs.push({ fecha: fecha, comercio: desc.slice(0, 60), monto: Math.round(montoCargo) });
+      }
+    }
+    if (l.abono && montoLimpioRe.test(l.abono)) {
+      var montoAbono = parseFloat(l.abono.replace(/\./g, ''));
+      if (montoAbono && montoAbono >= 100 && montoAbono <= 50000000) {
+        abonos.push({ fecha: fecha, comercio: desc.slice(0, 60), monto: Math.round(montoAbono) });
+      }
+    }
   });
-  return txs;
+  return { cargos: txs, abonos: abonos };
 }
 
 /**
@@ -1487,8 +1510,9 @@ function scanearCartolaBancoChile_(pendSheet, procesados, seenMsg, ventanaDias) 
               return;
             }
             var result = JSON.parse(resp.getContentText());
-            var txs = parsearCartolaBancoChilePorColumnas_(result.items || [], msg.getDate());
-            Logger.log('BdC Cartola ' + att.getName() + ': ' + txs.length + ' transacciones');
+            var parsedBdc = parsearCartolaBancoChilePorColumnas_(result.items || [], msg.getDate());
+            var txs = parsedBdc.cargos;
+            Logger.log('BdC Cartola ' + att.getName() + ': ' + txs.length + ' cargos, ' + parsedBdc.abonos.length + ' abonos');
             var diagSaldo = verificarCartolaBancoChileContraSaldo_(result.items || [], result.text || '', 'BdC Cartola ' + att.getName());
             if (diagSaldo) {
               Logger.log('  ' + diagSaldo);
@@ -1510,6 +1534,28 @@ function scanearCartolaBancoChile_(pendSheet, procesados, seenMsg, ventanaDias) 
               pendSheet.appendRow([uid, t.fecha, t.comercio, t.monto, 'Cartola Cta Cte Banco de Chile', 'Banco de Chile', msgId + '_' + uid, 'NO']);
               SpreadsheetApp.flush();
               Logger.log('  ➕ Nueva: ' + t.comercio + ' $' + t.monto);
+              nuevos++;
+            });
+
+            // Abonos (dinero entrando) — mismo tratamiento que los cargos, con
+            // prefijo "[ABONO]" en el comercio para que la app los distinga y
+            // ofrezca el flujo de categorización correspondiente (ver
+            // docs/DECISIONS.md 22-sep-2026).
+            var localSeenAbono = {};
+            parsedBdc.abonos.forEach(function (t) {
+              var comercioAbono = '[ABONO] ' + t.comercio;
+              var localKey = t.fecha + '|' + t.monto + '|' + comercioAbono.slice(0, 10).toUpperCase();
+              if (localSeenAbono[localKey]) return;
+              localSeenAbono[localKey] = true;
+
+              if (existeTransaccionDuplicada_(pendSheet, comercioAbono, t.monto, t.fecha)) {
+                Logger.log('  ⏭ Abono ya existe: ' + comercioAbono + ' $' + t.monto);
+                return;
+              }
+              var uidAbono = Utilities.getUuid().slice(0, 8);
+              pendSheet.appendRow([uidAbono, t.fecha, comercioAbono, t.monto, 'Cartola Cta Cte Banco de Chile', 'Banco de Chile', msgId + '_' + uidAbono, 'NO']);
+              SpreadsheetApp.flush();
+              Logger.log('  ➕ Nuevo abono: ' + comercioAbono + ' $' + t.monto);
               nuevos++;
             });
           } catch (e) {
@@ -2058,6 +2104,7 @@ function scanearEstadoCuentaSantander_(pendSheet, procesados, seenMsg, ventanaDi
 
           var fecha = Utilities.formatDate(msg.getDate(), CONFIG.TIMEZONE, 'yyyy-MM-dd');
           var transacciones = [];
+          var abonosTransacciones = [];
           var hayPdf = false, okTodos = true;
 
           // Desencriptar PDF via Netlify extract-pdf (usa RUT como contraseña)
@@ -2112,11 +2159,16 @@ function scanearEstadoCuentaSantander_(pendSheet, procesados, seenMsg, ventanaDi
                   columnasCuenta = COLUMNAS_CUENTA_CORRIENTE;
                 }
                 var itemsRecibidos = result.items || [];
-                var txsCartola = parsearCartolaSantanderPorColumnas_(itemsRecibidos, msg.getDate(), columnasCuenta).map(function (t) {
+                var parsedSantander = parsearCartolaSantanderPorColumnas_(itemsRecibidos, msg.getDate(), columnasCuenta);
+                var txsCartola = parsedSantander.cargos.map(function (t) {
                   t.tarjeta = etiquetaCuenta;
                   return t;
                 });
-                debugSheet_.appendRow([etiquetaCuenta, fecha, nombreArchivo, 'DIAG texto=' + texto.length + 'chars paginas=' + result.pages + ' items_pag0=' + (itemsRecibidos[0] ? itemsRecibidos[0].length : 0) + ' transacciones_parseadas=' + txsCartola.length]);
+                var abonosCartola = parsedSantander.abonos.map(function (t) {
+                  t.tarjeta = etiquetaCuenta;
+                  return t;
+                });
+                debugSheet_.appendRow([etiquetaCuenta, fecha, nombreArchivo, 'DIAG texto=' + texto.length + 'chars paginas=' + result.pages + ' items_pag0=' + (itemsRecibidos[0] ? itemsRecibidos[0].length : 0) + ' transacciones_parseadas=' + txsCartola.length + ' abonos_parseados=' + abonosCartola.length]);
                 var diagSaldoSantander = verificarCartolaSantanderContraSaldo_(texto, etiquetaCuenta + ' ' + nombreArchivo);
                 if (diagSaldoSantander) {
                   Logger.log('  ' + diagSaldoSantander);
@@ -2133,6 +2185,7 @@ function scanearEstadoCuentaSantander_(pendSheet, procesados, seenMsg, ventanaDi
                   debugSheet_.appendRow([etiquetaCuenta + ' ITEMS', fecha, nombreArchivo, muestraItems.slice(0, 4500)]);
                 }
                 transacciones = transacciones.concat(txsCartola);
+                abonosTransacciones = abonosTransacciones.concat(abonosCartola);
               }
             } catch (e) {
               Logger.log('  Error extract-pdf: ' + e.message);
@@ -2164,6 +2217,21 @@ function scanearEstadoCuentaSantander_(pendSheet, procesados, seenMsg, ventanaDi
             var uid = Utilities.getUuid().slice(0, 8);
             pendSheet.appendRow([uid, fechaTx, t.comercio, t.monto, t.tarjeta || 'TC Santander', 'Santander', msgId + '_' + uid, 'NO']);
             Logger.log('  ➕ Nueva: ' + t.comercio + ' $' + t.monto + ' (' + (t.tarjeta || 'TC Santander') + ')');
+            nuevos++;
+          });
+
+          // Abonos (dinero entrando) — mismo prefijo "[ABONO]" que en BdC Cartola,
+          // ver docs/DECISIONS.md 22-sep-2026.
+          abonosTransacciones.forEach(function (t) {
+            var fechaTx = t.fecha || fecha;
+            var comercioAbono = '[ABONO] ' + t.comercio;
+            if (existeTransaccionDuplicada_(pendSheet, comercioAbono, t.monto, fechaTx)) {
+              Logger.log('  ⏭ Abono ya existe: ' + comercioAbono + ' $' + t.monto + ' (' + fechaTx + ')');
+              return;
+            }
+            var uidAbono = Utilities.getUuid().slice(0, 8);
+            pendSheet.appendRow([uidAbono, fechaTx, comercioAbono, t.monto, t.tarjeta || 'Santander Cartola', 'Santander', msgId + '_' + uidAbono, 'NO']);
+            Logger.log('  ➕ Nuevo abono: ' + comercioAbono + ' $' + t.monto + ' (' + (t.tarjeta || 'Santander Cartola') + ')');
             nuevos++;
           });
           // Se marca aunque no haya movimientos (cartola vacía "SIN MOVIMIENTOS"),

@@ -32,6 +32,17 @@ El sistema tiene **tres** niveles, no dos — justamente para no tener que elegi
 Cuando el nombre del cobro es poco descriptivo y no tienes cómo saber con certeza qué fue, se categoriza como **Otros** en vez de adivinar o dejarlo pendiente indefinidamente. No es lo mismo que `no_gasto` (que exige certeza de que es un traspaso propio) — `Otros` es explícitamente "gasto real, tipo desconocido".
 **Guardrail**: `Otros` no debe volverse un cajón de sastre silencioso — si empieza a acumular un monto relevante mes a mes, vale la pena revisarlo (quizás la mayoría son la misma cosa recurrente y merecen su propia categoría o etiqueta).
 
+## Abonos (dinero entrando) — captura y cruce de movimientos (22-sep-2026)
+Hasta el 22-sep-2026 el scanner solo capturaba CARGOS (salidas de dinero); los abonos (depósitos/transferencias recibidas) no se guardaban en ningún lado. José pidió poder "cruzar" movimientos — ej. la Trini le pasa plata para dárselo a Papá, Papá se lo devuelve, José se lo devuelve a la Trini — y necesita ver los 4 movimientos, no solo los 2 que salen de su bolsillo.
+- **Captura**: Apps Script ahora también guarda abonos en `Pendientes`, con el comercio prefijado `[ABONO] ` (mismo mecanismo que `[TC CARGO]`). Se ven en verde con un badge "↓ Abono" en la lista de Pendientes.
+- **Categorización** (modal distinto al de gastos): al categorizar un abono, se elige uno de 4 destinos:
+  - **Me pagaron algo que me debían** → se vincula a una Cuenta por Cobrar abierta (se muestran ordenadas por cercanía de monto) y la cierra o abona parcial.
+  - **Me prestaron esta plata** → crea una Cuenta por Pagar (la mirror del "Préstamo por cobrar" que ya existía para cargos).
+  - **Es un ingreso mío** → crea una fila en Ingresos (fuente + monto + notas).
+  - **Traspaso entre mis propias cuentas** → no genera ningún registro, solo se marca procesado.
+- **Regla del 2% (confirmada por José)**: al vincular un abono a una Cuenta por Cobrar (o un cargo a una Cuenta por Pagar, ver abajo), si la diferencia entre el monto pagado y el saldo de la deuda es menor al 2%, se marca como **pagada completa** (no queda un saldo residual de unos pesos) — "muy pocas personas te van a devolver de a poco; si te devuelven, te devuelven todo lo que te deben". Si la diferencia es mayor al 2% y el pago es menor al saldo, es un abono parcial normal.
+- **Simétrico para cargos**: se agregó "Pago de una deuda propia" a la categorización de gastos normales (junto a "Trámite terceros"/"Préstamo por cobrar") — cierra o abona una Cuenta por Pagar existente, misma regla del 2%. No cuenta como gasto real (tipo `pago_deuda`, excluido del dashboard igual que `no_gasto`/`prestamo`/`tramite_terceros`).
+
 ## Costo financiero 100% trasladable a un tercero (ej. préstamo a Papá, 22-sep-2026)
 Cuando José le presta plata a alguien usando su línea de crédito o TC, y esa persona asume también el costo financiero (intereses, impuesto/timbre) mientras el préstamo esté vigente — confirmado con José que este es el caso con Papá, 100% del interés de julio es atribuible al préstamo, sin mezcla con otro uso:
 - **Categoría**: `Costo financiero` (no cambia — sigue siendo la categoría correcta para el tipo de cargo).
