@@ -21,7 +21,7 @@ El sistema tiene **tres** niveles, no dos — justamente para no tener que elegi
 
 **Regla práctica**: categoría = "¿qué TIPO de gasto es?" (para sumar). Etiqueta = "¿bajo qué concepto reutilizable agrupo esto?" (para filtrar). Notas = "¿qué necesito recordar de ESTE movimiento en particular?" (para leer, no para filtrar). Si al crear una etiqueta el nombre incluye un nombre propio de una persona/evento que no se va a repetir, va en Notas, no en Etiquetas.
 
-**Pendiente de limpieza**: las etiquetas ya creadas "Regalo Juan Undurraga", "Ticket La Parva Trini", "Almuerzo Bernardo", "Pasaje Despedida Cristobal Sturms", "Pasaje Rio", "Notaria Souvenir Chile" son en realidad notas — cuando José tenga un momento, reclasificarlas: en el gasto que las usa, quitar la etiqueta hiper-específica (dejando "Regalos"/"Viaje"/etc. si aplica) y mover el detalle a Notas con el botón Editar.
+**Limpieza completada (22-sep-2026)**: las etiquetas hiper-específicas "Regalo Juan Undurraga", "Ticket La Parva Trini", "Almuerzo Bernardo", "Pasaje Despedida Cristobal Sturms", "Pasaje Rio", "Notaria Souvenir Chile" ya fueron quitadas por José (movidas a Notas vía el botón Editar). No queda acción pendiente sobre esto.
 
 ## Supermercado vs. Restaurantes vs. Snacks (22-sep-2026)
 - **Supermercado**: compras de insumos/productos para preparar o consumir en casa — sea comida diaria, un asado con amigos, lo que sea. La categoría refleja el TIPO de compra (supermercado), no la ocasión (esa va en la etiqueta).
