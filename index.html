@@ -751,6 +751,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
       <option value="tramite_terceros">Trámite terceros (no es mi gasto)</option>
       <option value="prestamo">Préstamo por cobrar</option>
       <option value="pago_deuda">Pago de una deuda propia (no es mi gasto)</option>
+      <option value="reverso_tc">Reverso/reembolso de una compra anterior</option>
     </select>
   </div>
   <div id="pend-prestamo-extra" style="display:none;margin-bottom:8px;background:var(--gris-m);border-radius:var(--radius);padding:10px 12px">
@@ -766,6 +767,10 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
   <div id="pend-pagodeuda-extra" style="display:none;margin-bottom:8px;background:var(--gris-m);border-radius:var(--radius);padding:10px 12px">
     <div class="form-row"><label class="form-label">&#191;Qu&#233; deuda est&#225;s pagando?</label><select class="fi" id="pend-pagodeuda-cuenta"></select></div>
     <div style="font-size:11px;color:var(--text3)">Monto del correo: <span id="pend-pagodeuda-monto-hint"></span>. Si la diferencia con el saldo de la deuda es menor a 2%, se marca como pagada completa; si no, se abona parcial.</div>
+  </div>
+  <div id="pend-reverso-extra" style="display:none;margin-bottom:8px;background:var(--gris-m);border-radius:var(--radius);padding:10px 12px">
+    <div class="form-row"><label class="form-label">&#191;A qu&#233; compra anula/reduce?</label><select class="fi" id="pend-reverso-gasto"></select></div>
+    <div style="font-size:11px;color:var(--text3)">No crea un gasto nuevo — reduce el monto del gasto original (y deja la traza en sus notas). Si el reverso es mayor al gasto original, lo deja en $0.</div>
   </div>
   <div class="form-row">
     <label class="form-label">Etiquetas</label>
@@ -2099,6 +2104,25 @@ function fillPendPagoDeudaSelect(montoPendiente) {
   }
   sel.innerHTML = abiertas.map(c => `<option value="${c.id}">${esc(c.persona)} — ${fmt(c.monto)}${c.desc ? ' — ' + esc(c.desc.slice(0, 40)) : ''}</option>`).join('');
 }
+/** Candidatos a "compra que este reverso anula", ordenados por cercanía de
+ *  monto — el mismo criterio que ya se usa para vincular a Cuentas. No hay
+ *  detección automática de reversos todavía (ver docs/DECISIONS.md
+ *  22-sep-2026: el parser de Estado de Cuenta TC solo reconoce montos
+ *  positivos), así que José elige manualmente el gasto original. */
+function fillPendReversoGastoSelect(montoPendiente) {
+  const sel = document.getElementById('pend-reverso-gasto');
+  if (!sel) return;
+  const candidatos = (S.gastos || [])
+    .filter(g => tipoCuentaComoGastoReal(g.tipo) && Number(g.monto) > 0)
+    .slice()
+    .sort((a, b) => Math.abs(a.monto - montoPendiente) - Math.abs(b.monto - montoPendiente))
+    .slice(0, 40);
+  if (!candidatos.length) {
+    sel.innerHTML = `<option value="">No hay gastos para vincular</option>`;
+    return;
+  }
+  sel.innerHTML = candidatos.map(g => `<option value="${g.id}">${esc(g.fecha)} — ${esc((g.desc || '').slice(0, 40))} — ${fmt(g.monto)}</option>`).join('');
+}
 function togglePendEspecial() {
   const esp = document.getElementById('pend-especial');
   const v = esp ? esp.value : '';
@@ -2108,11 +2132,17 @@ function togglePendEspecial() {
   if (terc) terc.style.display = v === 'tramite_terceros' ? 'block' : 'none';
   const pd = document.getElementById('pend-pagodeuda-extra');
   if (pd) pd.style.display = v === 'pago_deuda' ? 'block' : 'none';
+  const rv = document.getElementById('pend-reverso-extra');
+  if (rv) rv.style.display = v === 'reverso_tc' ? 'block' : 'none';
   if (v === 'pago_deuda') {
     const p = S.propuestas.find(x => x.id === S.pendIdx);
     fillPendPagoDeudaSelect(p?.monto || 0);
     const h = document.getElementById('pend-pagodeuda-monto-hint');
     if (h) h.textContent = fmt(p?.monto || 0);
+  }
+  if (v === 'reverso_tc') {
+    const p = S.propuestas.find(x => x.id === S.pendIdx);
+    fillPendReversoGastoSelect(p?.monto || 0);
   }
   const block = !!v;
   const pc = document.getElementById('pend-comp');
@@ -2361,6 +2391,27 @@ function confirmarCat() {
     save(); closeModal('m-cat-pend'); updateBadge(); renderPendientes(); renderRevision(); renderDashboard(); renderCuentas();
     pushGastoToSheets(g);
     void syncCuentasToSheets().catch(() => {});
+    marcarPendienteProcesado(p);
+    return;
+  }
+  if (especial === 'reverso_tc') {
+    const gastoId = document.getElementById('pend-reverso-gasto')?.value || '';
+    const gastoOriginal = S.gastos.find(g => g.id === gastoId);
+    if (!gastoOriginal) { alert('Selecciona a qué compra corresponde este reverso.'); return; }
+    // No crea un gasto nuevo — reduce el original y deja la traza en sus notas.
+    // No hay detección automática de reversos todavía (el parser de Estado de
+    // Cuenta TC solo reconoce montos positivos), así que el vínculo es manual.
+    const montoAnterior = Math.round(Number(gastoOriginal.monto) || 0);
+    const reduccion = Math.min(montoAnterior, p.monto);
+    gastoOriginal.monto = Math.max(0, montoAnterior - reduccion);
+    if (gastoOriginal.montoTotal != null) {
+      gastoOriginal.montoTotal = Math.max(0, (Number(gastoOriginal.montoTotal) || montoAnterior) - reduccion);
+    }
+    gastoOriginal.notas = (gastoOriginal.notas || '') + ` | Reverso ${p.fecha}: -${fmt(reduccion)}`;
+    p.estado = 'confirmado';
+    p.propuesta = {};
+    save(); closeModal('m-cat-pend'); updateBadge(); renderPendientes(); renderRevision(); renderDashboard(); renderGastos(); renderHistorial();
+    updateGastoRowInSheets(gastoOriginal);
     marcarPendienteProcesado(p);
     return;
   }

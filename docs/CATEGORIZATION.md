@@ -32,6 +32,11 @@ El sistema tiene **tres** niveles, no dos — justamente para no tener que elegi
 Cuando el nombre del cobro es poco descriptivo y no tienes cómo saber con certeza qué fue, se categoriza como **Otros** en vez de adivinar o dejarlo pendiente indefinidamente. No es lo mismo que `no_gasto` (que exige certeza de que es un traspaso propio) — `Otros` es explícitamente "gasto real, tipo desconocido".
 **Guardrail**: `Otros` no debe volverse un cajón de sastre silencioso — si empieza a acumular un monto relevante mes a mes, vale la pena revisarlo (quizás la mayoría son la misma cosa recurrente y merecen su propia categoría o etiqueta).
 
+## Reversos/reembolsos de tarjeta de crédito (22-sep-2026, estructura lista — detección pendiente)
+**Estado real**: el parser de Estado de Cuenta TC (Santander y Banco de Chile) solo reconoce montos POSITIVOS (`$X.XXX`) — un reverso/reembolso, que el banco muestra con signo negativo o entre paréntesis, hoy ni siquiera llega a generar un Pendiente. No es un problema de categorización, es que el dato no se captura.
+**Por qué no se construyó el parser todavía**: este proyecto nunca calibra un parser de PDF a ciegas (ver `GUARDRAILS.md` y la decisión del 2026-09-07 sobre reconciliación) — se necesita texto/coordenadas reales de un reverso real para saber cómo se ve en el PDF antes de escribir el regex. Si José ve uno en una cartola/estado de cuenta futuro, avisar para capturar el PDF real y calibrar el parser correctamente.
+**Lo que sí está listo**: si un reverso llegara a aparecer como Pendiente (por otra vía, o cuando se construya el parser), la categorización ya tiene un modo `reverso_tc` — "Reverso/reembolso de una compra anterior" — que NO crea un gasto nuevo: reduce directamente el monto del gasto original que elijas (ordenados por cercanía de monto, mismo patrón que vincular a Cuentas) y deja la traza en sus notas.
+
 ## Trazabilidad Gasto ↔ Cuenta (22-sep-2026)
 Cuando un gasto genera o cierra una Cuenta por Cobrar/Pagar (Préstamo, Trámite de terceros, Pago de deuda propia, Préstamo recibido, Abono vinculado), queda un vínculo **navegable**, no solo una nota de texto:
 - Cada Cuenta tiene un `historial` (array: fecha, monto, nota, y el ID del Gasto asociado cuando existe) — se ve en la página Cuentas, con un link "Ver gasto →" por cada evento que tenga un Gasto.

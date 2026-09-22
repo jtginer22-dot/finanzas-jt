@@ -1963,6 +1963,45 @@ function importarCartolaBancoChile2026() {
   Logger.log('=== FIN ===');
 }
 
+/**
+ * Backfill de Santander SOLO (Estado de Cuenta TC + Cartola Vista + Cartola
+ * Cta Cte), separado de importarCerrados2026() a propósito — Santander es
+ * la cuenta operativa de José (el grueso de los movimientos, decenas de
+ * PDFs), y competir por tiempo de ejecución con Banco de Chile en la misma
+ * corrida es lo que hizo cortar importarCerrados2026() a los 6 minutos de
+ * Apps Script (22-sep-2026). Si esta función SOLA también corta el tiempo,
+ * usar importarSantanderRango_() para trocear el período en pedazos más
+ * chicos (ver esa función).
+ */
+function importarSantander2026() {
+  Logger.log('=== BACKFILL 2026: Santander (TC + Cartola Vista + Cartola Cta Cte), solo ===');
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var pendSheet = ss.getSheetByName(SHEETS.PENDIENTES);
+  var n = scanearEstadoCuentaSantander_(pendSheet, new Set(), new Set(), 220);
+  Logger.log('Santander: ' + n + ' transacciones nuevas/rellenadas');
+  Logger.log('=== FIN ===');
+}
+
+/**
+ * Backfill de Santander por franjas de tiempo — para cuando ni
+ * importarSantander2026() sola alcanza a terminar en los 6 minutos de Apps
+ * Script (muchos meses de cartolas + estados de cuenta). Ejecutar varias
+ * veces seguidas, cada vez achicando el rango, ej.:
+ *   importarSantanderRango_(220, 150)  // los más antiguos primero
+ *   importarSantanderRango_(150, 80)
+ *   importarSantanderRango_(80, 0)     // hasta hoy
+ * Es seguro repetir o superponer rangos — el anti-duplicados por
+ * comercio+monto+fecha evita crear filas de nuevo.
+ */
+function importarSantanderRango_(diasMasAntiguo, diasMasReciente) {
+  Logger.log('=== BACKFILL Santander: de hace ' + diasMasAntiguo + 'd a hace ' + diasMasReciente + 'd ===');
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var pendSheet = ss.getSheetByName(SHEETS.PENDIENTES);
+  var n = scanearEstadoCuentaSantander_(pendSheet, new Set(), new Set(), diasMasAntiguo, diasMasReciente);
+  Logger.log('Santander (franja): ' + n + ' transacciones nuevas/rellenadas');
+  Logger.log('=== FIN FRANJA ===');
+}
+
 // ============================================================
 // CONFIGURAR ACTIVADORES — ejecutar UNA sola vez
 // ============================================================
@@ -2065,7 +2104,14 @@ function reconciliarCartola() {
  *
  * CONFIGURACIÓN ÚNICA: ejecutar setRutSantander() una sola vez.
  */
-function scanearEstadoCuentaSantander_(pendSheet, procesados, seenMsg, ventanaDias) {
+/**
+ * olderThanDias (opcional): cuando se pasa, acota la búsqueda a una franja
+ * (older_than:Xd .. newer_than:Ydias) en vez de "todo desde hace Y días" —
+ * permite trocear un backfill grande (ej. todo Santander en 220 días, que
+ * corta a los 6 min de Apps Script) en varias ejecuciones más chicas. Ver
+ * importarSantanderRango_() y docs/DECISIONS.md 22-sep-2026.
+ */
+function scanearEstadoCuentaSantander_(pendSheet, procesados, seenMsg, ventanaDias, olderThanDias) {
   ventanaDias = ventanaDias || 35;
   var rut = PropertiesService.getScriptProperties().getProperty('RUT_SANTANDER') || '';
   if (!rut) {
@@ -2085,9 +2131,10 @@ function scanearEstadoCuentaSantander_(pendSheet, procesados, seenMsg, ventanaDi
     debugSheet_ = ss_.insertSheet('_Debug');
     debugSheet_.getRange(1, 1, 1, 4).setValues([['Tipo', 'Fecha', 'Archivo', 'TextoCrudo']]);
   }
+  var sufijoRango = olderThanDias ? (' older_than:' + olderThanDias + 'd') : '';
   var queries = [
-    'from:mensajeria@santander.cl (subject:"estado de cuenta" OR subject:"cartola" OR subject:"resumen de cuenta") newer_than:' + ventanaDias + 'd',
-    'from:notificaciones@santander.cl (subject:"estado de cuenta" OR subject:"cartola") newer_than:' + ventanaDias + 'd',
+    'from:mensajeria@santander.cl (subject:"estado de cuenta" OR subject:"cartola" OR subject:"resumen de cuenta") newer_than:' + ventanaDias + 'd' + sufijoRango,
+    'from:notificaciones@santander.cl (subject:"estado de cuenta" OR subject:"cartola") newer_than:' + ventanaDias + 'd' + sufijoRango,
   ];
   // 5 hilos alcanza para el escaneo normal de 35 días, pero un backfill de
   // varios meses (ej. 220 días) tiene más hilos que eso — con el límite bajo
