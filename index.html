@@ -758,6 +758,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
       <option value="no">No, es solo m&#237;o</option>
       <option value="polola">Con polola ? 50/50</option>
       <option value="grupo_n">Dividir con otras personas</option>
+      <option value="invito">Invité yo (gasto 100% mío, pero fue con alguien)</option>
     </select>
   </div>
   <div id="pend-comp-extra" style="display:none">
@@ -766,8 +767,9 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
         <select class="fi" id="pend-quien" onchange="togglePendQuienNueva()"></select>
         <input class="fi" id="pend-quien-nueva-txt" placeholder="Nombre de la persona nueva" style="display:none;margin-top:4px">
       </div>
-      <div class="form-row"><label class="form-label">A cobrar ($)</label><input class="fi" id="pend-a-cobrar" type="number" inputmode="numeric"></div>
+      <div class="form-row" id="pend-a-cobrar-row"><label class="form-label">A cobrar ($)</label><input class="fi" id="pend-a-cobrar" type="number" inputmode="numeric"></div>
     </div>
+    <div id="pend-invito-nota" style="display:none;font-size:11px;color:var(--text3);margin-top:-6px;margin-bottom:8px">No genera cuenta por cobrar — el gasto queda 100% tuyo, pero se etiqueta "Invité" para poder ver cuánto gastas invitando.</div>
   </div>
   <div id="pend-comp-grupo" style="display:none">
     <div class="form-row">
@@ -1433,7 +1435,7 @@ function fillPendQuienSelect(seleccionado) {
   const sel = document.getElementById('pend-quien');
   if (!sel) return;
   const nombres = personasConocidas();
-  const opciones = ['Polola', ...nombres.filter(n => n !== 'Polola')];
+  const opciones = ['Trini', ...nombres.filter(n => n !== 'Trini')];
   sel.innerHTML = opciones.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('') + `<option value="__nueva__">Otra persona (nueva)…</option>`;
   if (seleccionado && opciones.includes(seleccionado)) sel.value = seleccionado;
   else if (seleccionado) { sel.value = '__nueva__'; document.getElementById('pend-quien-nueva-txt').value = seleccionado; }
@@ -1445,9 +1447,9 @@ function togglePendQuienNueva() {
 }
 function leerPendQuien() {
   const sel = document.getElementById('pend-quien');
-  if (!sel) return 'Polola';
-  if (sel.value === '__nueva__') return (document.getElementById('pend-quien-nueva-txt').value || '').trim() || 'Polola';
-  return sel.value || 'Polola';
+  if (!sel) return 'Trini';
+  if (sel.value === '__nueva__') return (document.getElementById('pend-quien-nueva-txt').value || '').trim() || 'Trini';
+  return sel.value || 'Trini';
 }
 
 function updateMontoRepairBanner() {
@@ -1956,10 +1958,11 @@ function abrirCat(id) {
   document.getElementById('pend-comp').value='no';
   document.getElementById('pend-comp-extra').style.display='none';
   document.getElementById('pend-comp-grupo').style.display='none';
+  document.getElementById('pend-invito-nota').style.display='none';
   document.getElementById('pend-cuotas').value='no';
   document.getElementById('pend-cuotas-extra').style.display='none';
   document.getElementById('pend-a-cobrar').value=Math.round(p.monto/2);
-  fillPendQuienSelect('Polola');
+  fillPendQuienSelect('Trini');
   renderPersonasCheckboxRow('pend-personas-picker', [], 'pend');
   document.getElementById('pend-persona-nueva-chk').checked = false;
   document.getElementById('pend-persona-nueva-txt').value = '';
@@ -2049,10 +2052,13 @@ function readPendRecurrenteFromForm() {
 }
 function toggleCompFields() {
   const v=document.getElementById('pend-comp').value;
-  document.getElementById('pend-comp-extra').style.display=(v==='polola')?'flex':'none';
+  document.getElementById('pend-comp-extra').style.display=(v==='polola'||v==='invito')?'flex':'none';
   document.getElementById('pend-comp-grupo').style.display=(v==='grupo_n')?'block':'none';
+  document.getElementById('pend-a-cobrar-row').style.display=(v==='polola')?'block':'none';
+  document.getElementById('pend-invito-nota').style.display=(v==='invito')?'block':'none';
   const cur = S.propuestas.find(x=>x.id===S.pendIdx);
-  if(v==='polola') { document.getElementById('pend-quien').value='Polola'; togglePendQuienNueva(); document.getElementById('pend-a-cobrar').value=Math.round(cur?.monto/2||0); }
+  if(v==='polola') { document.getElementById('pend-quien').value='Trini'; togglePendQuienNueva(); document.getElementById('pend-a-cobrar').value=Math.round(cur?.monto/2||0); }
+  if(v==='invito') { document.getElementById('pend-quien').value='Trini'; togglePendQuienNueva(); }
   if(v==='grupo_n') renderPendRepartoMontos();
 }
 function confirmarCat() {
@@ -2108,7 +2114,8 @@ function confirmarCat() {
   const nCuotas=cuotas?parseInt(document.getElementById('pend-n-cuotas').value)||1:1;
   const notasUsuario = (document.getElementById('pend-notas-extra')?.value || '').trim();
   const notasAuto=cuotas?`${nCuotas} cuotas · ${fmt(Math.round(p.monto/nCuotas))}/mes`:'';
-  const notas = [notasAuto, notasUsuario].filter(Boolean).join(' · ');
+  const notasInvito = comp==='invito' ? `Invité a ${leerPendQuien()}` : '';
+  const notas = [notasAuto, notasInvito, notasUsuario].filter(Boolean).join(' · ');
   let montoPersonal = p.monto;
   let reparto = null;
   if (comp==='polola') {
@@ -2122,9 +2129,10 @@ function confirmarCat() {
   }
   const catSel = document.getElementById('pend-cat').value;
   const isTransfer = catSel === 'Transferencias propias';
-  const tag = readTagCheckboxes('pend-tags-picker', 'pend', 'pend-tag-extra');
+  let tag = readTagCheckboxes('pend-tags-picker', 'pend', 'pend-tag-extra');
+  if (comp==='invito') tag = tagsToCsv([...tagsFromCsv(tag), 'Invité']);
   mergeTagsIntoGlobal(tag);
-  const tipo = isTransfer ? 'transferencia_interna' : (comp!=='no'?'compartido':'normal');
+  const tipo = isTransfer ? 'transferencia_interna' : ((comp==='polola'||comp==='grupo_n')?'compartido':'normal');
   let gastosCreados = [];
   if (cuotas && nCuotas > 1) {
     const startMode = document.getElementById('pend-cuota-start')?.value || 'este_mes';
@@ -2135,7 +2143,7 @@ function confirmarCat() {
     for (let i = 0; i < nCuotas; i++) {
       const cuotaMonto = base + (i < rem ? 1 : 0);
       const fechaCuota = addMonthsKeepingDay(p.fecha || HOY, startOffset + i);
-      const notasCuota = [`Cuota ${i + 1}/${nCuotas} · Compra total ${fmt(montoPersonal)}`, notasUsuario].filter(Boolean).join(' · ');
+      const notasCuota = [`Cuota ${i + 1}/${nCuotas} · Compra total ${fmt(montoPersonal)}`, notasInvito, notasUsuario].filter(Boolean).join(' · ');
       const g={
         id:uid(),
         desc:p.comercio,

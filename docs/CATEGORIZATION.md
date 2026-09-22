@@ -33,6 +33,9 @@ El sistema tiene **tres** niveles, no dos — justamente para no tener que elegi
 - **Carne para asado con un amigo, comprada en el supermercado** → Categoría `Supermercado`, Etiqueta `Amigos`. La compra fue en el supermercado — el motivo (asado, amigo) es la etiqueta, no cambia la categoría.
 - **Café en la calle / helado en la tarde** → Categoría `Snacks`. Distinto de Restaurantes porque no es una comida planeada; distinto de Supermercado porque no es para preparar algo en casa.
 
+## Etiqueta `Invité` (22-sep-2026)
+Cuando un gasto se marca como "Invité yo" al categorizar, se agrega automáticamente la etiqueta reutilizable `Invité` (además de las que José elija) y una nota `Invité a <persona>`. El gasto completo queda como propio de José (no genera Cuenta por Cobrar) — el objetivo es poder ver, filtrando por esa etiqueta en Historial, cuánto gasta invitando en un período. Distinto de "Con polola 50/50" o "Dividir con otras personas", que sí generan una deuda a cobrar.
+
 ## Cómo se relaciona con `no_gasto` y con Cuentas_Por_Cobrar
 - Un préstamo a un tercero o un trámite pagado por José que después se cobra va a `Cuentas_Por_Cobrar`, tipo `prestamo` o `tramite_terceros` (no es gasto propio, aunque salga de la tarjeta de José).
 - Un gasto compartido (tipo `compartido`) sí es gasto de José por el monto que le corresponde a él.
