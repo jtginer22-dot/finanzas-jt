@@ -13,12 +13,15 @@ Vivo mientras José categoriza. Cada regla nueva se agrega aquí cuando surge un
 - **Avance en efectivo**: "Avance Normal TEF", "Avance en Efectivo".
 - Objetivo: poder ver cuánto le cuesta a José usar crédito/rotativo por separado del consumo real, no mezclado.
 
-## Regla de granularidad: Categoría vs. Etiqueta (22-sep-2026)
-El sistema ya tiene dos niveles distintos, pensados justamente para no tener que elegir entre "muy granular" y "muy consolidado":
+## Regla de granularidad: Categoría vs. Etiqueta vs. Notas (actualizado 22-sep-2026)
+El sistema tiene **tres** niveles, no dos — justamente para no tener que elegir entre "muy granular" y "muy consolidado" en ningún punto:
 - **Categoría** (~20 definidas en la pestaña `Categorias`: Restaurantes, Entretenimiento, Transporte, Salud, Supermercado, etc.) — el balde grande sobre el que se arma el dashboard y la consolidación mensual. **Mantener chico y estable**: agregar una categoría nueva solo si es un TIPO de gasto recurrente que José quiere ver como su propia línea en el dashboard — nunca por un gasto puntual o una situación específica.
-- **Etiqueta** (ya hay decenas: "Trabajo", "Amigos", "Polola", "Regalo Juan Undurraga", "Almuerzo Bernardo"...) — el detalle/contexto de un movimiento específico. Acá **granularidad libre**, sin costo: se pueden poner varias etiquetas por movimiento y no diluye la consolidación porque el dashboard no se arma sobre etiquetas.
+- **Etiqueta** — para agrupar/filtrar movimientos que se repiten bajo un mismo concepto reutilizable: "Trabajo", "Amigos", "Polola", "Viaje", "Restaurantes". Tiene que ser algo que tenga sentido volver a usar en OTRO movimiento futuro. Si el nombre que se te ocurre es tan específico que es literalmente imposible que se repita ("Regalo Juan Undurraga", "Ticket Ski Trini", "Almuerzo Bernardo", "Pasaje Despedida Cristobal Sturms" — todas ya creadas antes de esta regla), **no es una etiqueta, es una nota**.
+- **Notas** (campo de texto libre, nuevo 22-sep-2026, en Categorizar y en Editar gasto) — el detalle único de ESE movimiento puntual: quién, dónde, por qué, cualquier cosa que quieras poder leer después pero que no tiene sentido usar para filtrar. Aquí sí, granularidad totalmente libre, cero costo — no aparece en ningún selector ni ensucia nada.
 
-**Regla práctica**: la categoría responde "¿qué TIPO de gasto es?" (para sumar); la etiqueta responde "¿cuál es la historia de ESTE gasto?" (para buscar/recordar/filtrar después). Ante una duda de "¿necesito una categoría nueva?", la respuesta casi siempre es no — lo que se necesita es una etiqueta.
+**Regla práctica**: categoría = "¿qué TIPO de gasto es?" (para sumar). Etiqueta = "¿bajo qué concepto reutilizable agrupo esto?" (para filtrar). Notas = "¿qué necesito recordar de ESTE movimiento en particular?" (para leer, no para filtrar). Si al crear una etiqueta el nombre incluye un nombre propio de una persona/evento que no se va a repetir, va en Notas, no en Etiquetas.
+
+**Pendiente de limpieza**: las etiquetas ya creadas "Regalo Juan Undurraga", "Ticket La Parva Trini", "Almuerzo Bernardo", "Pasaje Despedida Cristobal Sturms", "Pasaje Rio", "Notaria Souvenir Chile" son en realidad notas — cuando José tenga un momento, reclasificarlas: en el gasto que las usa, quitar la etiqueta hiper-específica (dejando "Regalos"/"Viaje"/etc. si aplica) y mover el detalle a Notas con el botón Editar.
 
 ## Supermercado vs. Restaurantes vs. Snacks (22-sep-2026)
 - **Supermercado**: compras de insumos/productos para preparar o consumir en casa — sea comida diaria, un asado con amigos, lo que sea. La categoría refleja el TIPO de compra (supermercado), no la ocasión (esa va en la etiqueta).

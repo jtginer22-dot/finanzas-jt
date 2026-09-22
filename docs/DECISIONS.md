@@ -32,6 +32,11 @@ Registro append-only. Nunca se reescribe una entrada pasada; si una decisión ca
 **Guardrail encontrado en el camino**: la config global tenía `credential.https://github.com.useHttpPath=true` (probablemente del setup de la otra cuenta), lo que rompía la búsqueda del token guardado por host simple. Se corrigió con un override **local** (`useHttpPath false` solo en este repo), sin tocar la config global.
 **Consecuencia**: este repo nunca depende de `~/.ssh/config` ni del credential helper global — su autenticación vive enteramente dentro de su propia carpeta `.git/`.
 
+### 2026-09-22 — Rediseño de "¿Es compartido?" + tercer nivel de granularidad (Notas)
+**Decisión**: "Lo invito yo" se elimina (no estaba conectada a ninguna lógica, era un no-op sin que José lo supiera). "Dividir con n personas" y "División custom" se fusionan en un modo único con selector partes-iguales/montos-personalizados, soportando N personas con proporciones distintas (antes custom solo admitía 2 personas). Se agrega un tercer nivel de granularidad, **Notas** (texto libre), junto a Categoría y Etiqueta — ver `CATEGORIZATION.md`.
+**Por qué**: José detectó, usando la app en la práctica, que la sección estaba "poco intuitiva" y con opciones sin efecto real; y que varias etiquetas ya creadas ("Regalo Juan Undurraga", etc.) eran en realidad notas de un movimiento puntual, no conceptos reutilizables — la falta de un tercer nivel forzaba a sobrecargar las etiquetas.
+**Alternativas descartadas**: mantener "Lo invito yo" construyéndola de verdad (registrar a quién se invitó sin generar cobro) — José prefirió eliminarla por ahora, se puede reconstruir si en algún momento le importa ese reporte específico.
+
 ### 2026-09-22 — Arquitectura de contexto: carpeta `docs/` en Git
 **Decisión**: crear `docs/CONTEXT.md`, `ARCHITECTURE.md`, `SOURCES.md`, `GUARDRAILS.md`, `DECISIONS.md`, `CATEGORIZATION.md`, `ROADMAP.md` como fuente de contexto y decisiones técnicas del proyecto, versionada junto al código.
 **Por qué**: el contexto vivo estaba repartido entre Notion (que se congelaba entre sesiones) y un handoff local desactualizado, sin un lugar único para el "por qué" de las decisiones técnicas.
