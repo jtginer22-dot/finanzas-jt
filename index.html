@@ -412,14 +412,13 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
             <input class="fi" type="date" id="pend-filter-hasta" title="Hasta" aria-label="Fecha hasta" onchange="renderPendientes()" style="max-width:155px">
             <input class="fi" type="text" inputmode="numeric" id="pend-filter-min" placeholder="Monto mín ($)" style="max-width:128px" oninput="fmtFilterMonto(this);renderPendientes()">
             <input class="fi" type="text" inputmode="numeric" id="pend-filter-max" placeholder="Monto máx ($)" style="max-width:128px" oninput="fmtFilterMonto(this);renderPendientes()">
-            <select class="fi" id="pend-sort-key" title="Ordenar por" onchange="updatePendSortDirLabels();renderPendientes()" style="max-width:118px">
-              <option value="fecha">Fecha</option>
-              <option value="monto">Monto</option>
-              <option value="comercio">Comercio</option>
-            </select>
-            <select class="fi" id="pend-sort-dir" title="Dirección" onchange="renderPendientes()" style="max-width:132px">
-              <option value="desc">↓ Mayor primero</option>
-              <option value="asc">↑ Menor primero</option>
+            <select class="fi" id="pend-sort" title="Ordenar por" onchange="renderPendientes()" style="max-width:190px">
+              <option value="fecha_desc">Fecha: más reciente primero</option>
+              <option value="fecha_asc">Fecha: más antiguo primero</option>
+              <option value="monto_desc">Monto: mayor primero</option>
+              <option value="monto_asc">Monto: menor primero</option>
+              <option value="comercio_asc">Comercio: A → Z</option>
+              <option value="comercio_desc">Comercio: Z → A</option>
             </select>
             <button type="button" class="btn btn-sm" onclick="filterPendSospechosos()">Sospechosos</button>
             <button type="button" class="btn btn-sm" onclick="filterPendSoloTcCargo()">TC cargos</button>
@@ -1749,7 +1748,7 @@ function updateBadge() {
   badge.textContent=n; badge.style.display=n?'inline':'none';
 }
 
-const PEND_FILTER_FIELDS = ['pend-filter-q', 'pend-filter-desde', 'pend-filter-hasta', 'pend-filter-min', 'pend-filter-max', 'pend-sort-key', 'pend-sort-dir'];
+const PEND_FILTER_FIELDS = ['pend-filter-q', 'pend-filter-desde', 'pend-filter-hasta', 'pend-filter-min', 'pend-filter-max', 'pend-sort'];
 /** El filtro de Pendientes vivía solo en el DOM — se perdía al refrescar. Se persiste en localStorage. */
 function savePendFiltersToStorage() {
   try {
@@ -1774,34 +1773,19 @@ function clearPendFilters() {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
-  const sk = document.getElementById('pend-sort-key');
-  const sd = document.getElementById('pend-sort-dir');
-  if (sk) sk.value = 'fecha';
-  if (sd) sd.value = 'desc';
-  updatePendSortDirLabels();
+  const so = document.getElementById('pend-sort');
+  if (so) so.value = 'fecha_desc';
   localStorage.removeItem('finanzas_jt_pend_filters');
   renderPendientes();
 }
 
-// Las opciones de "Dirección" son genéricas ("Mayor/Menor primero") y no dicen a
-// qué campo aplican — José se confundió esperando orden por Monto mientras
-// "Ordenar por" seguía en Fecha. Esto hace que el texto refleje siempre la
-// clave activa para que no se pueda malinterpretar.
-function updatePendSortDirLabels() {
-  const sk = document.getElementById('pend-sort-key')?.value || 'fecha';
-  const sd = document.getElementById('pend-sort-dir');
-  if (!sd) return;
-  const labels = {
-    fecha: ['↓ Más reciente primero', '↑ Más antiguo primero'],
-    monto: ['↓ Mayor monto primero', '↑ Menor monto primero'],
-    comercio: ['↓ Z → A', '↑ A → Z'],
-  }[sk] || ['↓ Mayor primero', '↑ Menor primero'];
-  sd.options[0].textContent = labels[0];
-  sd.options[1].textContent = labels[1];
-}
+// Un solo select con las 6 combinaciones (campo + dirección) en vez de dos
+// selects separados — con dos controles independientes, José vio uno de los
+// dos (Dirección) y pensó que ESA era toda la opción de orden disponible,
+// sin notar que había un segundo select al lado que elegía el campo.
 function sortPendientesList(list) {
-  const key = document.getElementById('pend-sort-key')?.value || 'fecha';
-  const dir = document.getElementById('pend-sort-dir')?.value || 'desc';
+  const raw = document.getElementById('pend-sort')?.value || 'fecha_desc';
+  const [key, dir] = raw.split('_');
   const mul = dir === 'asc' ? 1 : -1;
   return [...list].sort((a, b) => {
     if (key === 'monto') {
@@ -1825,20 +1809,16 @@ function sortPendientesList(list) {
 function filterPendSospechosos() {
   const el = document.getElementById('pend-filter-min');
   if (el) el.value = '500000';
-  const sk = document.getElementById('pend-sort-key');
-  const sd = document.getElementById('pend-sort-dir');
-  if (sk) sk.value = 'monto';
-  if (sd) sd.value = 'desc';
-  updatePendSortDirLabels();
+  const so = document.getElementById('pend-sort');
+  if (so) so.value = 'monto_desc';
   renderPendientes();
 }
 
 function filterPendSoloTcCargo() {
   const q = document.getElementById('pend-filter-q');
   if (q) q.value = '[TC CARGO]';
-  const sk = document.getElementById('pend-sort-key');
-  if (sk) sk.value = 'fecha';
-  updatePendSortDirLabels();
+  const so = document.getElementById('pend-sort');
+  if (so) so.value = 'fecha_desc';
   renderPendientes();
 }
 
@@ -4229,7 +4209,6 @@ function renderConfig() {
 async function initApp() {
   load();
   restorePendFiltersFromStorage();
-  updatePendSortDirLabels();
   renderProfile();
   renderDashboard();
   renderCuentas();
