@@ -1840,6 +1840,69 @@ function scanearBancoChileTC_(pendSheet, procesados, seenMsg, ventanaDias) {
  * parser real — Banco de Chile no tiene parser de PDF todavía, a diferencia
  * de Santander.
  */
+/**
+ * Diagnóstico puntual: vuelca el texto crudo de los Estado de Cuenta TC
+ * Santander en una franja de días, para encontrar por qué una transacción
+ * puntual (ej. una compra grande en cuotas) no aparece en Pendientes aunque
+ * el resto del mismo estado de cuenta sí se haya capturado bien. No toca el
+ * flujo normal de escaneo — es de uso manual, para calibrar con datos reales
+ * antes de tocar parsearTransaccionesEstadoCuentaTC_ (regla del proyecto,
+ * nunca a ciegas). Ver docs/DECISIONS.md 22-sep-2026 (caso S Y V Ortodoncia).
+ *
+ * diasMasAntiguo/diasMasReciente: misma semántica que importarSantanderRango_
+ * — ej. debugSantanderEstadoCuentaTC_(100, 60) busca correos de entre hace
+ * 60 y 100 días. Omitir diasMasReciente para buscar desde hace diasMasAntiguo
+ * días hasta hoy.
+ */
+function debugSantanderEstadoCuentaTC_(diasMasAntiguo, diasMasReciente) {
+  var rut = PropertiesService.getScriptProperties().getProperty('RUT_SANTANDER') || '';
+  if (!rut) { Logger.log('❌ Configura RUT primero (setRutSantander)'); return; }
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var debugSheet = ss.getSheetByName('_Debug');
+  if (!debugSheet) {
+    debugSheet = ss.insertSheet('_Debug');
+    debugSheet.getRange(1, 1, 1, 4).setValues([['Tipo', 'Fecha', 'Archivo', 'TextoCrudo']]);
+  }
+  var sufijoRango = diasMasReciente ? (' older_than:' + diasMasReciente + 'd') : '';
+  var queries = [
+    'from:mensajeria@santander.cl subject:"estado de cuenta" newer_than:' + diasMasAntiguo + 'd' + sufijoRango,
+    'from:notificaciones@santander.cl subject:"estado de cuenta" newer_than:' + diasMasAntiguo + 'd' + sufijoRango,
+  ];
+  queries.forEach(function (q) {
+    var hilos = GmailApp.search(q, 0, 20);
+    debugSheet.appendRow(['Santander Estado Cuenta TC DIAG', '', 'DIAG', 'hilos=' + hilos.length + ' | query=' + q]);
+    hilos.forEach(function (hilo) {
+      hilo.getMessages().forEach(function (msg) {
+        var fecha = Utilities.formatDate(msg.getDate(), CONFIG.TIMEZONE, 'yyyy-MM-dd');
+        var atts = msg.getAttachments();
+        atts.forEach(function (att) {
+          if (att.getContentType() !== 'application/pdf') return;
+          try {
+            var resp = UrlFetchApp.fetch(CONFIG.APP_URL + '/.netlify/functions/extract-pdf', {
+              method: 'POST', contentType: 'application/json',
+              payload: JSON.stringify({ pdfBase64: Utilities.base64Encode(att.getBytes()), password: rut }),
+              muteHttpExceptions: true,
+            });
+            var result = JSON.parse(resp.getContentText());
+            if (resp.getResponseCode() !== 200) {
+              debugSheet.appendRow(['Santander Estado Cuenta TC', fecha, att.getName(), 'ERROR ' + resp.getResponseCode() + ': ' + (result.error || '')]);
+              return;
+            }
+            var texto = result.text || '';
+            for (var offset = 0; offset < texto.length; offset += 8000) {
+              debugSheet.appendRow(['Santander Estado Cuenta TC' + (offset > 0 ? ' (cont)' : ''), fecha, att.getName(), texto.slice(offset, offset + 8000)]);
+            }
+            Logger.log('✅ ' + att.getName() + ' (' + texto.length + ' chars, ' + result.pages + ' páginas)');
+          } catch (e) {
+            debugSheet.appendRow(['Santander Estado Cuenta TC', fecha, att.getName(), 'EXCEPCION: ' + e.message]);
+          }
+        });
+      });
+    });
+  });
+  Logger.log('✅ Listo — revisa _Debug, filtra por "Santander Estado Cuenta TC"');
+}
+
 function debugBancoChilePDF() {
   var pass = getRutBancoChile_();
   if (!pass) { Logger.log('❌ Configura RUT primero (setRutSantander)'); return; }
