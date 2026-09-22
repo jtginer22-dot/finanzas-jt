@@ -492,7 +492,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
           <input class="fi" type="text" inputmode="numeric" id="hist-max" placeholder="Monto máx ($)" style="max-width:120px" oninput="fmtFilterMonto(this);renderHistorial()">
           <button class="btn btn-sm" onclick="clearHistFiltros()">Limpiar</button>
         </div>
-        <div class="card"><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Fecha</th><th>Descripci&#243;n</th><th>Categor&#237;a</th><th>Etiquetas</th><th>Monto</th><th>Fuente</th></tr></thead><tbody id="hist-body"></tbody></table></div></div>
+        <div class="card"><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Fecha</th><th>Descripci&#243;n</th><th>Categor&#237;a</th><th>Etiquetas</th><th>Monto</th><th>Fuente</th><th></th></tr></thead><tbody id="hist-body"></tbody></table></div></div>
       </div>
 
       <!-- INGRESOS -->
@@ -810,6 +810,44 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
   <div class="modal-actions">
     <button class="btn" onclick="closeModal('m-cat-pend')">Cancelar</button>
     <button class="btn btn-green" onclick="confirmarCat()">Confirmar OK</button>
+  </div>
+</div></div>
+
+<div class="overlay" id="m-edit-gasto"><div class="modal">
+  <div class="modal-handle"></div>
+  <div class="modal-title">Editar gasto</div>
+  <div style="background:var(--gris-m);border-radius:var(--radius);padding:12px;margin-bottom:16px">
+    <div style="font-size:14px;font-weight:600" id="eg-title"></div>
+    <div style="font-size:12px;color:var(--text3);margin-top:3px;font-family:var(--mono)" id="eg-meta"></div>
+  </div>
+  <div class="form-row"><label class="form-label">Categoría</label><select class="fi" id="eg-cat"></select></div>
+  <div class="form-row">
+    <label class="form-label">Etiquetas</label>
+    <div id="eg-tags-picker" style="display:flex;flex-wrap:wrap;gap:2px;margin-bottom:6px"></div>
+    <input class="fi" id="eg-tag-extra" placeholder="Otras, separadas por coma (opcional)">
+  </div>
+  <div class="form-row" style="margin-top:4px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+      <input type="checkbox" id="eg-recurrente" style="width:18px;height:18px" onchange="toggleEgRecurrente()">
+      <label for="eg-recurrente" class="form-label" style="margin:0">Gasto recurrente (flujo de caja)</label>
+    </div>
+    <div id="eg-recurrente-extra" style="display:none">
+      <div class="grid2">
+        <div class="form-row"><label class="form-label">Frecuencia</label>
+          <select class="fi" id="eg-rec-freq">
+            <option value="mensual">Mensual</option>
+            <option value="anual">Anual</option>
+          </select>
+        </div>
+        <div class="form-row"><label class="form-label">Proyección hasta (opcional)</label>
+          <input class="fi" id="eg-rec-hasta" type="date" title="Después de esta fecha deja de contarse en comprometido">
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="modal-actions">
+    <button class="btn" onclick="closeModal('m-edit-gasto')">Cancelar</button>
+    <button class="btn btn-green" onclick="guardarEditarGasto()">Guardar</button>
   </div>
 </div></div>
 
@@ -2107,6 +2145,51 @@ async function updateGastoRowInSheets(g) {
   } catch (e) { console.log('updateGastoRowInSheets:', e); }
 }
 
+function abrirEditarGasto(id) {
+  const g = S.gastos.find(x => x.id === id);
+  if (!g) return;
+  S.editGastoId = id;
+  document.getElementById('eg-title').textContent = g.desc;
+  document.getElementById('eg-meta').textContent = `${g.fecha} | ${fmt(g.monto)} | ${g.tarjeta || ''}`;
+  fillCat('eg-cat');
+  document.getElementById('eg-cat').value = g.cat || '';
+  renderTagCheckboxRow('eg-tags-picker', g.tag || '', 'eg');
+  document.getElementById('eg-tag-extra').value = '';
+  document.getElementById('eg-recurrente').checked = !!g.recurrente;
+  document.getElementById('eg-rec-freq').value = g.recurrenteFrecuencia || 'mensual';
+  document.getElementById('eg-rec-hasta').value = g.recurrenteHasta || '';
+  toggleEgRecurrente();
+  openModal('m-edit-gasto');
+}
+function toggleEgRecurrente() {
+  const chk = document.getElementById('eg-recurrente');
+  document.getElementById('eg-recurrente-extra').style.display = chk.checked ? 'block' : 'none';
+}
+async function guardarEditarGasto() {
+  const g = S.gastos.find(x => x.id === S.editGastoId);
+  if (!g) return;
+  g.cat = document.getElementById('eg-cat').value;
+  const tagsCsv = readTagCheckboxes('eg-tags-picker', 'eg', 'eg-tag-extra');
+  g.tag = tagsCsv;
+  mergeTagsIntoGlobal(tagsCsv);
+  const recurrente = document.getElementById('eg-recurrente').checked;
+  const hasta = (document.getElementById('eg-rec-hasta').value || '').trim();
+  const freq = (document.getElementById('eg-rec-freq').value || 'mensual').trim() || 'mensual';
+  g.recurrente = recurrente;
+  g.recurrenteHasta = recurrente && hasta ? hasta : '';
+  g.recurrenteFrecuencia = recurrente ? freq : '';
+  save();
+  closeModal('m-edit-gasto');
+  renderGastos();
+  renderHistorial();
+  renderDashboard();
+  try {
+    await pushGastosFullToSheets();
+    setSyncStatus(true, 'Gasto editado sincronizado');
+  } catch (_) {
+    setSyncStatus(false, 'Guardado local; revisar Sheet');
+  }
+}
 async function editarMontoGasto(id) {
   const g = S.gastos.find(x => x.id === id);
   if (!g) return;
@@ -3281,7 +3364,7 @@ function renderGastos() {
     <td>${catBadge(g.cat)}</td><td>${tagBadgesHtml(g.tag)}</td>
     <td style="font-size:11px;color:var(--text3)">${g.tarjeta||'?'}</td>
     <td style="font-family:var(--mono);font-weight:600">${montoDisplay}</td>
-    <td>${reembolsoBtn}<button type="button" class="btn btn-sm" style="padding:2px 6px;margin-right:4px" onclick="editarMontoGasto('${g.id}')" title="Corregir monto">$</button><button class="del-btn" onclick="deleteGasto('${g.id}')"></button></td></tr>`;
+    <td>${reembolsoBtn}<button type="button" class="btn btn-sm" style="padding:2px 6px;margin-right:4px" onclick="abrirEditarGasto('${g.id}')" title="Editar categoría, etiquetas, recurrente">Editar</button><button type="button" class="btn btn-sm" style="padding:2px 6px;margin-right:4px" onclick="editarMontoGasto('${g.id}')" title="Corregir monto">$</button><button class="del-btn" onclick="deleteGasto('${g.id}')"></button></td></tr>`;
   }).join(''):
     `<tr><td colspan="7" class="empty" style="padding:24px">Sin gastos</td></tr>`;
 }
@@ -3385,9 +3468,10 @@ function renderHistorial() {
     <td>${esc(g.desc)}${g.reembolsoMonto>0?` <span style="font-size:9px;background:${g.reembolsoEstado==='recibido'?'#D1FAE5':'#FEF3C7'};color:${g.reembolsoEstado==='recibido'?'#065F46':'#92400E'};padding:1px 4px;border-radius:4px">↩${g.reembolsoEstado==='recibido'?' OK':' pendiente'}</span>`:''}</td>
     <td>${catBadge(g.cat)}</td><td>${tagBadgesHtml(g.tag)}</td>
     <td style="font-family:var(--mono);font-weight:600">${g.reembolsoEstado==='recibido'?`<span style="text-decoration:line-through;color:var(--text3);font-size:10px">${fmt(g.monto)}</span> <span style="color:var(--verde-d)">${fmt(montoEfectivo(g))}</span>`:fmt(g.monto)}</td>
-    <td><span class="badge ${g.fuente==='gmail'?'b-azul':'b-gris'}" style="font-size:10px">${g.fuente==='gmail'?' Gmail':' Manual'}</span></td></tr>`).join('')+
-    `<tr style="background:var(--gris-m)"><td colspan="4" style="padding:8px 12px;font-weight:600;font-size:12px">Total filtrado: ${list.length} movimientos</td><td style="font-family:var(--mono);font-weight:700;padding:8px 12px">${fmt(total)}</td><td></td></tr>`:
-    `<tr><td colspan="6" class="empty" style="padding:24px">Sin registros</td></tr>`;
+    <td><span class="badge ${g.fuente==='gmail'?'b-azul':'b-gris'}" style="font-size:10px">${g.fuente==='gmail'?' Gmail':' Manual'}</span></td>
+    <td><button type="button" class="btn btn-sm" style="padding:2px 6px" onclick="abrirEditarGasto('${g.id}')" title="Editar categoría, etiquetas, recurrente">Editar</button></td></tr>`).join('')+
+    `<tr style="background:var(--gris-m)"><td colspan="4" style="padding:8px 12px;font-weight:600;font-size:12px">Total filtrado: ${list.length} movimientos</td><td style="font-family:var(--mono);font-weight:700;padding:8px 12px">${fmt(total)}</td><td></td><td></td></tr>`:
+    `<tr><td colspan="7" class="empty" style="padding:24px">Sin registros</td></tr>`;
 }
 
 function renderIngresos() {
