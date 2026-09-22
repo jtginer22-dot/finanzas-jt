@@ -412,7 +412,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
             <input class="fi" type="date" id="pend-filter-hasta" title="Hasta" aria-label="Fecha hasta" onchange="renderPendientes()" style="max-width:155px">
             <input class="fi" type="text" inputmode="numeric" id="pend-filter-min" placeholder="Monto mín ($)" style="max-width:128px" oninput="fmtFilterMonto(this);renderPendientes()">
             <input class="fi" type="text" inputmode="numeric" id="pend-filter-max" placeholder="Monto máx ($)" style="max-width:128px" oninput="fmtFilterMonto(this);renderPendientes()">
-            <select class="fi" id="pend-sort-key" title="Ordenar por" onchange="renderPendientes()" style="max-width:118px">
+            <select class="fi" id="pend-sort-key" title="Ordenar por" onchange="updatePendSortDirLabels();renderPendientes()" style="max-width:118px">
               <option value="fecha">Fecha</option>
               <option value="monto">Monto</option>
               <option value="comercio">Comercio</option>
@@ -1229,6 +1229,12 @@ function renderRecurrentesAlerta() {
 
 /** Sheet manda en pendientes: evita 570 vs 610 entre dispositivos por caché local. */
 function mergePropuestasFromSheetRows(noProcesados, prev) {
+  // Filas realmente vacías (fila en blanco en el Sheet, sin ID ni comercio) no son
+  // un pendiente real — sin esto quedaban "fantasma" para siempre: al no tener ID
+  // se les generaba un uid() nuevo en cada carga, así que nunca se podían marcar
+  // como procesadas y reaparecían en cada mes (el filtro de fecha las deja pasar
+  // porque tampoco tienen fecha).
+  noProcesados = noProcesados.filter(row => String(row[0] || '').trim() || String(row[2] || '').trim());
   const fromSheet = noProcesados.map(row => {
     const comercio = decodeEntities(row[2]);
     const rawMonto = parseMontoFromSheetCell(row[3]);
@@ -1772,10 +1778,27 @@ function clearPendFilters() {
   const sd = document.getElementById('pend-sort-dir');
   if (sk) sk.value = 'fecha';
   if (sd) sd.value = 'desc';
+  updatePendSortDirLabels();
   localStorage.removeItem('finanzas_jt_pend_filters');
   renderPendientes();
 }
 
+// Las opciones de "Dirección" son genéricas ("Mayor/Menor primero") y no dicen a
+// qué campo aplican — José se confundió esperando orden por Monto mientras
+// "Ordenar por" seguía en Fecha. Esto hace que el texto refleje siempre la
+// clave activa para que no se pueda malinterpretar.
+function updatePendSortDirLabels() {
+  const sk = document.getElementById('pend-sort-key')?.value || 'fecha';
+  const sd = document.getElementById('pend-sort-dir');
+  if (!sd) return;
+  const labels = {
+    fecha: ['↓ Más reciente primero', '↑ Más antiguo primero'],
+    monto: ['↓ Mayor monto primero', '↑ Menor monto primero'],
+    comercio: ['↓ Z → A', '↑ A → Z'],
+  }[sk] || ['↓ Mayor primero', '↑ Menor primero'];
+  sd.options[0].textContent = labels[0];
+  sd.options[1].textContent = labels[1];
+}
 function sortPendientesList(list) {
   const key = document.getElementById('pend-sort-key')?.value || 'fecha';
   const dir = document.getElementById('pend-sort-dir')?.value || 'desc';
@@ -1806,6 +1829,7 @@ function filterPendSospechosos() {
   const sd = document.getElementById('pend-sort-dir');
   if (sk) sk.value = 'monto';
   if (sd) sd.value = 'desc';
+  updatePendSortDirLabels();
   renderPendientes();
 }
 
@@ -1814,6 +1838,7 @@ function filterPendSoloTcCargo() {
   if (q) q.value = '[TC CARGO]';
   const sk = document.getElementById('pend-sort-key');
   if (sk) sk.value = 'fecha';
+  updatePendSortDirLabels();
   renderPendientes();
 }
 
@@ -4204,6 +4229,7 @@ function renderConfig() {
 async function initApp() {
   load();
   restorePendFiltersFromStorage();
+  updatePendSortDirLabels();
   renderProfile();
   renderDashboard();
   renderCuentas();
