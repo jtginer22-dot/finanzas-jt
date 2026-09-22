@@ -468,6 +468,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
               <div class="card-title" style="margin:0"> Por cobrar</div>
               <button class="btn btn-sm" onclick="openCuentaModal('cobrar')">+</button>
             </div>
+            <div id="cobrar-resumen" style="margin-bottom:10px"></div>
             <div id="cobrar-list"></div>
           </div>
           <div class="card">
@@ -475,6 +476,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
               <div class="card-title" style="margin:0"> Por pagar</div>
               <button class="btn btn-sm" onclick="openCuentaModal('pagar')">+</button>
             </div>
+            <div id="pagar-resumen" style="margin-bottom:10px"></div>
             <div id="pagar-list"></div>
           </div>
         </div>
@@ -746,13 +748,16 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
     <div id="pend-tags-picker" style="display:flex;flex-wrap:wrap;gap:2px;margin-bottom:6px"></div>
     <input class="fi" id="pend-tag-extra" placeholder="Otras, separadas por coma (opcional)">
   </div>
+  <div class="form-row">
+    <label class="form-label">Notas (opcional)</label>
+    <input class="fi" id="pend-notas-extra" placeholder="Ej: birra en la bajada de la nieve con los amigos">
+    <div style="font-size:11px;color:var(--text3);margin-top:4px">Para el detalle que no necesitas buscar por etiqueta — evita crear una etiqueta nueva por cada ocasión puntual.</div>
+  </div>
   <div class="form-row"><label class="form-label">?Es compartido?</label>
     <select class="fi" id="pend-comp" onchange="toggleCompFields()">
       <option value="no">No, es solo m&#237;o</option>
       <option value="polola">Con polola ? 50/50</option>
-      <option value="invito">Lo invit? yo</option>
-      <option value="grupo_n">Dividir con n personas (partes iguales)</option>
-      <option value="custom">Divisi&#243;n custom</option>
+      <option value="grupo_n">Dividir con otras personas</option>
     </select>
   </div>
   <div id="pend-comp-extra" style="display:none">
@@ -772,9 +777,17 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
         <input type="checkbox" id="pend-persona-nueva-chk" onchange="togglePendPersonaNueva()">
         <label for="pend-persona-nueva-chk" style="margin:0;font-size:13px;cursor:pointer">Otra persona (nueva)</label>
       </div>
-      <input class="fi" id="pend-persona-nueva-txt" placeholder="Nombre (o varios, separados por coma)" style="display:none;margin-top:4px">
+      <input class="fi" id="pend-persona-nueva-txt" placeholder="Nombre (o varios, separados por coma)" style="display:none;margin-top:4px" oninput="renderPendRepartoMontos()">
     </div>
-    <div style="font-size:11px;color:var(--text3);margin-top:-8px;margin-bottom:8px">Se asume que tú también participas. Se divide en partes iguales entre todos.</div>
+    <div class="form-row">
+      <label class="form-label">¿C&#243;mo se reparte?</label>
+      <select class="fi" id="pend-reparto-modo" onchange="renderPendRepartoMontos()">
+        <option value="igual">Partes iguales entre todos (t&#250; + las personas marcadas)</option>
+        <option value="custom">Montos distintos por persona</option>
+      </select>
+    </div>
+    <div id="pend-reparto-montos" style="display:none;margin-bottom:8px"></div>
+    <div style="font-size:11px;color:var(--text3);margin-top:-4px;margin-bottom:8px" id="pend-reparto-nota">Se asume que tú también participas. Se divide en partes iguales entre todos.</div>
   </div>
   <div class="form-row"><label class="form-label">¿Es en cuotas?</label>
     <select class="fi" id="pend-cuotas" onchange="toggleCuotasFields()">
@@ -833,6 +846,10 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
     <label class="form-label">Etiquetas</label>
     <div id="eg-tags-picker" style="display:flex;flex-wrap:wrap;gap:2px;margin-bottom:6px"></div>
     <input class="fi" id="eg-tag-extra" placeholder="Otras, separadas por coma (opcional)">
+  </div>
+  <div class="form-row">
+    <label class="form-label">Notas (opcional)</label>
+    <input class="fi" id="eg-notas" placeholder="Ej: birra en la bajada de la nieve con los amigos">
   </div>
   <div class="form-row" style="margin-top:4px">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
@@ -1346,7 +1363,7 @@ function renderPersonasCheckboxRow(containerId, seleccionadas, namePrefix) {
   cont.innerHTML = nombres.length
     ? nombres.map(n => {
         const ck = sel.has(n) ? 'checked' : '';
-        return `<label style="display:inline-flex;align-items:center;gap:4px;margin:4px 10px 4px 0;font-size:13px;cursor:pointer;user-select:none"><input type="checkbox" name="${namePrefix}-persona" value="${esc(n)}" ${ck}/> ${esc(n)}</label>`;
+        return `<label style="display:inline-flex;align-items:center;gap:4px;margin:4px 10px 4px 0;font-size:13px;cursor:pointer;user-select:none"><input type="checkbox" name="${namePrefix}-persona" value="${esc(n)}" ${ck} onchange="if (typeof renderPendRepartoMontos === 'function') renderPendRepartoMontos();"/> ${esc(n)}</label>`;
       }).join('')
     : `<div style="font-size:12px;color:var(--text3)">Todavía no hay personas registradas — usa "Otra persona" abajo.</div>`;
 }
@@ -1357,6 +1374,49 @@ function readPersonasCheckboxRow(containerId, namePrefix) {
 function togglePendPersonaNueva() {
   const chk = document.getElementById('pend-persona-nueva-chk');
   document.getElementById('pend-persona-nueva-txt').style.display = chk.checked ? 'block' : 'none';
+  renderPendRepartoMontos();
+}
+// Reparto "montos distintos por persona": una fila con monto editable por
+// cada persona marcada arriba. Se re-dibuja cada vez que cambia quién está
+// marcado, preservando lo ya escrito (S.pendRepartoMontos, por nombre).
+function renderPendRepartoMontos() {
+  const modo = document.getElementById('pend-reparto-modo')?.value || 'igual';
+  const box = document.getElementById('pend-reparto-montos');
+  const nota = document.getElementById('pend-reparto-nota');
+  if (!box) return;
+  if (modo !== 'custom') {
+    box.style.display = 'none';
+    box.innerHTML = '';
+    if (nota) nota.textContent = 'Se asume que tú también participas. Se divide en partes iguales entre todos.';
+    return;
+  }
+  const personas = leerPendPersonasGrupo();
+  box.style.display = 'block';
+  if (nota) nota.textContent = 'Ingresa el monto que le corresponde a cada persona. El tuyo se calcula solo con lo que sobra del total.';
+  if (!S.pendRepartoMontos) S.pendRepartoMontos = {};
+  if (!personas.length) {
+    box.innerHTML = `<div style="font-size:12px;color:var(--text3)">Marca al menos una persona arriba.</div>`;
+    return;
+  }
+  box.innerHTML = personas.map(n => `<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+    <label style="flex:1;font-size:13px;margin:0">${esc(n)}</label>
+    <input class="fi reparto-monto-input" type="number" inputmode="numeric" style="max-width:130px" value="${S.pendRepartoMontos[n] ?? ''}">
+  </div>`).join('');
+  box.querySelectorAll('.reparto-monto-input').forEach((el, i) => {
+    el.addEventListener('input', () => { S.pendRepartoMontos[personas[i]] = el.value; });
+  });
+}
+function leerPendReparto(montoTotal) {
+  const personas = leerPendPersonasGrupo();
+  const modo = document.getElementById('pend-reparto-modo')?.value || 'igual';
+  if (modo === 'custom') {
+    const montos = personas.map(n => Math.max(0, parseFloat(S.pendRepartoMontos?.[n]) || 0));
+    const sumaOtros = montos.reduce((a, b) => a + b, 0);
+    return { personas, montos, montoPersonal: Math.max(0, montoTotal - sumaOtros) };
+  }
+  const nTotal = personas.length + 1; // +1 por ti
+  const porPersona = personas.length ? montoTotal / nTotal : 0;
+  return { personas, montos: personas.map(() => porPersona), montoPersonal: personas.length ? porPersona : montoTotal };
 }
 function leerPendPersonasGrupo() {
   const desdeChecks = readPersonasCheckboxRow('pend-personas-picker', 'pend');
@@ -1892,6 +1952,7 @@ function abrirCat(id) {
   fillCat('pend-cat');
   if (p.propuesta?.cat) document.getElementById('pend-cat').value = p.propuesta.cat;
   document.getElementById('pend-tag-extra').value = '';
+  document.getElementById('pend-notas-extra').value = '';
   document.getElementById('pend-comp').value='no';
   document.getElementById('pend-comp-extra').style.display='none';
   document.getElementById('pend-comp-grupo').style.display='none';
@@ -1902,6 +1963,8 @@ function abrirCat(id) {
   renderPersonasCheckboxRow('pend-personas-picker', [], 'pend');
   document.getElementById('pend-persona-nueva-chk').checked = false;
   document.getElementById('pend-persona-nueva-txt').value = '';
+  document.getElementById('pend-reparto-modo').value = 'igual';
+  S.pendRepartoMontos = {};
   togglePendPersonaNueva();
   document.getElementById('pend-especial').value = '';
   document.getElementById('pend-prestamo-persona').value = '';
@@ -1986,10 +2049,11 @@ function readPendRecurrenteFromForm() {
 }
 function toggleCompFields() {
   const v=document.getElementById('pend-comp').value;
-  document.getElementById('pend-comp-extra').style.display=(v==='polola'||v==='custom')?'flex':'none';
+  document.getElementById('pend-comp-extra').style.display=(v==='polola')?'flex':'none';
   document.getElementById('pend-comp-grupo').style.display=(v==='grupo_n')?'block':'none';
   const cur = S.propuestas.find(x=>x.id===S.pendIdx);
   if(v==='polola') { document.getElementById('pend-quien').value='Polola'; togglePendQuienNueva(); document.getElementById('pend-a-cobrar').value=Math.round(cur?.monto/2||0); }
+  if(v==='grupo_n') renderPendRepartoMontos();
 }
 function confirmarCat() {
   const p=S.propuestas.find(x=>x.id===S.pendIdx);
@@ -2042,18 +2106,19 @@ function confirmarCat() {
   const comp=document.getElementById('pend-comp').value;
   const cuotas=document.getElementById('pend-cuotas').value==='si';
   const nCuotas=cuotas?parseInt(document.getElementById('pend-n-cuotas').value)||1:1;
-  const notas=cuotas?`${nCuotas} cuotas · ${fmt(Math.round(p.monto/nCuotas))}/mes`:'';
+  const notasUsuario = (document.getElementById('pend-notas-extra')?.value || '').trim();
+  const notasAuto=cuotas?`${nCuotas} cuotas · ${fmt(Math.round(p.monto/nCuotas))}/mes`:'';
+  const notas = [notasAuto, notasUsuario].filter(Boolean).join(' · ');
   let montoPersonal = p.monto;
-  if (comp==='polola' || comp==='custom') {
+  let reparto = null;
+  if (comp==='polola') {
     const mc=parseFloat(document.getElementById('pend-a-cobrar').value)||Math.round(p.monto/2);
     // Tu gasto personal no debe incluir la parte que será cobrada a terceros.
     montoPersonal = Math.max(0, p.monto - mc);
   } else if (comp==='grupo_n') {
-    const personas = leerPendPersonasGrupo();
-    const nTotal = personas.length + 1; // +1 por ti
-    if (personas.length < 1) { alert('Ingresa al menos una persona para dividir el gasto.'); return; }
-    const porPersona = p.monto / nTotal;
-    montoPersonal = porPersona;
+    reparto = leerPendReparto(p.monto);
+    if (reparto.personas.length < 1) { alert('Marca al menos una persona para dividir el gasto.'); return; }
+    montoPersonal = reparto.montoPersonal;
   }
   const catSel = document.getElementById('pend-cat').value;
   const isTransfer = catSel === 'Transferencias propias';
@@ -2070,7 +2135,7 @@ function confirmarCat() {
     for (let i = 0; i < nCuotas; i++) {
       const cuotaMonto = base + (i < rem ? 1 : 0);
       const fechaCuota = addMonthsKeepingDay(p.fecha || HOY, startOffset + i);
-      const notasCuota = `Cuota ${i + 1}/${nCuotas} · Compra total ${fmt(montoPersonal)}`;
+      const notasCuota = [`Cuota ${i + 1}/${nCuotas} · Compra total ${fmt(montoPersonal)}`, notasUsuario].filter(Boolean).join(' · ');
       const g={
         id:uid(),
         desc:p.comercio,
@@ -2095,15 +2160,14 @@ function confirmarCat() {
     S.gastos.push(g);
     gastosCreados.push(g);
   }
-  if(comp==='polola'||comp==='custom') {
+  if(comp==='polola') {
     const quien=leerPendQuien();
     const mc=parseFloat(document.getElementById('pend-a-cobrar').value)||Math.round(p.monto/2);
     S.cuentas.push({id:uid(),tipo:'cobrar',persona:quien,monto:mc,fecha:'',desc:p.comercio,pagado:false,dias:0});
-  } else if (comp==='grupo_n') {
-    const personas = leerPendPersonasGrupo();
-    const porPersona = p.monto / (personas.length + 1);
-    personas.forEach(persona => {
-      S.cuentas.push({id:uid(),tipo:'cobrar',persona,monto:porPersona,fecha:'',desc:p.comercio,pagado:false,dias:0});
+  } else if (comp==='grupo_n' && reparto) {
+    reparto.personas.forEach((persona, i) => {
+      const monto = reparto.montos[i];
+      if (monto > 0) S.cuentas.push({id:uid(),tipo:'cobrar',persona,monto,fecha:'',desc:p.comercio,pagado:false,dias:0});
     });
   }
   p.estado='confirmado';
@@ -2217,6 +2281,7 @@ function abrirEditarGasto(id) {
   document.getElementById('eg-cat').value = g.cat || '';
   renderTagCheckboxRow('eg-tags-picker', g.tag || '', 'eg');
   document.getElementById('eg-tag-extra').value = '';
+  document.getElementById('eg-notas').value = g.notas || '';
   document.getElementById('eg-recurrente').checked = !!g.recurrente;
   document.getElementById('eg-rec-freq').value = g.recurrenteFrecuencia || 'mensual';
   document.getElementById('eg-rec-hasta').value = g.recurrenteHasta || '';
@@ -2234,6 +2299,7 @@ async function guardarEditarGasto() {
   const tagsCsv = readTagCheckboxes('eg-tags-picker', 'eg', 'eg-tag-extra');
   g.tag = tagsCsv;
   mergeTagsIntoGlobal(tagsCsv);
+  g.notas = (document.getElementById('eg-notas').value || '').trim();
   const recurrente = document.getElementById('eg-recurrente').checked;
   const hasta = (document.getElementById('eg-rec-hasta').value || '').trim();
   const freq = (document.getElementById('eg-rec-freq').value || 'mensual').trim() || 'mensual';
@@ -3460,9 +3526,26 @@ function renderCompartidos() {
     </div>`).join('');
 }
 
+function renderResumenPorPersona(items, containerId) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  const pendientes = items.filter(c => !c.pagado && c.monto > 0);
+  if (!pendientes.length) { el.innerHTML = ''; return; }
+  const totales = new Map();
+  pendientes.forEach(c => totales.set(c.persona, (totales.get(c.persona) || 0) + Number(c.monto || 0)));
+  const filas = [...totales.entries()].sort((a, b) => b[1] - a[1]);
+  el.innerHTML = `<div style="background:var(--gris-m);border-radius:var(--radius);padding:10px 12px;display:flex;flex-direction:column;gap:6px">
+    ${filas.map(([persona, total]) => `<div style="display:flex;justify-content:space-between;align-items:center;font-size:13px">
+      <span style="font-weight:600">${esc(persona)}</span>
+      <span style="font-family:var(--mono);font-weight:700">${fmt(total)}</span>
+    </div>`).join('')}
+  </div>`;
+}
 function renderCuentas() {
   const cobrar=S.cuentas.filter(c=>c.tipo==='cobrar');
   const pagar=S.cuentas.filter(c=>c.tipo==='pagar');
+  renderResumenPorPersona(cobrar, 'cobrar-resumen');
+  renderResumenPorPersona(pagar, 'pagar-resumen');
   function renderList(items,id) {
     const el=document.getElementById(id);
     if(!items.length){el.innerHTML=`<div class="empty" style="padding:20px 0">Sin cuentas</div>`;return;}
