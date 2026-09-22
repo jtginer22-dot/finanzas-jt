@@ -25,6 +25,13 @@ Registro append-only. Nunca se reescribe una entrada pasada; si una decisión ca
 **Por qué**: José necesita entender el comportamiento completo, incluyendo el costo de usar crédito, no solo el consumo.
 **Consecuencia**: `no_gasto` se usa con criterio estricto (solo traspasos propios), no como categoría cajón de sastre para "esto no sé qué es".
 
+### 2026-09-22 — Push a GitHub vía token local, aislado de otras cuentas
+**Decisión**: para que Claude Code pueda pushear directo a `jtginer22-dot/finanzas-jt` sin depender del llavero interactivo de José (que este entorno no puede usar), se generó un Personal Access Token de esa cuenta con scope `repo`, guardado en `.git/credentials-local` (dentro de `.git/`, nunca versionado) con `credential.helper` configurado **localmente** (`git config --local`), no globalmente.
+**Por qué**: José usa Claude Code en paralelo para otro proyecto con otra cuenta de GitHub (autenticada por SSH vía un alias dedicado en `~/.ssh/config`). La solución debía convivir con eso sin interferir al alternar entre sesiones.
+**Intento descartado**: reusar la llave SSH ya configurada (`github-jtgl` → cuenta `asesoriasjtgl-sudo`) — tiene acceso de lectura al repo pero no de escritura; no es la cuenta dueña del repo.
+**Guardrail encontrado en el camino**: la config global tenía `credential.https://github.com.useHttpPath=true` (probablemente del setup de la otra cuenta), lo que rompía la búsqueda del token guardado por host simple. Se corrigió con un override **local** (`useHttpPath false` solo en este repo), sin tocar la config global.
+**Consecuencia**: este repo nunca depende de `~/.ssh/config` ni del credential helper global — su autenticación vive enteramente dentro de su propia carpeta `.git/`.
+
 ### 2026-09-22 — Arquitectura de contexto: carpeta `docs/` en Git
 **Decisión**: crear `docs/CONTEXT.md`, `ARCHITECTURE.md`, `SOURCES.md`, `GUARDRAILS.md`, `DECISIONS.md`, `CATEGORIZATION.md`, `ROADMAP.md` como fuente de contexto y decisiones técnicas del proyecto, versionada junto al código.
 **Por qué**: el contexto vivo estaba repartido entre Notion (que se congelaba entre sesiones) y un handoff local desactualizado, sin un lugar único para el "por qué" de las decisiones técnicas.

@@ -12,8 +12,8 @@ Prioridad establecida el 22-sep-2026. Se actualiza con cada sesión relevante.
 5. **Presupuestos por categoría** — pestaña existe, vacía.
 
 ## Mantenimiento técnico (sin bloquear lo anterior)
-- Deduplicar/limpiar pestaña `_Debug` (~23.000 filas al 22-sep-2026) — **hacer solo después de confirmar que el fix de reprocesamiento ya está desplegado**, si no se vuelve a llenar.
-- Activar backup diario (`configurarActivadores()` ya incluye el trigger `backupDiarioSheet`, falta que José lo corra).
+- ~~Deduplicar/limpiar pestaña `_Debug`~~ — hecho 22-sep-2026, tras confirmar `_Procesados` funcionando (23.494 filas de log eliminadas).
+- Activar backup diario (`configurarActivadores()` ya incluye el trigger `backupDiarioSheet`, falta que José lo corra — sigue pendiente).
 - Reconciliación de Santander TC (hoy solo Banco de Chile TC y ambas cartolas tienen reconciliación validada).
 - `sheets.js` — `batchPut` exige `range`/`values` de tope aunque no los use (bajo impacto, ver `GUARDRAILS.md`).
 
