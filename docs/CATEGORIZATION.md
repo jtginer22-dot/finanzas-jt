@@ -62,6 +62,9 @@ Cuando José le presta plata a alguien usando su línea de crédito o TC, y esa 
 - Se repite cada mes que el préstamo siga vigente y sigan apareciendo cargos de interés/impuesto de línea de crédito o TC — mismo patrón cada vez.
 - **Nota sin resolver**: los movimientos "AMORTIZACION A LINEA DE CREDITO" y "PAGO PRESTAMO..." que aparecen junto a estos intereses son de otra naturaleza (pago de capital, no costo financiero) — no se decidió su categorización en esta sesión, se resuelve cuando José llegue a esas filas.
 
+## Comisiones/mantención de cuenta y tarjeta (22-sep-2026)
+Comisión de administración de cuenta corriente, mantención de tarjeta de crédito, etc. (de cualquier banco) → categoría **Suscripciones**. Es un costo fijo recurrente por tener el producto, no una variable de consumo — distinto de `Costo financiero` (que es por USAR crédito: intereses, impuesto línea de crédito).
+
 ## Casos ya resueltos
 - **Cerveza en after office con compañeros de trabajo** → Categoría `Restaurantes`, Etiqueta `Trabajo`. No se creó categoría nueva ("After office") porque es la historia del gasto (etiqueta), no un tipo de gasto nuevo.
 - **Carne para asado con un amigo, comprada en el supermercado** → Categoría `Supermercado`, Etiqueta `Amigos`. La compra fue en el supermercado — el motivo (asado, amigo) es la etiqueta, no cambia la categoría.
