@@ -1852,9 +1852,13 @@ function scanearBancoChileTC_(pendSheet, procesados, seenMsg, ventanaDias) {
  * diasMasAntiguo/diasMasReciente: misma semántica que importarSantanderRango_
  * — ej. debugSantanderEstadoCuentaTC_(100, 60) busca correos de entre hace
  * 60 y 100 días. Omitir diasMasReciente para buscar desde hace diasMasAntiguo
- * días hasta hoy.
+ * días hasta hoy. Trae defaults (110/70, cubre el caso S Y V Ortodoncia del
+ * 22-jun-2026) para poder correrla con el botón ▶ Ejecutar sin tener que
+ * pasarle parámetros a mano — el editor de Apps Script no pide argumentos.
  */
 function debugSantanderEstadoCuentaTC_(diasMasAntiguo, diasMasReciente) {
+  diasMasAntiguo = diasMasAntiguo || 110;
+  diasMasReciente = diasMasReciente || 70;
   var rut = PropertiesService.getScriptProperties().getProperty('RUT_SANTANDER') || '';
   if (!rut) { Logger.log('❌ Configura RUT primero (setRutSantander)'); return; }
   var ss = SpreadsheetApp.getActiveSpreadsheet();
