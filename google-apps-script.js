@@ -2085,6 +2085,79 @@ function importarSantanderRango(diasMasAntiguo, diasMasReciente) {
   Logger.log('=== FIN FRANJA ===');
 }
 
+/**
+ * Re-escanea SOLO los Estado de Cuenta TC de Santander (no las Cartolas
+ * Cuenta Vista/Corriente, que no necesitan re-validación — son inmunes al
+ * bug del salto de página porque se parsean por coordenadas x,y, no por
+ * texto línea a línea, ver docs/GUARDRAILS.md 22-sep-2026).
+ *
+ * Existe por costo: ~1 correo de Estado de Cuenta TC por mes (query filtra
+ * subject:"estado de cuenta" solamente, sin "cartola"/"resumen de cuenta")
+ * — mucho más barato en invocaciones de extract-pdf que un backfill
+ * completo, para validar retroactivamente que el fix del parser (S Y V
+ * Ortodoncia, 22-sep-2026) no dejó nada más sin capturar en meses previos.
+ * Default 280 días = cubre desde antes de enero 2026 con margen.
+ */
+function revalidarEstadoCuentaTCSantander(diasAtras) {
+  diasAtras = diasAtras || 280;
+  var rut = PropertiesService.getScriptProperties().getProperty('RUT_SANTANDER') || '';
+  if (!rut) { Logger.log('❌ Configura RUT primero (setRutSantander)'); return; }
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var pendSheet = ss.getSheetByName(SHEETS.PENDIENTES);
+  var nuevos = 0;
+  var queries = [
+    'from:mensajeria@santander.cl subject:"estado de cuenta" newer_than:' + diasAtras + 'd',
+    'from:notificaciones@santander.cl subject:"estado de cuenta" newer_than:' + diasAtras + 'd',
+  ];
+  queries.forEach(function (q) {
+    var hilos = GmailApp.search(q, 0, 20);
+    Logger.log('Query: ' + q + ' → ' + hilos.length + ' hilos');
+    hilos.forEach(function (hilo) {
+      hilo.getMessages().forEach(function (msg) {
+        var msgId = msg.getId();
+        var atts = msg.getAttachments();
+        atts.forEach(function (att) {
+          if (att.getContentType() !== 'application/pdf') return;
+          try {
+            var resp = UrlFetchApp.fetch(CONFIG.APP_URL + '/.netlify/functions/extract-pdf', {
+              method: 'POST', contentType: 'application/json',
+              payload: JSON.stringify({ pdfBase64: Utilities.base64Encode(att.getBytes()), password: rut }),
+              muteHttpExceptions: true,
+            });
+            if (resp.getResponseCode() !== 200) {
+              Logger.log('  ❌ extract-pdf error ' + resp.getResponseCode() + ' en ' + att.getName());
+              return;
+            }
+            var result = JSON.parse(resp.getContentText());
+            var txs = parsearTransaccionesEstadoCuentaTC_(result.text || '').map(function (t) {
+              t.tarjeta = 'TC Santander';
+              return t;
+            });
+            Logger.log('  ' + att.getName() + ': ' + txs.length + ' transacciones parseadas');
+            txs.forEach(function (t) {
+              var matchRow = buscarPendienteCeroSantander_(pendSheet, t.comercio, t.fecha);
+              if (matchRow > 0) {
+                pendSheet.getRange(matchRow, 4).setValue(t.monto);
+                Logger.log('    ✅ Monto rellenado: ' + t.comercio + ' $' + t.monto);
+                nuevos++;
+                return;
+              }
+              if (existeTransaccionDuplicada_(pendSheet, t.comercio, t.monto, t.fecha)) return;
+              var uid = Utilities.getUuid().slice(0, 8);
+              pendSheet.appendRow([uid, t.fecha, t.comercio, t.monto, t.tarjeta, 'Santander', msgId + '_' + uid, 'NO']);
+              Logger.log('    ➕ Nueva (antes invisible): ' + t.comercio + ' $' + t.monto + ' (' + t.fecha + ')');
+              nuevos++;
+            });
+          } catch (e) {
+            Logger.log('  ❌ Excepción en ' + att.getName() + ': ' + e.message);
+          }
+        });
+      });
+    });
+  });
+  Logger.log('=== FIN revalidación Estado de Cuenta TC Santander: ' + nuevos + ' transacciones nuevas/rellenadas ===');
+}
+
 // ============================================================
 // CONFIGURAR ACTIVADORES — ejecutar UNA sola vez
 // ============================================================
