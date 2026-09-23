@@ -7,6 +7,7 @@ Estado al 22-sep-2026: **5 fuentes automatizadas**, todas con reconciliación va
 - **Parser**: `parsearTransaccionesEstadoCuentaTC_` (texto lineal, fecha `DD/MM/AAAA` completa en el texto — sin ambigüedad de año).
 - **Monto capturado**: total de la compra (no la cuota mensual) — la app arma las cuotas al confirmar.
 - **Reconciliación**: no construida todavía (pendiente, ver ROADMAP).
+- **Caso raro confirmado (22-sep-2026)**: una transacción justo después de un salto de página puede perder su línea de fecha entera — Santander repite los títulos de columna al inicio de cada página, y si el PDF no deja 3+ espacios entre el último título y la fecha, `extract-pdf` no separa esa línea en dos (ej. `"MENSUAL O COBRO 22/06/2026"` en vez de `"22/06/2026"` sola). El parser ahora busca la fecha al final de la línea, no exige que sea toda la línea — ver `GUARDRAILS.md`.
 
 ## 2. Santander — Cartola Cuenta Vista
 - **Adjunto**: sufijo `_CM.pdf`.

@@ -1125,12 +1125,23 @@ function verificarSumaContraTotalDeclarado_(txs, texto, etiqueta) {
   return (ok ? '✅' : '⚠️ DESCUADRE') + ' ' + etiqueta + ': parseado=$' + suma + ' vs declarado=$' + declarado;
 }
 
+/**
+ * fechaRe: cuando una transacción cae justo después de un salto de página
+ * (Santander repite los títulos de columna al inicio de cada página), la
+ * fecha puede quedar pegada al último título sin salto de línea real — ej.
+ * "MENSUAL O COBRO 22/06/2026" en vez de "22/06/2026" sola — porque
+ * extract-pdf solo inserta \n cuando hay 3+ espacios seguidos en el PDF
+ * original, y ahí había solo uno. Se busca la fecha al FINAL de la línea en
+ * vez de exigir que sea toda la línea, para no perder esa transacción
+ * entera (caso real: S Y V Ortodoncia $2.280.000, 22-jun-2026, ver
+ * docs/DECISIONS.md 22-sep-2026).
+ */
 function parsearTransaccionesEstadoCuentaTC_(texto) {
   var txs = [];
   if (!texto) return txs;
   var lineas = texto.split(/[\n\r]+/).map(function(l){ return l.trim(); }).filter(Boolean);
 
-  var fechaRe = /^(\d{2})\/(\d{2})\/(\d{4})$/;
+  var fechaRe = /(\d{2})\/(\d{2})\/(\d{4})\s*$/;
   var ignorar = /monto cancelado|saldo adeudado|monto facturado|monto pagado|total operaciones|movimientos tarjeta|cuota comercio|valor cuota|compras p\.a\.t\.|pago autom|cobro anu|periodo anterior|periodo actual|detalle|desde|hasta/i;
 
   for (var i = 0; i < lineas.length; i++) {
@@ -1154,17 +1165,22 @@ function parsearTransaccionesEstadoCuentaTC_(texto) {
     if (!comercio) continue;
     if (ignorar.test(comercio)) continue;
 
-    // Monto CLP: primera línea que empiece con "$ " y NO tenga coma (los de moneda ext tienen coma)
+    // Monto CLP: primera línea que empiece con "$ " y NO tenga coma (los de moneda ext tienen coma).
+    // El chequeo de monto va ANTES que el de "otra fecha, parar" — una línea
+    // puede traer el monto de ESTA transacción pegado a la fecha de la
+    // SIGUIENTE (mismo problema de espacio insuficiente, ej. "$ 12.988
+    // 26/05/2026"). Si ya cuadra como monto, se usa igual; solo se corta la
+    // búsqueda cuando la línea es una fecha "limpia" sin monto.
     var monto = null;
     for (var k = i + 1; k < Math.min(i + 8, lineas.length); k++) {
       var kl = lineas[k];
-      if (fechaRe.test(kl)) break;                        // otra fecha → stop
       if (/^\d[\d.]+,\d+$/.test(kl)) continue;           // monto extranjero (18.476,00) → skip
       var mM = kl.match(/^\$\s*([\d.]+)/);               // $ X.XXX o $ X.XXX.XXX
       if (mM) {
         var n = parseFloat(mM[1].replace(/\./g, ''));
         if (n >= 100 && n <= 50000000) { monto = n; break; }
       }
+      if (fechaRe.test(kl)) break;                        // otra fecha sin monto → stop
     }
     if (!monto) continue;
 
