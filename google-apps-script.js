@@ -1126,6 +1126,53 @@ function verificarSumaContraTotalDeclarado_(txs, texto, etiqueta) {
 }
 
 /**
+ * Verifica el Estado de Cuenta TC Santander contra su propia identidad
+ * contable, igual espíritu que verificarFacturacionBancoChileTC_ (Banco de
+ * Chile). No existía para Santander — se construyó el 22-sep-2026 a raíz de
+ * encontrar que S Y V Ortodoncia ($2.280.000) se estaba perdiendo por
+ * completo sin ningún error visible (ver docs/GUARDRAILS.md). Fórmula
+ * derivada y validada EXACTA contra el estado de cuenta real de junio 2026
+ * de José (no supuesta):
+ *
+ *   SALDO ADEUDADO FINAL PERÍODO ANTERIOR
+ *   + 1. TOTAL OPERACIONES
+ *   + 2. PRODUCTOS O SERVICIOS VOLUNTARIAMENTE CONTRATADOS
+ *   + 3. CARGOS, COMISIONES, IMPUESTOS Y ABONOS
+ *   = MONTO TOTAL FACTURADO A PAGAR
+ *
+ * Importante: esto valida que los SUBTOTALES que el propio banco declara
+ * sumen correctamente entre sí (protege contra, ej., leer el campo
+ * equivocado o un layout de PDF distinto). NO verifica por sí solo que cada
+ * transacción individual se haya parseado bien — "1. TOTAL OPERACIONES" es
+ * un subtotal declarado por el banco, no la suma de lo que nuestro parser
+ * extrajo línea por línea. La garantía de captura completa depende del
+ * parser (parsearTransaccionesEstadoCuentaTC_) estando correcto.
+ */
+function verificarFacturacionSantanderTC_(texto, etiqueta) {
+  if (!texto) return null;
+  function extraerMonto(etiquetaRe) {
+    var idx = texto.search(etiquetaRe);
+    if (idx < 0) return null;
+    var resto = texto.slice(idx, idx + 300);
+    var m = resto.match(/\$\s*(-?[\d.]+)/);
+    if (!m) return null;
+    return parseFloat(m[1].replace(/\./g, ''));
+  }
+  var saldoAnterior = extraerMonto(/SALDO ADEUDADO FINAL PER[ÍI]ODO ANTERIOR/i);
+  var totalOperaciones = extraerMonto(/1\.\s*TOTAL OPERACIONES/i);
+  var productosVoluntarios = extraerMonto(/2\.\s*PRODUCTOS O SERVICIOS VOLUNTARIAMENTE CONTRATADOS/i);
+  var cargosComisiones = extraerMonto(/3\.\s*CARGOS,?\s*COMISIONES,?\s*IMPUESTOS Y ABONOS/i);
+  var montoTotalFacturado = extraerMonto(/MONTO TOTAL FACTURADO A PAGAR/i);
+  var campos = [saldoAnterior, totalOperaciones, productosVoluntarios, cargosComisiones, montoTotalFacturado];
+  if (campos.some(function (v) { return v === null; })) {
+    return '⚠️ ' + etiqueta + ': no se pudieron extraer todos los campos de la identidad contable (revisar manualmente) — saldoAnterior=' + saldoAnterior + ' totalOperaciones=' + totalOperaciones + ' productosVoluntarios=' + productosVoluntarios + ' cargosComisiones=' + cargosComisiones + ' montoTotalFacturado=' + montoTotalFacturado;
+  }
+  var esperado = saldoAnterior + totalOperaciones + productosVoluntarios + cargosComisiones;
+  var ok = Math.abs(esperado - montoTotalFacturado) <= 1;
+  return (ok ? '✅ ' : '⚠️ DESCUADRE ') + etiqueta + ': saldoAnterior=' + saldoAnterior + ' +totalOperaciones=' + totalOperaciones + ' +productosVoluntarios=' + productosVoluntarios + ' +cargosComisiones=' + cargosComisiones + ' = ' + esperado + ' vs montoTotalFacturado=' + montoTotalFacturado + (ok ? '' : ' (diferencia=' + (montoTotalFacturado - esperado) + ')');
+}
+
+/**
  * fechaRe: cuando una transacción cae justo después de un salto de página
  * (Santander repite los títulos de columna al inicio de cada página), la
  * fecha puede quedar pegada al último título sin salto de línea real — ej.
@@ -2104,6 +2151,11 @@ function revalidarEstadoCuentaTCSantander(diasAtras) {
   if (!rut) { Logger.log('❌ Configura RUT primero (setRutSantander)'); return; }
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var pendSheet = ss.getSheetByName(SHEETS.PENDIENTES);
+  var debugSheet = ss.getSheetByName('_Debug');
+  if (!debugSheet) {
+    debugSheet = ss.insertSheet('_Debug');
+    debugSheet.getRange(1, 1, 1, 4).setValues([['Tipo', 'Fecha', 'Archivo', 'TextoCrudo']]);
+  }
   var nuevos = 0;
   var queries = [
     'from:mensajeria@santander.cl subject:"estado de cuenta" newer_than:' + diasAtras + 'd',
@@ -2134,6 +2186,16 @@ function revalidarEstadoCuentaTCSantander(diasAtras) {
               return t;
             });
             Logger.log('  ' + att.getName() + ': ' + txs.length + ' transacciones parseadas');
+            var diagFacturacion = verificarFacturacionSantanderTC_(result.text || '', 'Santander TC ' + att.getName());
+            if (diagFacturacion) {
+              Logger.log('  ' + diagFacturacion);
+              // Solo se persiste en _Debug si hay descuadre — un ✅ por mes no
+              // aporta nada guardado, y ya evitamos una vez el problema de
+              // _Debug lleno de filas repetidas (ver docs/GUARDRAILS.md).
+              if (diagFacturacion.indexOf('DESCUADRE') >= 0 || diagFacturacion.indexOf('no se pudieron extraer') >= 0) {
+                debugSheet.appendRow(['Santander TC suma (revalidación)', Utilities.formatDate(msg.getDate(), CONFIG.TIMEZONE, 'yyyy-MM-dd'), att.getName(), diagFacturacion]);
+              }
+            }
             txs.forEach(function (t) {
               var matchRow = buscarPendienteCeroSantander_(pendSheet, t.comercio, t.fecha);
               if (matchRow > 0) {
@@ -2343,11 +2405,22 @@ function scanearEstadoCuentaSantander_(pendSheet, procesados, seenMsg, ventanaDi
                   t.tarjeta = 'TC Santander';
                   return t;
                 });
-                // Chequeo de suma vs "Monto Facturado" DESACTIVADO — ver comentario
-                // equivalente en scanearBancoChileTC_. Misma ambigüedad de etiqueta,
-                // mismo resultado (descuadre en el 100% de los estados de cuenta
-                // probados, incluida época sin cuotas activas) — el problema es del
-                // chequeo, no evidencia de que falten o sobren transacciones.
+                // Reconciliación agregada el 22-sep-2026 — ver
+                // verificarFacturacionSantanderTC_. El intento anterior (comparar
+                // la suma de transacciones contra "Monto Facturado" directamente)
+                // descuadraba siempre porque el monto capturado por transacción es
+                // el TOTAL de la compra, no la cuota mensual. La fórmula nueva usa
+                // los subtotales que el propio banco ya declara (Saldo Anterior +
+                // Total Operaciones + Productos Voluntarios + Cargos/Comisiones =
+                // Monto Total Facturado), validada exacta contra un estado de
+                // cuenta real — no verifica por sí sola que cada transacción se
+                // haya parseado bien, pero sí protege contra leer el campo
+                // equivocado o un layout de PDF distinto.
+                var diagFacturacionSantander = verificarFacturacionSantanderTC_(texto, 'Santander TC ' + nombreArchivo);
+                if (diagFacturacionSantander) {
+                  Logger.log('  ' + diagFacturacionSantander);
+                  debugSheet_.appendRow(['Santander TC suma', fecha, nombreArchivo, diagFacturacionSantander]);
+                }
                 transacciones = transacciones.concat(txsTC);
               } else {
                 // Cartola Cuenta Vista (_CM) o Cuenta Corriente (_CC) — identificar por nombre

@@ -6,7 +6,7 @@ Estado al 22-sep-2026: **5 fuentes automatizadas**, todas con reconciliación va
 - **Remitente**: `mensajeria@santander.cl` / `notificaciones@santander.cl`, asunto "estado de cuenta".
 - **Parser**: `parsearTransaccionesEstadoCuentaTC_` (texto lineal, fecha `DD/MM/AAAA` completa en el texto — sin ambigüedad de año).
 - **Monto capturado**: total de la compra (no la cuota mensual) — la app arma las cuotas al confirmar.
-- **Reconciliación**: no construida todavía (pendiente, ver ROADMAP).
+- **Reconciliación** (`verificarFacturacionSantanderTC_`, agregada 22-sep-2026): `SALDO ADEUDADO FINAL PERÍODO ANTERIOR + 1. TOTAL OPERACIONES + 2. PRODUCTOS VOLUNTARIOS + 3. CARGOS/COMISIONES/IMPUESTOS/ABONOS = MONTO TOTAL FACTURADO A PAGAR`. Validado exacto contra un estado de cuenta real. Un intento anterior (sumar transacciones individuales contra "Monto Facturado") siempre descuadraba — el monto por transacción es el TOTAL de la compra, no la cuota mensual; la fórmula nueva usa subtotales que el banco ya declara, evitando esa ambigüedad. **Importante**: valida que los subtotales del banco cuadren entre sí, no que cada transacción individual se haya parseado bien — eso depende del parser de transacciones estando correcto (ver caso raro abajo).
 - **Caso raro confirmado (22-sep-2026)**: una transacción justo después de un salto de página puede perder su línea de fecha entera — Santander repite los títulos de columna al inicio de cada página, y si el PDF no deja 3+ espacios entre el último título y la fecha, `extract-pdf` no separa esa línea en dos (ej. `"MENSUAL O COBRO 22/06/2026"` en vez de `"22/06/2026"` sola). El parser ahora busca la fecha al final de la línea, no exige que sea toda la línea — ver `GUARDRAILS.md`.
 
 ## 2. Santander — Cartola Cuenta Vista
