@@ -1849,14 +1849,14 @@ function scanearBancoChileTC_(pendSheet, procesados, seenMsg, ventanaDias) {
  * antes de tocar parsearTransaccionesEstadoCuentaTC_ (regla del proyecto,
  * nunca a ciegas). Ver docs/DECISIONS.md 22-sep-2026 (caso S Y V Ortodoncia).
  *
- * diasMasAntiguo/diasMasReciente: misma semántica que importarSantanderRango_
- * — ej. debugSantanderEstadoCuentaTC_(100, 60) busca correos de entre hace
+ * diasMasAntiguo/diasMasReciente: misma semántica que importarSantanderRango
+ * — ej. debugSantanderEstadoCuentaTC(100, 60) busca correos de entre hace
  * 60 y 100 días. Omitir diasMasReciente para buscar desde hace diasMasAntiguo
  * días hasta hoy. Trae defaults (110/70, cubre el caso S Y V Ortodoncia del
  * 22-jun-2026) para poder correrla con el botón ▶ Ejecutar sin tener que
  * pasarle parámetros a mano — el editor de Apps Script no pide argumentos.
  */
-function debugSantanderEstadoCuentaTC_(diasMasAntiguo, diasMasReciente) {
+function debugSantanderEstadoCuentaTC(diasMasAntiguo, diasMasReciente) {
   diasMasAntiguo = diasMasAntiguo || 110;
   diasMasReciente = diasMasReciente || 70;
   var rut = PropertiesService.getScriptProperties().getProperty('RUT_SANTANDER') || '';
@@ -2037,7 +2037,7 @@ function importarCartolaBancoChile2026() {
  * PDFs), y competir por tiempo de ejecución con Banco de Chile en la misma
  * corrida es lo que hizo cortar importarCerrados2026() a los 6 minutos de
  * Apps Script (22-sep-2026). Si esta función SOLA también corta el tiempo,
- * usar importarSantanderRango_() para trocear el período en pedazos más
+ * usar importarSantanderRango() para trocear el período en pedazos más
  * chicos (ver esa función).
  */
 function importarSantander2026() {
@@ -2054,13 +2054,13 @@ function importarSantander2026() {
  * importarSantander2026() sola alcanza a terminar en los 6 minutos de Apps
  * Script (muchos meses de cartolas + estados de cuenta). Ejecutar varias
  * veces seguidas, cada vez achicando el rango, ej.:
- *   importarSantanderRango_(220, 150)  // los más antiguos primero
- *   importarSantanderRango_(150, 80)
- *   importarSantanderRango_(80, 0)     // hasta hoy
+ *   importarSantanderRango(220, 150)  // los más antiguos primero
+ *   importarSantanderRango(150, 80)
+ *   importarSantanderRango(80, 0)     // hasta hoy
  * Es seguro repetir o superponer rangos — el anti-duplicados por
  * comercio+monto+fecha evita crear filas de nuevo.
  */
-function importarSantanderRango_(diasMasAntiguo, diasMasReciente) {
+function importarSantanderRango(diasMasAntiguo, diasMasReciente) {
   Logger.log('=== BACKFILL Santander: de hace ' + diasMasAntiguo + 'd a hace ' + diasMasReciente + 'd ===');
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var pendSheet = ss.getSheetByName(SHEETS.PENDIENTES);
@@ -2176,7 +2176,7 @@ function reconciliarCartola() {
  * (older_than:Xd .. newer_than:Ydias) en vez de "todo desde hace Y días" —
  * permite trocear un backfill grande (ej. todo Santander en 220 días, que
  * corta a los 6 min de Apps Script) en varias ejecuciones más chicas. Ver
- * importarSantanderRango_() y docs/DECISIONS.md 22-sep-2026.
+ * importarSantanderRango() y docs/DECISIONS.md 22-sep-2026.
  */
 function scanearEstadoCuentaSantander_(pendSheet, procesados, seenMsg, ventanaDias, olderThanDias) {
   ventanaDias = ventanaDias || 35;
